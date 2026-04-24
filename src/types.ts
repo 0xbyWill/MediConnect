@@ -45,39 +45,64 @@ export type ConvenioType =
 
 export type StatusPaciente = 'Ativo' | 'Inativo';
 
-// ─── Paciente (modelo interno) ────────────────────────────────────────────────
+// ─── Paciente (modelo interno — completo) ─────────────────────────────────────
 export interface Paciente {
   id: string;
+  // Identificação
   nome: string;
+  nomeSocial?: string;
   cpf: string;
+  rg?: string;
+  outroDocTipo?: string;
+  outroDocNumero?: string;
+  sexo?: string;
   dataNasc: string;
-  email: string;
-  telefone: string;
-  convenio: ConvenioType;
-  status: StatusPaciente;
   etnia?: string;
   raca?: string;
-  foto?: string;
-  nomeSocial?: string;
-  rg?: string;
-  sexo?: string;
   naturalidade?: string;
   nacionalidade?: string;
   profissao?: string;
   estadoCivil?: string;
+  // Filiação
   nomeMae?: string;
+  profissaoMae?: string;
   nomePai?: string;
+  profissaoPai?: string;
   nomeResponsavel?: string;
   cpfResponsavel?: string;
-  observacoes?: string;
+  nomeEsposo?: string;
+  rnGuiaConvenio?: boolean;
+  codigoLegado?: string;
+  // Contato
+  email: string;
+  telefone: string;
+  telefone2?: string;
+  // Endereço
   cep?: string;
   logradouro?: string;
   numero?: string;
+  complemento?: string;
   bairro?: string;
   cidade?: string;
   estado?: string;
-  complemento?: string;
+  // Informações médicas
+  tipoSanguineo?: string;
+  peso?: string;
+  altura?: string;
+  alergias?: string;
+  // Convênio
+  convenio: ConvenioType;
+  planoConvenio?: string;
+  matriculaConvenio?: string;
+  validadeCarteira?: string;
+  // Status / controle
+  status: StatusPaciente;
   isVip?: boolean;
+  foto?: string;
+  observacoes?: string;
+  // Atendimentos (gerados a partir de agendamentos)
+  ultimoAtendimento?: string;
+  proximoAtendimento?: string;
 }
 
 // ─── Agendamento ──────────────────────────────────────────────────────────────
@@ -120,55 +145,52 @@ export interface Laudo {
 // ─── Helpers de mapeamento API ↔ modelo interno ───────────────────────────────
 export function apiPatientToPaciente(p: ApiPatient): Paciente {
   return {
-    id: p.id,
-    nome: p.full_name,
-    cpf: p.cpf,
-    dataNasc: p.birth_date ?? '',
-    email: p.email,
-    telefone: p.phone_mobile,
-    convenio: (p.health_insurance as ConvenioType) ?? 'Particular',
-    status: p.status === 'inactive' ? 'Inativo' : 'Ativo',
-    etnia: p.etnia,
-    raca: p.raca,
-    foto: p.avatar_url,
+    id:          p.id,
+    nome:        p.full_name,
+    cpf:         p.cpf,
+    dataNasc:    p.birth_date ?? '',
+    email:       p.email,
+    telefone:    p.phone_mobile,
+    convenio:    (p.health_insurance as ConvenioType) ?? 'Particular',
+    status:      p.status === 'inactive' ? 'Inativo' : 'Ativo',
+    etnia:       p.etnia,
+    raca:        p.raca,
+    foto:        p.avatar_url,
   };
 }
 
 export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 'id'> {
   return {
-    full_name: p.nome,
-    cpf: p.cpf.replace(/\D/g, ''),
-    birth_date: p.dataNasc,
-    email: p.email,
-    phone_mobile: p.telefone,
+    full_name:        p.nome,
+    cpf:              p.cpf.replace(/\D/g, ''),
+    birth_date:       p.dataNasc,
+    email:            p.email,
+    phone_mobile:     p.telefone,
     health_insurance: p.convenio,
-    status: p.status === 'Ativo' ? 'active' : 'inactive',
-    etnia: p.etnia,
-    raca: p.raca,
-    avatar_url: p.foto,
+    status:           p.status === 'Ativo' ? 'active' : 'inactive',
+    etnia:            p.etnia,
+    raca:             p.raca,
+    avatar_url:       p.foto,
   };
 }
 
 export function apiAppointmentToAgendamento(a: ApiAppointment): Agendamento {
-  const dt = new Date(a.scheduled_at);
+  const dt   = new Date(a.scheduled_at);
   const data = dt.toISOString().split('T')[0];
-  const hora = `${String(dt.getUTCHours()).padStart(2, '0')}:${String(dt.getUTCMinutes()).padStart(2, '0')}`;
+  const hora = `${String(dt.getUTCHours()).padStart(2,'0')}:${String(dt.getUTCMinutes()).padStart(2,'0')}`;
   const statusMap: Record<string, StatusAgendamento> = {
-    requested: 'pendente',
-    confirmed:  'confirmado',
-    completed:  'realizado',
-    cancelled:  'cancelado',
+    requested: 'pendente', confirmed: 'confirmado',
+    completed: 'realizado', cancelled: 'cancelado',
   };
   return {
-    id: a.id,
-    pacienteId: a.patient_id,
-    medicoId:   a.doctor_id,
-    data,
-    hora,
-    tipo:       (a.type as TipoConsulta) ?? 'Primeira Consulta',
-    status:     statusMap[a.status] ?? 'pendente',
+    id:          a.id,
+    pacienteId:  a.patient_id,
+    medicoId:    a.doctor_id,
+    data, hora,
+    tipo:        (a.type as TipoConsulta) ?? 'Primeira Consulta',
+    status:      statusMap[a.status] ?? 'pendente',
     observacoes: a.notes,
-    duracao:    a.duration_minutes,
+    duracao:     a.duration_minutes,
   };
 }
 
@@ -177,10 +199,8 @@ export function agendamentoToApiAppointment(
   createdBy: string
 ): Omit<ApiAppointment, 'id'> {
   const statusMap: Record<StatusAgendamento, ApiAppointment['status']> = {
-    pendente:   'requested',
-    confirmado: 'confirmed',
-    realizado:  'completed',
-    cancelado:  'cancelled',
+    pendente: 'requested', confirmado: 'confirmed',
+    realizado: 'completed', cancelado: 'cancelled',
   };
   return {
     doctor_id:        a.medicoId ?? '',
@@ -219,16 +239,16 @@ export function laudoToApiReport(
   createdBy: string
 ): Omit<ApiReport, 'id' | 'order_number' | 'created_at' | 'updated_at'> {
   return {
-    patient_id:    l.pacienteId,
-    status:        l.status === 'liberado' ? 'completed' : 'draft',
-    cid_code:      l.cid,
-    diagnosis:     l.diagnostico,
-    conclusion:    l.impressao,
-    exam:          l.tecnica ?? l.exame,
-    requested_by:  l.solicitante,
-    content_html:  l.conteudoHtml,
-    hide_date:     l.ocultarData,
+    patient_id:     l.pacienteId,
+    status:         l.status === 'liberado' ? 'completed' : 'draft',
+    cid_code:       l.cid,
+    diagnosis:      l.diagnostico,
+    conclusion:     l.impressao,
+    exam:           l.tecnica ?? l.exame,
+    requested_by:   l.solicitante,
+    content_html:   l.conteudoHtml,
+    hide_date:      l.ocultarData,
     hide_signature: l.ocultarAssinatura,
-    created_by:    createdBy,
+    created_by:     createdBy,
   };
 }
