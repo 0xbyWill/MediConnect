@@ -1,6 +1,68 @@
-import React, { useState, useRef } from 'react';
-import { Search, Plus, Eye, Pencil, Trash2, X, Camera, User, Lock } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Search, Plus, Eye, Pencil, Trash2, X, Camera, User, Lock,
+  Star, Cake, Filter, Calendar, ChevronDown, Phone, MapPin,
+  AlertCircle, Clock, CheckCircle2,
+} from 'lucide-react';
 import type { Paciente, ConvenioType, StatusPaciente } from '../types';
+
+// ─── Constantes ───────────────────────────────────────────────────────────────
+const CONVENIOS: ConvenioType[] = [
+  'Particular', 'Unimed Nacional', 'Bradesco Saúde',
+  'Amil S450', 'SulAmérica', 'Porto Seguro', 'Notre Dame',
+];
+
+const ETNIAS = ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena', 'Não informada'];
+const RACAS  = ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena'];
+const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável', 'Separado(a)'];
+const NACIONALIDADES = ['Brasileira', 'Portuguesa', 'Americana', 'Argentina', 'Colombiana', 'Outra'];
+const TIPOS_DOC = ['CNH', 'Passaporte', 'Certidão de Nascimento', 'Carteira de Trabalho', 'Outro'];
+const TIPOS_SANGUINEOS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+// Abas do formulário
+const FORM_TABS = [
+  { id: 'dados',     label: 'Dados Pessoais' },
+  { id: 'contato',   label: 'Contato' },
+  { id: 'endereco',  label: 'Endereço' },
+  { id: 'medico',    label: 'Inf. Médicas' },
+  { id: 'convenio',  label: 'Convênio' },
+  { id: 'obs',       label: 'Observações' },
+];
+
+// ─── Tipos auxiliares ─────────────────────────────────────────────────────────
+interface PacienteExtended extends Paciente {
+  rg?: string;
+  sexo?: string;
+  naturalidade?: string;
+  nacionalidade?: string;
+  profissao?: string;
+  estadoCivil?: string;
+  nomeMae?: string;
+  profissaoMae?: string;
+  nomePai?: string;
+  profissaoPai?: string;
+  nomeResponsavel?: string;
+  cpfResponsavel?: string;
+  nomeEsposo?: string;
+  rnGuiaConvenio?: boolean;
+  codigoLegado?: string;
+  outroDocTipo?: string;
+  outroDocNumero?: string;
+  telefone2?: string;
+  tipoSanguineo?: string;
+  peso?: string;
+  altura?: string;
+  alergias?: string;
+  planoConvenio?: string;
+  matriculaConvenio?: string;
+  validadeCarteira?: string;
+  ultimoAtendimento?: string;
+  proximoAtendimento?: string;
+  cidade?: string;
+  estado?: string;
+  isVip?: boolean;
+}
 
 interface PacientesProps {
   pacientes: Paciente[];
@@ -9,339 +71,710 @@ interface PacientesProps {
   onDelete: (id: string) => void;
   highlightId?: string;
   initialOpen?: boolean;
-  readOnly?: boolean; // true = perfil Secretaria (sem prontuário completo)
+  readOnly?: boolean;
 }
 
-const CONVENIOS: ConvenioType[] = ['Particular', 'Unimed Nacional', 'Bradesco Saúde', 'Amil S450', 'SulAmérica', 'Porto Seguro', 'Notre Dame'];
-
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function initials(nome: string) {
-  return nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+  return nome.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 }
 
-function formatDateBR(iso: string) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
+function formatDateTime(iso: string) {
+  if (!iso) return 'Ainda não houve atendimento';
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function calcIMC(peso: string, altura: string) {
+  const p = parseFloat(peso), a = parseFloat(altura);
+  if (!p || !a) return '';
+  return (p / (a * a)).toFixed(1);
+}
+function isAniversariante(dataNasc: string, mes?: number) {
+  if (!dataNasc) return false;
+  const m = parseInt(dataNasc.split('-')[1]);
+  return mes ? m === mes : m === new Date().getMonth() + 1;
+}
+function cpfValido(cpf: string) {
+  const c = cpf.replace(/\D/g, '');
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
+  let r = (s * 10) % 11;
+  if (r === 10 || r === 11) r = 0;
+  if (r !== parseInt(c[9])) return false;
+  s = 0;
+  for (let i = 0; i < 10; i++) s += parseInt(c[i]) * (11 - i);
+  r = (s * 10) % 11;
+  if (r === 10 || r === 11) r = 0;
+  return r === parseInt(c[10]);
 }
 
-const emptyForm: Omit<Paciente, 'id'> = {
-  nome: '', cpf: '', dataNasc: '', email: '', telefone: '',
-  convenio: 'Particular', status: 'Ativo', etnia: '', raca: '', foto: '',
-  nomeSocial: '', observacoes: '',
+const emptyForm: PacienteExtended = {
+  id: '', nome: '', nomeSocial: '', cpf: '', rg: '', sexo: '',
+  dataNasc: '', etnia: '', raca: '', naturalidade: '', nacionalidade: '',
+  profissao: '', estadoCivil: '', nomeMae: '', profissaoMae: '',
+  nomePai: '', profissaoPai: '', nomeResponsavel: '', cpfResponsavel: '',
+  nomeEsposo: '', rnGuiaConvenio: false, codigoLegado: '',
+  outroDocTipo: '', outroDocNumero: '',
+  email: '', telefone: '', telefone2: '',
+  cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '',
+  tipoSanguineo: '', peso: '', altura: '', alergias: '',
+  convenio: 'Particular', planoConvenio: '', matriculaConvenio: '', validadeCarteira: '',
+  status: 'Ativo', isVip: false,
+  observacoes: '', foto: '',
 };
 
+// ─── Sub-componentes de campo ─────────────────────────────────────────────────
+function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '' }: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; type?: string; required?: boolean; disabled?: boolean; error?: string;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        {label} {required && <span style={{ color: 'var(--red-500)' }}>*</span>}
+      </label>
+      <input
+        type={type} value={value} placeholder={placeholder}
+        onChange={e => onChange(e.target.value)} disabled={disabled}
+        style={{
+          padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none',
+          border: `1px solid ${error ? 'var(--red-500)' : 'var(--gray-200)'}`,
+          background: disabled ? 'var(--gray-50)' : '#fff', color: 'var(--gray-800)',
+          width: '100%',
+        }}
+      />
+      {error && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{error}</span>}
+    </div>
+  );
+}
+
+function FieldSelect({ label, value, onChange, options, required = false, disabled = false }: {
+  label: string; value: string; onChange: (v: string) => void;
+  options: string[]; required?: boolean; disabled?: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        {label} {required && <span style={{ color: 'var(--red-500)' }}>*</span>}
+      </label>
+      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+        style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none', border: '1px solid var(--gray-200)', background: disabled ? 'var(--gray-50)' : '#fff', color: 'var(--gray-800)', cursor: disabled ? 'default' : 'pointer', width: '100%' }}>
+        <option value="">Selecione</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function SectionHeader({ label, icon: Icon }: { label: string; icon?: React.ElementType }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, paddingBottom: 10, borderBottom: '2px solid var(--mint)' }}>
+      {Icon && <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon size={14} color="var(--primary)" /></div>}
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark)', textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</span>
+    </div>
+  );
+}
+
+// ─── Componente Principal ─────────────────────────────────────────────────────
 export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highlightId, initialOpen, readOnly = false }: PacientesProps) {
-  const [search, setSearch] = useState('');
+  // ── Estados de lista/filtro ──
+  const [search, setSearch]               = useState('');
   const [filterConvenio, setFilterConvenio] = useState('');
-  const [filterStatus, setFilterStatus] = useState('Ativos e Inativos');
-  const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit' | 'view'; data: Partial<Paciente> }>({ open: false, mode: 'add', data: {} });
+  const [filterVip, setFilterVip]         = useState(false);
+  const [filterAnivMes, setFilterAnivMes] = useState('');
+  const [showFiltroAvancado, setShowFiltroAvancado] = useState(false);
+  const [filtroEstado, setFiltroEstado]   = useState('');
+  const [filtroCidade, setFiltroCidade]   = useState('');
+  const [visibleCount, setVisibleCount]   = useState(20);
+  const loaderRef = useRef<HTMLDivElement>(null);
+
+  // ── Estados do modal ──
+  const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit' | 'view'; data: PacienteExtended }>({
+    open: false, mode: 'add', data: { ...emptyForm },
+  });
+  const [activeTab, setActiveTab] = useState('dados');
+  const [errors, setErrors]       = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [duplicateWarn, setDuplicateWarn] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  React.useEffect(() => {
-    if (initialOpen) openAdd();
-  }, [initialOpen]);
+  // Scroll infinito
+  useEffect(() => {
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) setVisibleCount(v => v + 20);
+    }, { threshold: 1 });
+    if (loaderRef.current) obs.observe(loaderRef.current);
+    return () => obs.disconnect();
+  }, []);
 
+  useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen]);
+
+  // ── Filtros ──
   const filtered = pacientes.filter(p => {
     const q = search.toLowerCase();
-    const matchSearch = !q || p.nome.toLowerCase().includes(q) || p.cpf.includes(q);
+    const ext = p as PacienteExtended;
+    const matchSearch = !q || p.nome.toLowerCase().includes(q) || p.cpf.includes(q) || (p.telefone || '').includes(q);
     const matchConvenio = !filterConvenio || p.convenio === filterConvenio;
-    const matchStatus = filterStatus === 'Ativos e Inativos' || p.status === filterStatus.replace('s', '');
-    return matchSearch && matchConvenio && matchStatus;
+    const matchVip = !filterVip || (ext.isVip === true);
+    const matchAniv = !filterAnivMes || isAniversariante(p.dataNasc, parseInt(filterAnivMes));
+    const matchEstado = !filtroEstado || (ext.estado || '').toLowerCase().includes(filtroEstado.toLowerCase());
+    const matchCidade = !filtroCidade || (ext.cidade || '').toLowerCase().includes(filtroCidade.toLowerCase());
+    return matchSearch && matchConvenio && matchVip && matchAniv && matchEstado && matchCidade;
   });
 
-  const openAdd = () => setModal({ open: true, mode: 'add', data: { ...emptyForm } });
-  const openEdit = (p: Paciente) => setModal({ open: true, mode: 'edit', data: { ...p } });
-  const openView = (p: Paciente) => setModal({ open: true, mode: 'view', data: { ...p } });
-  const closeModal = () => { setModal({ open: false, mode: 'add', data: {} }); setErrors({}); };
+  const visible = filtered.slice(0, visibleCount);
 
-  const validate = (d: Partial<Paciente>) => {
-    const e: Record<string, string> = {};
-    if (!d.nome?.trim()) e.nome = 'Nome obrigatório';
-    if (!d.cpf?.trim()) e.cpf = 'CPF obrigatório';
-    if (!d.dataNasc) e.dataNasc = 'Data obrigatória';
-    return e;
-  };
+  // ── Abrir modal ──
+  const openAdd  = () => { setModal({ open: true, mode: 'add', data: { ...emptyForm } }); setActiveTab('dados'); setErrors({}); setDuplicateWarn(false); };
+  const openEdit = (p: Paciente) => { setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...p } }); setActiveTab('dados'); setErrors({}); setDuplicateWarn(false); };
+  const openView = (p: Paciente) => { setModal({ open: true, mode: 'view', data: { ...emptyForm, ...p } }); setActiveTab('dados'); };
+  const closeModal = () => { setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setDuplicateWarn(false); };
 
-  const handleSave = () => {
-    const e = validate(modal.data);
-    if (Object.keys(e).length) { setErrors(e); return; }
-    if (modal.mode === 'add') onAdd(modal.data as Omit<Paciente, 'id'>);
-    else if (modal.mode === 'edit') onUpdate(modal.data as Paciente);
-    closeModal();
-  };
+  // ── Set field helper ──
+  const setField = useCallback(<K extends keyof PacienteExtended>(field: K, value: PacienteExtended[K]) => {
+    setModal(m => ({ ...m, data: { ...m.data, [field]: value } }));
+  }, []);
 
+  // ── Foto ──
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => setModal(m => ({ ...m, data: { ...m.data, foto: ev.target?.result as string } }));
+    reader.onload = ev => setField('foto', ev.target?.result as string);
     reader.readAsDataURL(file);
   };
 
-  const isView = modal.mode === 'view';
-  const Field = ({ label, field, type = 'text', placeholder = '', required = false, disabled = false }: {
-    label: string; field: keyof Paciente; type?: string; placeholder?: string; required?: boolean; disabled?: boolean;
-  }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-        {label} {required && <span style={{ color: 'var(--red-500)' }}>*</span>}
-      </label>
-      <input
-        type={type}
-        placeholder={placeholder}
-        value={(modal.data[field] as string) || ''}
-        onChange={e => setModal(m => ({ ...m, data: { ...m.data, [field]: e.target.value } }))}
-        disabled={isView || disabled}
-        style={{
-          padding: '10px 12px',
-          border: `1px solid ${errors[field] ? 'var(--red-500)' : 'var(--gray-200)'}`,
-          borderRadius: 8, fontSize: 13, outline: 'none',
-          background: isView || disabled ? 'var(--gray-50)' : 'var(--background)',
-          color: 'var(--gray-800)',
-        }}
-      />
-      {errors[field] && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{errors[field]}</span>}
-    </div>
-  );
+  // ── Validação ──
+  const validate = (d: PacienteExtended) => {
+    const e: Record<string, string> = {};
+    if (!d.nome.trim()) e.nome = 'Nome obrigatório';
+    if (!d.dataNasc) e.dataNasc = 'Data de nascimento obrigatória';
+    if (d.cpf && !cpfValido(d.cpf)) e.cpf = 'CPF inválido';
+    return e;
+  };
 
+  // ── Salvar ──
+  const handleSave = () => {
+    const e = validate(modal.data);
+    if (Object.keys(e).length) {
+      setErrors(e);
+      // Vai para a aba que tem o erro
+      if (e.nome || e.cpf || e.dataNasc) setActiveTab('dados');
+      return;
+    }
+    // Verifica duplicidade por CPF
+    const cpfLimpo = modal.data.cpf.replace(/\D/g, '');
+    if (cpfLimpo && modal.mode === 'add') {
+      const dup = pacientes.find(p => p.cpf.replace(/\D/g, '') === cpfLimpo);
+      if (dup) { setDuplicateWarn(true); return; }
+    }
+    if (modal.mode === 'add') onAdd(modal.data as Omit<Paciente, 'id'>);
+    else onUpdate(modal.data as Paciente);
+    closeModal();
+  };
+
+  const isView = modal.mode === 'view';
+  const d = modal.data;
+
+  // ─── IMC calculado ───
+  const imc = calcIMC(d.peso || '', d.altura || '');
+
+  // ─── Renderização ────────────────────────────────────────────────────────────
   return (
-    <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 24 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>
-            {readOnly ? 'Cadastro de Pacientes' : 'Gestão de Pacientes'}
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
-            {readOnly
-              ? 'Cadastre e consulte dados básicos de pacientes.'
-              : 'Gerencie a base de dados de seus pacientes com segurança.'}
-          </p>
-          {readOnly && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '4px 10px', background: 'var(--amber-100)', borderRadius: 20, width: 'fit-content' }}>
-              <Lock size={11} color="var(--amber-600)" />
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-600)' }}>Acesso limitado — prontuário médico restrito</span>
+    <div style={{ flex: 1, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* ── Área scrollável ── */}
+      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dark)' }}>Pacientes</h1>
+            <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
+              {readOnly ? 'Cadastro e consulta de pacientes' : 'Gerencie as informações de seus pacientes'}
+            </p>
+            {readOnly && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, padding: '3px 10px', background: 'var(--amber-100)', borderRadius: 20, width: 'fit-content' }}>
+                <Lock size={10} color="var(--amber-600)" />
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-600)' }}>Acesso limitado</span>
+              </div>
+            )}
+          </div>
+          <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
+            <Plus size={16} /> Adicionar
+          </button>
+        </div>
+
+        {/* Filtros */}
+        <div style={{ background: '#fff', borderRadius: 14, padding: '14px 18px', marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Busca */}
+            <div style={{ flex: 2, minWidth: 200, position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
+              <input value={search} onChange={e => { setSearch(e.target.value); setVisibleCount(20); }}
+                placeholder="Buscar por nome, CPF ou telefone..."
+                style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
+            </div>
+
+            {/* Convênio */}
+            <div style={{ flex: 1, minWidth: 160, position: 'relative' }}>
+              <User size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
+              <select value={filterConvenio} onChange={e => setFilterConvenio(e.target.value)}
+                style={{ width: '100%', padding: '9px 12px 9px 30px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)', cursor: 'pointer', appearance: 'none' }}>
+                <option value="">Selecione o Convênio</option>
+                {CONVENIOS.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+
+            {/* VIP */}
+            <button onClick={() => setFilterVip(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8, border: `1px solid ${filterVip ? '#f59e0b' : 'var(--gray-200)'}`, background: filterVip ? '#fef3c7' : 'var(--gray-50)', fontSize: 13, fontWeight: 600, color: filterVip ? '#d97706' : 'var(--gray-500)', cursor: 'pointer', transition: 'all .15s' }}>
+              <Star size={14} fill={filterVip ? '#f59e0b' : 'none'} color={filterVip ? '#f59e0b' : 'var(--gray-400)'} />
+              VIP
+            </button>
+
+            {/* Aniversariante */}
+            <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8, border: `1px solid ${filterAnivMes ? 'var(--primary)' : 'var(--gray-200)'}`, background: filterAnivMes ? 'var(--mint)' : 'var(--gray-50)', cursor: 'pointer' }}
+                onClick={() => {}}>
+                <Cake size={14} color={filterAnivMes ? 'var(--primary)' : 'var(--gray-400)'} />
+                <select value={filterAnivMes} onChange={e => setFilterAnivMes(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', fontSize: 13, fontWeight: 600, color: filterAnivMes ? 'var(--dark)' : 'var(--gray-500)', cursor: 'pointer', outline: 'none' }}>
+                  <option value="">Aniversariantes</option>
+                  {MESES.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Filtro avançado */}
+            <button onClick={() => setShowFiltroAvancado(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8, border: `1px solid ${showFiltroAvancado ? 'var(--primary)' : 'var(--gray-200)'}`, background: showFiltroAvancado ? 'var(--mint)' : 'var(--gray-50)', fontSize: 13, fontWeight: 600, color: showFiltroAvancado ? 'var(--dark)' : 'var(--gray-500)', cursor: 'pointer' }}>
+              <Filter size={14} /> Filtro avançado <ChevronDown size={12} style={{ transform: showFiltroAvancado ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+            </button>
+          </div>
+
+          {/* Filtro avançado expandido */}
+          {showFiltroAvancado && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--gray-100)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Cidade</label>
+                <input value={filtroCidade} onChange={e => setFiltroCidade(e.target.value)} placeholder="Ex: Aracaju"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Estado</label>
+                <input value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} placeholder="Ex: Sergipe"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
+              </div>
+              <button onClick={() => { setFiltroCidade(''); setFiltroEstado(''); setFilterVip(false); setFilterAnivMes(''); setFilterConvenio(''); setSearch(''); }}
+                style={{ alignSelf: 'flex-end', padding: '8px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: 'none', fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', cursor: 'pointer' }}>
+                Limpar filtros
+              </button>
             </div>
           )}
         </div>
-        <button onClick={openAdd} style={{ padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Plus size={16} /> + Novo Paciente
-        </button>
-      </div>
 
-      {/* Filters */}
-      <div style={{ background: '#fff', borderRadius: 14, padding: 20, marginBottom: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>Busca</label>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por Nome ou CPF..." style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)' }} />
+        {/* Tabela */}
+        <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
+                {['Nome', 'Telefone', 'Cidade', 'Estado', 'Último atendimento', 'Próximo atendimento', 'Ações'].map(h => (
+                  <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(p => {
+                const ext = p as PacienteExtended;
+                return (
+                  <tr key={p.id}
+                    style={{ borderBottom: '1px solid var(--gray-50)', transition: 'background .1s', background: highlightId === p.id ? 'var(--mint)' : undefined }}
+                    onMouseEnter={e => { if (highlightId !== p.id) (e.currentTarget as HTMLTableRowElement).style.background = 'var(--gray-50)'; }}
+                    onMouseLeave={e => { if (highlightId !== p.id) (e.currentTarget as HTMLTableRowElement).style.background = ''; }}>
+
+                    {/* Nome */}
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 50, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--dark)', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+                          {p.foto ? <img src={p.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : initials(p.nome)}
+                          {ext.isVip && <Star size={8} fill="#f59e0b" color="#f59e0b" style={{ position: 'absolute', top: 1, right: 1 }} />}
+                        </div>
+                        <div>
+                          <button onClick={() => openView(p)}
+                            style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+                            {p.nome}
+                          </button>
+                          {ext.isVip && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, background: '#fef3c7', color: '#d97706', padding: '1px 6px', borderRadius: 10 }}>VIP</span>}
+                          <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{p.cpf || '—'}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Telefone */}
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Phone size={12} color="var(--gray-400)" />
+                        {p.telefone || '—'}
+                      </div>
+                    </td>
+
+                    {/* Cidade */}
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <MapPin size={12} color="var(--gray-400)" />
+                        {ext.cidade || '—'}
+                      </div>
+                    </td>
+
+                    {/* Estado */}
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)' }}>{ext.estado || '—'}</td>
+
+                    {/* Último atendimento */}
+                    <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Clock size={12} color="var(--gray-400)" />
+                        {formatDateTime(ext.ultimoAtendimento || '')}
+                      </div>
+                    </td>
+
+                    {/* Próximo atendimento */}
+                    <td style={{ padding: '12px 16px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {ext.proximoAtendimento ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--primary)' }}>
+                          <CheckCircle2 size={12} />
+                          {formatDateTime(ext.proximoAtendimento)}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>Nenhum atendimento agendado</span>
+                      )}
+                    </td>
+
+                    {/* Ações */}
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        <ActionBtn icon={Eye} color="var(--primary)" title="Ver prontuário" onClick={() => openView(p)} />
+                        <ActionBtn icon={Pencil} color="#d97706" title="Editar" onClick={() => openEdit(p)} />
+                        <ActionBtn icon={Calendar} color="#7c3aed" title="Marcar consulta" onClick={() => {}} />
+                        {!readOnly && <ActionBtn icon={Trash2} color="var(--red-500)" title="Excluir" onClick={() => setConfirmDelete(p.id)} />}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {visible.length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)' }}>
+                    <Search size={28} style={{ marginBottom: 8, display: 'block', margin: '0 auto 8px' }} />
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Nenhum paciente encontrado</div>
+                    <div style={{ fontSize: 12, marginTop: 4 }}>Tente ajustar os filtros ou adicione um novo paciente.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Rodapé / Scroll infinito */}
+          <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
+            <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+              Exibindo <strong>{Math.min(visible.length, filtered.length)}</strong> de <strong>{filtered.length}</strong> paciente{filtered.length !== 1 ? 's' : ''}
+            </span>
+            {filtered.length > pacientes.length && (
+              <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Total cadastrado: {pacientes.length}</span>
+            )}
           </div>
+          {/* Sentinela de scroll infinito */}
+          {visible.length < filtered.length && (
+            <div ref={loaderRef} style={{ padding: 12, textAlign: 'center', fontSize: 12, color: 'var(--gray-400)' }}>Carregando mais...</div>
+          )}
         </div>
-        <div style={{ flex: 1, minWidth: 160 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>Convênio</label>
-          <select value={filterConvenio} onChange={e => setFilterConvenio(e.target.value)} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)', cursor: 'pointer' }}>
-            <option value="">Todos os Convênios</option>
-            {CONVENIOS.map(c => <option key={c}>{c}</option>)}
-          </select>
-        </div>
-        <div style={{ flex: 1, minWidth: 160 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>Status</label>
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)', cursor: 'pointer' }}>
-            <option>Ativos e Inativos</option>
-            <option>Ativos</option>
-            <option>Inativos</option>
-          </select>
-        </div>
-        <button style={{ padding: '9px 20px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Filtrar</button>
-      </div>
 
-      {/* Table */}
-      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflowX: 'auto' }}>
-        <table style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--gray-100)' }}>
-              {['Paciente', 'CPF', 'Convênio', 'Data Nasc.', 'Telefone', 'Status', 'Ações'].map(h => (
-                <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(p => (
-              <tr key={p.id} style={{ borderBottom: '1px solid var(--gray-50)', background: highlightId === p.id ? 'var(--mint)' : undefined }}>
-                <td style={{ padding: '14px 20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--dark)', flexShrink: 0, overflow: 'hidden' }}>
-                      {p.foto ? <img src={p.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(p.nome)}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{p.nome}</div>
-                      <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{p.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-600)' }}>{p.cpf}</td>
-                <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-600)' }}>{p.convenio}</td>
-                <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-600)' }}>{formatDateBR(p.dataNasc)}</td>
-                <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-600)' }}>{p.telefone || '—'}</td>
-                <td style={{ padding: '14px 20px' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: p.status === 'Ativo' ? 'var(--mint)' : 'var(--gray-100)', color: p.status === 'Ativo' ? 'var(--dark)' : 'var(--gray-500)' }}>
-                    {p.status}
-                  </span>
-                </td>
-                <td style={{ padding: '14px 20px' }}>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={() => openView(p)} title="Visualizar" style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}><Eye size={15} /></button>
-                    <button onClick={() => openEdit(p)} title="Editar" style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber-600)' }}><Pencil size={15} /></button>
-                    {!readOnly && (
-                      <button onClick={() => setConfirmDelete(p.id)} title="Excluir" style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--red-500)' }}><Trash2 size={15} /></button>
+      </div>{/* fim área scrollável */}
+
+      {/* ─── Modal de Cadastro/Edição/Visualização ─────────────────────────── */}
+      {modal.open && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 720, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+
+            {/* Cabeçalho do modal */}
+            <div style={{ padding: '20px 24px 0', borderBottom: '1px solid var(--gray-100)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  {/* Avatar */}
+                  <div style={{ width: 52, height: 52, borderRadius: 50, background: 'var(--mint)', border: '2px solid var(--light)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', flexShrink: 0, cursor: !isView ? 'pointer' : 'default' }}
+                    onClick={() => !isView && fileRef.current?.click()}>
+                    {d.foto ? <img src={d.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : <User size={22} color="var(--light)" />}
+                    {!isView && (
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity .2s' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.opacity = '1'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.opacity = '0'; }}>
+                        <Camera size={16} color="#fff" />
+                      </div>
                     )}
                   </div>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 14 }}>
-                  Nenhum paciente encontrado
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--gray-500)', borderTop: '1px solid var(--gray-100)' }}>
-          <strong>{filtered.length}</strong> paciente{filtered.length !== 1 ? 's' : ''}
-        </div>
-      </div>
-
-      {/* Modal */}
-      {modal.open && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 20, width: 560, maxHeight: '90vh', overflow: 'auto', padding: 32, position: 'relative' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)' }}>
-                {modal.mode === 'add' ? 'Novo Paciente' : modal.mode === 'edit' ? 'Editar Paciente' : 'Dados do Paciente'}
-              </h2>
-              <button onClick={closeModal} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} /></button>
-            </div>
-
-            {/* Foto */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
-              <div style={{ width: 80, height: 80, borderRadius: 16, background: 'var(--mint)', border: '2px dashed var(--light)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: modal.data.foto ? 'hidden' : 'visible', cursor: !isView ? 'pointer' : 'default' }}
-                onClick={() => !isView && fileRef.current?.click()}>
-                {modal.data.foto ? <img src={modal.data.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <User size={28} color="var(--light)" />}
-                {!isView && (
-                  <div style={{ position: 'absolute', bottom: -8, right: -8, width: 24, height: 24, borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Camera size={12} color="#fff" />
-                  </div>
-                )}
-              </div>
-              <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 12 }}>FOTO DO PACIENTE (OPCIONAL)</p>
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
-            </div>
-
-            {/* Seção: Dados Pessoais */}
-            <SectionTitle label="Dados Pessoais" />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-              <Field label="Nome Completo" field="nome" placeholder="Ex: Maria Oliveira da Silva" required />
-              <Field label="Nome Social" field="nomeSocial" placeholder="Apelido ou nome social" />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label="CPF" field="cpf" placeholder="000.000.000-00" required />
-                <Field label="Data de Nascimento" field="dataNasc" type="date" required />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Etnia</label>
-                  <select value={modal.data.etnia || ''} onChange={e => setModal(m => ({ ...m, data: { ...m.data, etnia: e.target.value } }))} disabled={isView} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)' }}>
-                    <option value="">Selecione</option>
-                    {['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena', 'Não informada'].map(o => <option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Raça</label>
-                  <select value={modal.data.raca || ''} onChange={e => setModal(m => ({ ...m, data: { ...m.data, raca: e.target.value } }))} disabled={isView} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)' }}>
-                    <option value="">Selecione</option>
-                    {['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena'].map(o => <option key={o}>{o}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Seção: Contato */}
-            <SectionTitle label="Contato" />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-              <Field label="Telefone/WhatsApp" field="telefone" placeholder="(00) 00000-0000" />
-              <Field label="E-mail" field="email" type="email" placeholder="paciente@exemplo.com" />
-            </div>
-
-            {/* Observações — visible para todos */}
-            <SectionTitle label="Observações" />
-            <div style={{ marginBottom: 20 }}>
-              <textarea
-                value={modal.data.observacoes || ''}
-                onChange={e => setModal(m => ({ ...m, data: { ...m.data, observacoes: e.target.value } }))}
-                disabled={isView}
-                placeholder="Alergias, restrições, notas relevantes..."
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)', resize: 'vertical', fontFamily: 'Montserrat, sans-serif' }}
-              />
-            </div>
-
-            {/* Informações médicas — ocultas para secretaria em modo view limitado */}
-            {!readOnly && (
-              <>
-                <SectionTitle label="Informações Médicas" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Convênio Médico</label>
-                    <select value={modal.data.convenio || 'Particular'} onChange={e => setModal(m => ({ ...m, data: { ...m.data, convenio: e.target.value as ConvenioType } }))} disabled={isView} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)' }}>
-                      {CONVENIOS.map(c => <option key={c}>{c}</option>)}
-                    </select>
+                    <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-800)' }}>
+                      {modal.mode === 'add' ? 'Dados do Paciente' : modal.mode === 'edit' ? 'Editar Paciente' : 'Prontuário'}
+                    </h2>
+                    <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+                      {modal.mode === 'add' ? 'Preencha os dados abaixo para cadastrar' : d.nome || 'Visualização completa'}
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Status</label>
-                    <select value={modal.data.status || 'Ativo'} onChange={e => setModal(m => ({ ...m, data: { ...m.data, status: e.target.value as StatusPaciente } }))} disabled={isView} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--background)' }}>
-                      <option>Ativo</option>
-                      <option>Inativo</option>
-                    </select>
-                  </div>
+                  {!isView && (
+                    <button onClick={() => setField('isVip', !d.isVip)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, border: `1px solid ${d.isVip ? '#f59e0b' : 'var(--gray-200)'}`, background: d.isVip ? '#fef3c7' : 'var(--gray-50)', fontSize: 11, fontWeight: 700, color: d.isVip ? '#d97706' : 'var(--gray-400)', cursor: 'pointer' }}>
+                      <Star size={12} fill={d.isVip ? '#f59e0b' : 'none'} color={d.isVip ? '#f59e0b' : 'var(--gray-400)'} />
+                      VIP
+                    </button>
+                  )}
                 </div>
-              </>
-            )}
-
-            {/* Convênio para secretaria (somente visualização) */}
-            {readOnly && (
-              <div style={{ marginBottom: 20 }}>
-                <SectionTitle label="Convênio" />
-                <div style={{ padding: '10px 12px', background: 'var(--gray-50)', borderRadius: 8, fontSize: 13, color: 'var(--gray-600)', border: '1px solid var(--gray-200)' }}>
-                  {modal.data.convenio || 'Particular'}
-                </div>
-              </div>
-            )}
-
-            {!isView && (
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                <button onClick={closeModal} style={{ padding: '10px 20px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
-                <button onClick={handleSave} style={{ padding: '10px 24px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                  {modal.mode === 'add' ? 'Cadastrar Paciente' : 'Salvar Alterações'}
+                <button onClick={closeModal} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={15} />
                 </button>
+              </div>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
+
+              {/* Aviso de duplicidade */}
+              {duplicateWarn && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--amber-100)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
+                  <AlertCircle size={14} color="#d97706" />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#d97706' }}>Já existe um paciente com este CPF cadastrado. Confirme para continuar mesmo assim.</span>
+                  <button onClick={() => { setDuplicateWarn(false); if (modal.mode === 'add') onAdd(modal.data as Omit<Paciente, 'id'>); closeModal(); }}
+                    style={{ marginLeft: 'auto', padding: '4px 10px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                    Confirmar mesmo assim
+                  </button>
+                </div>
+              )}
+
+              {/* Abas */}
+              <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
+                {FORM_TABS.map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                    style={{ padding: '9px 16px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: `2px solid ${activeTab === tab.id ? 'var(--primary)' : 'transparent'}`, color: activeTab === tab.id ? 'var(--primary)' : 'var(--gray-500)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s' }}>
+                    {tab.label}
+                    {/* Indicador de erro na aba */}
+                    {tab.id === 'dados' && (errors.nome || errors.cpf || errors.dataNasc) && (
+                      <span style={{ marginLeft: 4, width: 6, height: 6, borderRadius: '50%', background: 'var(--red-500)', display: 'inline-block' }} />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Conteúdo da aba — scrollável */}
+            <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+
+              {/* ── ABA: Dados Pessoais ── */}
+              {activeTab === 'dados' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <SectionHeader label="Identificação" icon={User} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <FieldInput label="Nome Completo" value={d.nome} onChange={v => setField('nome', v)} required disabled={isView} error={errors.nome} placeholder="Ex: Maria Oliveira da Silva" />
+                    <FieldInput label="Nome Social" value={d.nomeSocial || ''} onChange={v => setField('nomeSocial', v)} disabled={isView} placeholder="Apelido ou nome social" />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', v)} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" />
+                    <FieldInput label="RG" value={d.rg || ''} onChange={v => setField('rg', v)} disabled={isView} placeholder="00.000.000-0" />
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Outros documentos</label>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <select value={d.outroDocTipo || ''} onChange={e => setField('outroDocTipo', e.target.value)} disabled={isView}
+                          style={{ flex: 1, padding: '9px 8px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff', cursor: isView ? 'default' : 'pointer' }}>
+                          <option value="">Selecione</option>
+                          {TIPOS_DOC.map(t => <option key={t}>{t}</option>)}
+                        </select>
+                        <input value={d.outroDocNumero || ''} onChange={e => setField('outroDocNumero', e.target.value)} disabled={isView}
+                          placeholder="Número" style={{ flex: 1, padding: '9px 8px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff' }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    {/* Sexo */}
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 8 }}>Sexo</label>
+                      <div style={{ display: 'flex', gap: 16 }}>
+                        {['Masculino', 'Feminino', 'Outro'].map(s => (
+                          <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--gray-700)', cursor: isView ? 'default' : 'pointer' }}>
+                            <input type="radio" name="sexo" value={s} checked={d.sexo === s}
+                              onChange={() => !isView && setField('sexo', s)} disabled={isView}
+                              style={{ accentColor: 'var(--primary)' }} />
+                            {s}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} type="date" required disabled={isView} error={errors.dataNasc} />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <FieldSelect label="Etnia" value={d.etnia || ''} onChange={v => setField('etnia', v)} options={ETNIAS} disabled={isView} />
+                    <FieldSelect label="Raça" value={d.raca || ''} onChange={v => setField('raca', v)} options={RACAS} disabled={isView} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <FieldInput label="Naturalidade" value={d.naturalidade || ''} onChange={v => setField('naturalidade', v)} disabled={isView} placeholder="Cidade de nascimento" />
+                    <FieldSelect label="Nacionalidade" value={d.nacionalidade || ''} onChange={v => setField('nacionalidade', v)} options={NACIONALIDADES} disabled={isView} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <FieldInput label="Profissão" value={d.profissao || ''} onChange={v => setField('profissao', v)} disabled={isView} placeholder="Ex: Engenheiro" />
+                    <FieldSelect label="Estado Civil" value={d.estadoCivil || ''} onChange={v => setField('estadoCivil', v)} options={ESTADOS_CIVIS} disabled={isView} />
+                  </div>
+
+                  <SectionHeader label="Filiação e Responsável" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <FieldInput label="Nome da mãe" value={d.nomeMae || ''} onChange={v => setField('nomeMae', v)} disabled={isView} />
+                    <FieldInput label="Profissão da mãe" value={d.profissaoMae || ''} onChange={v => setField('profissaoMae', v)} disabled={isView} />
+                    <FieldInput label="Nome do pai" value={d.nomePai || ''} onChange={v => setField('nomePai', v)} disabled={isView} />
+                    <FieldInput label="Profissão do pai" value={d.profissaoPai || ''} onChange={v => setField('profissaoPai', v)} disabled={isView} />
+                    <FieldInput label="Nome do responsável" value={d.nomeResponsavel || ''} onChange={v => setField('nomeResponsavel', v)} disabled={isView} />
+                    <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', v)} disabled={isView} placeholder="000.000.000-00" />
+                    <FieldInput label="Nome do esposo(a)" value={d.nomeEsposo || ''} onChange={v => setField('nomeEsposo', v)} disabled={isView} />
+                    <FieldInput label="Código legado" value={d.codigoLegado || ''} onChange={v => setField('codigoLegado', v)} disabled={isView} placeholder="ID de outro sistema" />
+                  </div>
+
+                  {/* Toggles */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0' }}>
+                    <Toggle label="RN na Guia do convênio" value={d.rnGuiaConvenio || false} onChange={v => !isView && setField('rnGuiaConvenio', v)} disabled={isView} />
+                    <Toggle label="Paciente VIP" value={d.isVip || false} onChange={v => !isView && setField('isVip', v)} disabled={isView} />
+                  </div>
+
+                  {/* Status */}
+                  {!readOnly && (
+                    <div style={{ maxWidth: 200 }}>
+                      <FieldSelect label="Status" value={d.status} onChange={v => setField('status', v as StatusPaciente)} options={['Ativo', 'Inativo']} disabled={isView} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── ABA: Contato ── */}
+              {activeTab === 'contato' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <SectionHeader label="Contato" icon={Phone} />
+                  <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" disabled={isView} placeholder="paciente@exemplo.com" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', v)} disabled={isView} placeholder="(79) 99000-0000" />
+                    <FieldInput label="Telefone 2" value={d.telefone2 || ''} onChange={v => setField('telefone2', v)} disabled={isView} placeholder="(79) 3000-0000" />
+                  </div>
+                </div>
+              )}
+
+              {/* ── ABA: Endereço ── */}
+              {activeTab === 'endereco' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <SectionHeader label="Endereço" icon={MapPin} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+                    <FieldInput label="CEP" value={d.cep || ''} onChange={v => setField('cep', v)} disabled={isView} placeholder="00000-000" />
+                    <FieldInput label="Logradouro / Endereço" value={d.logradouro || ''} onChange={v => setField('logradouro', v)} disabled={isView} placeholder="Rua, Avenida..." />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 12 }}>
+                    <FieldInput label="Número" value={d.numero || ''} onChange={v => setField('numero', v)} disabled={isView} placeholder="Ex: 123" />
+                    <FieldInput label="Complemento" value={d.complemento || ''} onChange={v => setField('complemento', v)} disabled={isView} placeholder="Apto, Bloco..." />
+                    <FieldInput label="Bairro" value={d.bairro || ''} onChange={v => setField('bairro', v)} disabled={isView} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+                    <FieldInput label="Cidade" value={d.cidade || ''} onChange={v => setField('cidade', v)} disabled={isView} />
+                    <FieldInput label="Estado" value={d.estado || ''} onChange={v => setField('estado', v)} disabled={isView} placeholder="Ex: Sergipe" />
+                  </div>
+                </div>
+              )}
+
+              {/* ── ABA: Informações Médicas ── */}
+              {activeTab === 'medico' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <SectionHeader label="Informações Médicas" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+                    <FieldSelect label="Tipo Sanguíneo" value={d.tipoSanguineo || ''} onChange={v => setField('tipoSanguineo', v)} options={TIPOS_SANGUINEOS} disabled={isView} />
+                    <FieldInput label="Peso (kg)" value={d.peso || ''} onChange={v => setField('peso', v)} type="number" disabled={isView} placeholder="Ex: 70" />
+                    <FieldInput label="Altura (m)" value={d.altura || ''} onChange={v => setField('altura', v)} type="number" disabled={isView} placeholder="Ex: 1.75" />
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>IMC</label>
+                      <div style={{ padding: '9px 12px', background: imc ? 'var(--mint)' : 'var(--gray-50)', borderRadius: 8, fontSize: 13, fontWeight: 700, color: imc ? 'var(--dark)' : 'var(--gray-400)', border: '1px solid var(--gray-200)' }}>
+                        {imc ? `${imc} kg/m²` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Alergias</label>
+                    <textarea value={d.alergias || ''} onChange={e => !isView && setField('alergias', e.target.value)} disabled={isView} rows={3}
+                      placeholder="Ex: AAS, Dipirona, látex..."
+                      style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff', resize: 'vertical', fontFamily: 'Montserrat, sans-serif' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── ABA: Convênio ── */}
+              {activeTab === 'convenio' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <SectionHeader label="Informações de Convênio" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <FieldSelect label="Convênio" value={d.convenio} onChange={v => setField('convenio', v as ConvenioType)} options={CONVENIOS} disabled={isView || readOnly} />
+                    <FieldInput label="Plano" value={d.planoConvenio || ''} onChange={v => setField('planoConvenio', v)} disabled={isView} placeholder="Ex: Enfermaria, Apartamento..." />
+                    <FieldInput label="Nº de Matrícula" value={d.matriculaConvenio || ''} onChange={v => setField('matriculaConvenio', v)} disabled={isView} placeholder="Número da carteirinha" />
+                    <FieldInput label="Validade da Carteira" value={d.validadeCarteira || ''} onChange={v => setField('validadeCarteira', v)} type="date" disabled={isView} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── ABA: Observações ── */}
+              {activeTab === 'obs' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <SectionHeader label="Observações e Notas" />
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>Notas clínicas e observações gerais</label>
+                    <textarea value={d.observacoes || ''} onChange={e => !isView && setField('observacoes', e.target.value)} disabled={isView} rows={6}
+                      placeholder="Alergias, restrições, notas relevantes sobre o paciente..."
+                      style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff', resize: 'vertical', fontFamily: 'Montserrat, sans-serif' }} />
+                    <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'right', marginTop: 4 }}>{(d.observacoes || '').length} caracteres</div>
+                  </div>
+
+                  {/* Histórico de alterações — informativo */}
+                  <div style={{ background: 'var(--gray-50)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--gray-100)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Histórico</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                      {modal.mode === 'add' ? 'Registro novo — ainda não foi salvo.' : `Último acesso registrado pelo sistema.`}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rodapé do modal */}
+            {!isView && (
+              <div style={{ padding: '14px 24px', borderTop: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--gray-50)' }}>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                  Campos com <span style={{ color: 'var(--red-500)', fontWeight: 700 }}>*</span> são obrigatórios
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={closeModal} style={{ padding: '10px 20px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
+                  <button onClick={handleSave} style={{ padding: '10px 24px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
+                    {modal.mode === 'add' ? '+ Salvar Paciente' : 'Salvar Alterações'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Confirm Delete */}
+      {/* ─── Confirm Delete ─────────────────────────────────────────────────── */}
       {confirmDelete && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 360, width: '90%' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Confirmar exclusão</h3>
-            <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 20 }}>Tem certeza que deseja excluir este paciente? Esta ação não pode ser desfeita.</p>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 380, width: '90%', boxShadow: '0 12px 32px rgba(0,0,0,0.15)' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+              <Trash2 size={20} color="var(--red-500)" />
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Excluir paciente?</h3>
+            <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 20 }}>
+              Esta ação é <strong>irreversível</strong>. Todos os dados do paciente serão removidos permanentemente do sistema.
+            </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setConfirmDelete(null)} style={{ padding: '9px 18px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={() => { onDelete(confirmDelete); setConfirmDelete(null); }} style={{ padding: '9px 18px', background: 'var(--red-500)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Excluir</button>
+              <button onClick={() => setConfirmDelete(null)} style={{ padding: '9px 18px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
+              <button onClick={() => { onDelete(confirmDelete); setConfirmDelete(null); }}
+                style={{ padding: '9px 18px', background: 'var(--red-500)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                Excluir
+              </button>
             </div>
           </div>
         </div>
@@ -350,12 +783,26 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   );
 }
 
-function SectionTitle({ label }: { label: string }) {
+// ─── Componentes auxiliares ───────────────────────────────────────────────────
+function ActionBtn({ icon: Icon, color, title, onClick }: { icon: React.ElementType; color: string; title: string; onClick: () => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-      <div style={{ height: 1, flex: 1, background: 'var(--gray-100)' }} />
-      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: 0.8, whiteSpace: 'nowrap' }}>{label}</span>
-      <div style={{ height: 1, flex: 1, background: 'var(--gray-100)' }} />
-    </div>
+    <button title={title} onClick={onClick}
+      style={{ width: 30, height: 30, borderRadius: 7, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color, transition: 'background .15s' }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--gray-100)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none'; }}>
+      <Icon size={14} />
+    </button>
+  );
+}
+
+function Toggle({ label, value, onChange, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: disabled ? 'default' : 'pointer', userSelect: 'none' }}>
+      <div onClick={() => !disabled && onChange(!value)}
+        style={{ width: 36, height: 20, borderRadius: 10, background: value ? 'var(--primary)' : 'var(--gray-300)', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+        <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: value ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+      </div>
+      <span style={{ fontSize: 13, color: 'var(--gray-600)' }}>{label}</span>
+    </label>
   );
 }
