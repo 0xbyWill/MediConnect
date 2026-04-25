@@ -119,7 +119,7 @@ export default function App() {
           pacientes={pacientes}
           onSearchNavigate={handleSearchNavigate}
         />
-        <main style={{ flex: 1, minWidth: 0, width: '100%', overflow: 'hidden', display: 'flex' }}>
+        <main style={{ flex: 1, minWidth: 0, width: '100%', overflow: 'hidden', display: 'flex', position: 'relative' }}>
           {currentPage === 'dashboard' && (
             <Dashboard
               pacientes={pacientes}
