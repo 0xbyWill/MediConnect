@@ -118,7 +118,9 @@ export interface Agendamento {
   tipo: TipoConsulta;
   status: StatusAgendamento;
   observacoes?: string;
-  duracao?: number;
+  duracao?: string;
+  enviarEmail?: boolean;
+  enviarWhatsapp?: boolean;
 }
 
 // ─── Laudo ────────────────────────────────────────────────────────────────────
@@ -190,7 +192,7 @@ export function apiAppointmentToAgendamento(a: ApiAppointment): Agendamento {
     tipo:        (a.type as TipoConsulta) ?? 'Primeira Consulta',
     status:      statusMap[a.status] ?? 'pendente',
     observacoes: a.notes,
-    duracao:     a.duration_minutes,
+    duracao: a.duration_minutes ? `${a.duration_minutes} min` : undefined,
   };
 }
 
@@ -206,7 +208,7 @@ export function agendamentoToApiAppointment(
     doctor_id:        a.medicoId ?? '',
     patient_id:       a.pacienteId,
     scheduled_at:     `${a.data}T${a.hora}:00Z`,
-    duration_minutes: a.duracao ?? 30,
+    duration_minutes: a.duracao ? parseInt(a.duracao) : 30,
     status:           statusMap[a.status],
     notes:            a.observacoes,
     type:             a.tipo,
