@@ -88,10 +88,18 @@ export default function Agenda({ agendamentos, pacientes, onAdd, onUpdate, onDel
   // ── Atalhos de teclado ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Não ativa atalhos se modal aberto
       if (modal.open) return;
-      if (e.key === 'c' || e.key === 'C') { setActiveTab('calendario'); setShiftAnnounce('Calendário aberto'); setTimeout(() => setShiftAnnounce(''), 2000); }
-      if (e.key === 'f' || e.key === 'F') { setActiveTab('fila'); setShiftAnnounce('Fila de espera aberta'); setTimeout(() => setShiftAnnounce(''), 2000); }
-      if (e.key === 'n' || e.key === 'N') openModal();
+      // Não ativa atalhos se o foco estiver em input, textarea, select ou elemento editável
+      const tag = (e.target as HTMLElement).tagName.toLowerCase();
+      const isEditable = (e.target as HTMLElement).isContentEditable;
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || isEditable) return;
+      // Não ativa com modificadores
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      if (e.key === 'c' || e.key === 'C') { setActiveTab('calendario'); setShiftAnnounce('Calendário aberto (C)'); setTimeout(() => setShiftAnnounce(''), 2000); }
+      if (e.key === 'f' || e.key === 'F') { setActiveTab('fila'); setShiftAnnounce('Fila de espera aberta (F)'); setTimeout(() => setShiftAnnounce(''), 2000); }
+      if (e.key === 'n' || e.key === 'N') { openModal(); setShiftAnnounce('Novo agendamento (N)'); setTimeout(() => setShiftAnnounce(''), 2000); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -169,8 +177,10 @@ export default function Agenda({ agendamentos, pacientes, onAdd, onUpdate, onDel
             <p style={{ fontSize: 12, color: 'var(--gray-400)', margin: '2px 0 0' }}>
               Navegue pelos atalhos: Calendário{' '}
               <kbd style={{ background: 'var(--gray-100)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>C</kbd>
-              {' '}ou Fila de espera{' '}
+              {' '}· Fila de espera{' '}
               <kbd style={{ background: 'var(--gray-100)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>F</kbd>
+              {' '}· Novo agendamento{' '}
+              <kbd style={{ background: 'var(--gray-100)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>N</kbd>
             </p>
           </div>
           <button onClick={() => openModal()}
