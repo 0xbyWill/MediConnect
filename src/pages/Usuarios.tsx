@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { UserCog, Plus, Pencil, Trash2, X, Shield } from 'lucide-react';
 import { doctorsApi, usersApi } from '../lib/api';
-import type { ApiDoctor, CreateUserResponse } from '../lib/api';
+import type { ApiDoctor, ApiManagedUser, CreateUserResponse } from '../lib/api';
 import type { UserRole } from '../types';
 
 interface UsuarioItem {
@@ -58,6 +58,19 @@ const emptyForm: UsuarioForm = {
 
 const digitsOnly = (value = '') => value.replace(/\D/g, '');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const cellBaseStyle: React.CSSProperties = {
+  padding: '14px 20px',
+  minWidth: 0,
+  overflow: 'hidden',
+};
+const ellipsisStyle: React.CSSProperties = {
+  display: 'block',
+  minWidth: 0,
+  maxWidth: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
 
 function formatSaveError(err: unknown): string {
   const msg = err instanceof Error ? err.message : 'Erro ao salvar usuário.';
@@ -78,6 +91,46 @@ function responseId(response: ApiDoctor | CreateUserResponse): string {
   return Date.now().toString();
 }
 
+function normalizeUserRole(role?: string): UserRole {
+  const r = role?.toLowerCase().trim();
+  if (r === 'medico' || r === 'doctor' || r === 'physician') return 'medico';
+  if (r === 'secretaria' || r === 'secretary' || r === 'receptionist') return 'secretaria';
+  return 'gestao';
+}
+
+function doctorToUsuario(doctor: ApiDoctor): UsuarioItem {
+  return {
+    id: doctor.id,
+    nome: doctor.full_name,
+    email: doctor.email ?? '',
+    role: 'medico',
+    status: doctor.active === false ? 'inativo' : 'ativo',
+    cpf: doctor.cpf,
+    telefone: doctor.phone_mobile,
+    crm: doctor.crm,
+    crmUf: doctor.crm_uf,
+    especialidade: doctor.specialty,
+  };
+}
+
+function managedUserToUsuario(user: ApiManagedUser): UsuarioItem {
+  return {
+    id: user.id,
+    nome: user.full_name,
+    email: user.email,
+    role: normalizeUserRole(user.role),
+    status: user.active === false ? 'inativo' : 'ativo',
+    cpf: user.cpf,
+    telefone: user.phone,
+  };
+}
+
+function mergeUsuarios(items: UsuarioItem[]) {
+  return Array.from(
+    new Map(items.map(item => [`${item.role}:${item.email || item.id}`, item])).values()
+  );
+}
+
 export default function Usuarios() {
   const [usuarios, setUsuarios] = useState<UsuarioItem[]>([]);
   const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit'; data: UsuarioForm & { id?: string } }>({ open: false, mode: 'add', data: emptyForm });
@@ -85,27 +138,25 @@ export default function Usuarios() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
 
   useEffect(() => {
     let active = true;
-    doctorsApi.list().then(doctors => {
+
+    Promise.all([
+      doctorsApi.list().catch(() => [] as ApiDoctor[]),
+      usersApi.list().catch(() => [] as ApiManagedUser[]),
+    ]).then(([doctors, managedUsers]) => {
       if (!active) return;
-      setUsuarios(doctors.map(doctor => ({
-        id: doctor.id,
-        nome: doctor.full_name,
-        email: doctor.email ?? '',
-        role: 'medico',
-        status: doctor.active === false ? 'inativo' : 'ativo',
-        cpf: doctor.cpf,
-        telefone: doctor.phone_mobile,
-        crm: doctor.crm,
-        crmUf: doctor.crm_uf,
-        especialidade: doctor.specialty,
-      })));
+      setUsuarios(mergeUsuarios([
+        ...doctors.map(doctorToUsuario),
+        ...managedUsers.map(managedUserToUsuario),
+      ]));
     }).catch(err => {
-      const msg = err instanceof Error ? err.message : 'Erro ao listar médicos.';
+      const msg = err instanceof Error ? err.message : 'Erro ao listar usuários.';
       setFormError(msg);
     });
+
     return () => { active = false; };
   }, []);
 
@@ -244,6 +295,10 @@ export default function Usuarios() {
     setConfirmDelete(null);
   };
 
+  const filteredUsuarios = roleFilter
+    ? usuarios.filter(u => u.role === roleFilter)
+    : usuarios;
+
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
@@ -271,8 +326,39 @@ export default function Usuarios() {
         })}
       </div>
 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Filtro de perfil
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+            {filteredUsuarios.length} usuário{filteredUsuarios.length === 1 ? '' : 's'} exibido{filteredUsuarios.length === 1 ? '' : 's'}
+          </div>
+        </div>
+
+        <select
+          value={roleFilter}
+          onChange={e => setRoleFilter(e.target.value as UserRole | '')}
+          style={{ minWidth: 220, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, outline: 'none', background: '#fff', color: 'var(--gray-700)', cursor: 'pointer' }}
+        >
+          <option value="">Todos os perfis</option>
+          <option value="medico">Médico</option>
+          <option value="gestao">Gestão</option>
+          <option value="secretaria">Secretaria</option>
+        </select>
+      </div>
+
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflow: 'auto', maxWidth: '100%' }}>
-        <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse' }}>
+        <table style={{ width: '100%', minWidth: 860, maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+          <colgroup>
+            <col style={{ width: '28%' }} />
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '6%' }} />
+            <col style={{ width: '4%' }} />
+          </colgroup>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--gray-100)' }}>
               {['Usuário', 'E-mail', 'Perfil', 'CPF/CRM', 'Telefone', 'Status', 'Ações'].map(h => (
@@ -281,39 +367,46 @@ export default function Usuarios() {
             </tr>
           </thead>
           <tbody>
-            {usuarios.map(u => {
+            {filteredUsuarios.map(u => {
               const rs = ROLE_COLOR[u.role];
               return (
                 <tr key={u.id} style={{ borderBottom: '1px solid var(--gray-50)' }}>
-                  <td style={{ padding: '14px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <td style={cellBaseStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--dark)', flexShrink: 0 }}>
                         {u.nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
                       </div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{u.nome}</div>
-                        {u.especialidade && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{u.especialidade}</div>}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div title={u.nome} style={{ ...ellipsisStyle, fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{u.nome}</div>
+                        {u.especialidade && <div title={u.especialidade} style={{ ...ellipsisStyle, fontSize: 11, color: 'var(--gray-400)' }}>{u.especialidade}</div>}
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-600)' }}>{u.email}</td>
-                  <td style={{ padding: '14px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <td style={{ ...cellBaseStyle, fontSize: 13, color: 'var(--gray-600)' }}>
+                    <span title={u.email} style={ellipsisStyle}>{u.email}</span>
+                  </td>
+                  <td style={cellBaseStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                       <Shield size={13} color={rs.color} />
                       <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: rs.bg, color: rs.color }}>{ROLE_LABEL[u.role]}</span>
                     </div>
                   </td>
-                  <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-500)' }}>
-                    {u.role === 'medico' ? `${u.crm || '-'}${u.crmUf ? `/${u.crmUf}` : ''}` : u.cpf || '—'}
+                  <td style={{ ...cellBaseStyle, fontSize: 13, color: 'var(--gray-500)' }}>
+                    {(() => {
+                      const documentText = u.role === 'medico' ? `${u.crm || '-'}${u.crmUf ? `/${u.crmUf}` : ''}` : u.cpf || '—';
+                      return <span title={documentText} style={ellipsisStyle}>{documentText}</span>;
+                    })()}
                   </td>
-                  <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-500)' }}>{u.telefone || '—'}</td>
-                  <td style={{ padding: '14px 20px' }}>
+                  <td style={{ ...cellBaseStyle, fontSize: 13, color: 'var(--gray-500)' }}>
+                    <span title={u.telefone || '—'} style={ellipsisStyle}>{u.telefone || '—'}</span>
+                  </td>
+                  <td style={cellBaseStyle}>
                     <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: u.status === 'ativo' ? 'var(--mint)' : 'var(--gray-100)', color: u.status === 'ativo' ? 'var(--dark)' : 'var(--gray-400)' }}>
                       {u.status === 'ativo' ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
-                  <td style={{ padding: '14px 20px' }}>
-                    <div style={{ display: 'flex', gap: 4 }}>
+                  <td style={cellBaseStyle}>
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                       <button onClick={() => openEdit(u)} style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber-600)' }}><Pencil size={14} /></button>
                       <button onClick={() => setConfirmDelete(u.id)} style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--red-500)' }}><Trash2 size={14} /></button>
                     </div>

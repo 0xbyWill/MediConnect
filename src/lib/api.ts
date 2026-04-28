@@ -150,6 +150,48 @@ export interface ApiUserInfo {
   role?: string;
 }
 
+export interface ApiManagedUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: ApiRole | string;
+  phone?: string;
+  cpf?: string;
+  active?: boolean;
+}
+
+interface ApiProfileRecord {
+  id?: string;
+  user_id?: string;
+  auth_user_id?: string;
+  email?: string;
+  full_name?: string;
+  name?: string;
+  display_name?: string;
+  phone?: string;
+  phone_mobile?: string;
+  cpf?: string;
+  role?: string;
+  roles?: string[];
+  active?: boolean;
+  disabled?: boolean;
+}
+
+interface ApiUserRoleRecord {
+  user_id?: string;
+  id?: string;
+  role?: string;
+}
+
+type ApiUserListResponse =
+  | ApiProfileRecord[]
+  | {
+      users?: ApiProfileRecord[];
+      profiles?: ApiProfileRecord[];
+      data?: ApiProfileRecord[];
+      items?: ApiProfileRecord[];
+    };
+
 export interface ApiDoctorAvailability {
   id: string;
   doctor_id: string;
@@ -260,6 +302,72 @@ export const authApi = {
 export const usersApi = {
   currentInfo: () =>
     request<ApiUserInfo>('/functions/v1/user-info', { method: 'POST' }),
+
+  list: async (): Promise<ApiManagedUser[]> => {
+    const normalizeRole = (role?: string): ApiManagedUser['role'] => {
+      const r = role?.toLowerCase().trim();
+      if (r === 'admin' || r === 'gestor' || r === 'gestao' || r === 'manager') return 'admin';
+      if (r === 'secretaria' || r === 'secretary' || r === 'receptionist') return 'secretaria';
+      if (r === 'medico' || r === 'doctor' || r === 'physician') return 'medico';
+      return r || 'admin';
+    };
+
+    const rowsFromResponse = (response: ApiUserListResponse): ApiProfileRecord[] => {
+      if (Array.isArray(response)) return response;
+      return response.users ?? response.profiles ?? response.data ?? response.items ?? [];
+    };
+
+    const toManagedUsers = (rows: ApiProfileRecord[], roles = new Map<string, string>()) =>
+      rows
+        .map(row => {
+          const id = row.id ?? row.user_id ?? row.auth_user_id ?? '';
+          const email = row.email ?? '';
+          const fullName = row.full_name ?? row.name ?? row.display_name ?? email.split('@')[0] ?? '';
+          const role = normalizeRole(row.role ?? row.roles?.[0] ?? roles.get(id));
+          return {
+            id,
+            email,
+            full_name: fullName,
+            role,
+            phone: row.phone ?? row.phone_mobile,
+            cpf: row.cpf,
+            active: row.disabled === true ? false : row.active !== false,
+          };
+        })
+        .filter(user => user.id && user.full_name);
+
+    const functionCandidates: Array<{ path: string; method: 'GET' | 'POST' }> = [
+      { path: '/functions/v1/list-users', method: 'GET' },
+      { path: '/functions/v1/list-users', method: 'POST' },
+      { path: '/functions/v1/users', method: 'GET' },
+      { path: '/functions/v1/users', method: 'POST' },
+      { path: '/functions/v1/admin-users', method: 'GET' },
+      { path: '/functions/v1/admin-users', method: 'POST' },
+    ];
+
+    for (const candidate of functionCandidates) {
+      try {
+        const response = await request<ApiUserListResponse>(candidate.path, { method: candidate.method });
+        const users = toManagedUsers(rowsFromResponse(response));
+        if (users.length > 0) return users;
+      } catch {
+        // Continua tentando os demais contratos conhecidos.
+      }
+    }
+
+    const [profiles, userRoles] = await Promise.all([
+      request<ApiProfileRecord[]>('/rest/v1/profiles?select=*').catch(() => [] as ApiProfileRecord[]),
+      request<ApiUserRoleRecord[]>('/rest/v1/user_roles?select=*').catch(() => [] as ApiUserRoleRecord[]),
+    ]);
+
+    const roles = new Map(
+      userRoles
+        .map(row => [row.user_id ?? row.id ?? '', row.role ?? ''] as const)
+        .filter(([id, role]) => id && role)
+    );
+
+    return toManagedUsers(profiles, roles);
+  },
 
   create: (data: CreateUserPayload) =>
     request<CreateUserResponse>('/functions/v1/create-user', {
