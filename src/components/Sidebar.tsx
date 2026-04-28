@@ -53,7 +53,8 @@ export default function Sidebar({ currentPage, onNavigate, capacidade }: Sidebar
     <aside style={{
       width: 'clamp(88px, 18vw, var(--sidebar-w))',
       flexShrink: 0,
-      minHeight: '100dvh',
+      height: '100dvh',
+      minHeight: 0,
       background: 'linear-gradient(180deg, var(--darker) 0%, var(--dark) 100%)',
       display: 'flex',
       flexDirection: 'column',
@@ -110,7 +111,7 @@ export default function Sidebar({ currentPage, onNavigate, capacidade }: Sidebar
       )}
 
       {/* Nav */}
-      <nav style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
+      <nav style={{ padding: '10px 12px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {groups.map(group => (
           <div key={group.key}>
             <div style={{

@@ -153,11 +153,13 @@ export function apiPatientToPaciente(p: ApiPatient): Paciente {
     dataNasc:    p.birth_date ?? '',
     email:       p.email,
     telefone:    p.phone_mobile,
-    convenio:    (p.health_insurance as ConvenioType) ?? 'Particular',
-    status:      p.status === 'inactive' ? 'Inativo' : 'Ativo',
-    etnia:       p.etnia,
-    raca:        p.raca,
-    foto:        p.avatar_url,
+    convenio:    'Particular',
+    status:      'Ativo',
+    raca:        p.race,
+    sexo:        p.sex,
+    cidade:      p.city,
+    estado:      p.state,
+    observacoes: p.notes,
   };
 }
 
@@ -168,18 +170,31 @@ export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 
     birth_date:       p.dataNasc,
     email:            p.email,
     phone_mobile:     p.telefone,
-    health_insurance: p.convenio,
-    status:           p.status === 'Ativo' ? 'active' : 'inactive',
-    etnia:            p.etnia,
-    raca:             p.raca,
-    avatar_url:       p.foto,
+    race:             p.raca,
+    sex:              p.sexo,
+    city:             p.cidade,
+    state:            p.estado,
+    notes:            p.observacoes,
+  };
+}
+
+function splitApiDateTime(value: string) {
+  const direct = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
+  if (direct) {
+    return { data: direct[1], hora: `${direct[2]}:${direct[3]}` };
+  }
+
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return { data: '', hora: '' };
+
+  return {
+    data: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
+    hora: `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`,
   };
 }
 
 export function apiAppointmentToAgendamento(a: ApiAppointment): Agendamento {
-  const dt   = new Date(a.scheduled_at);
-  const data = dt.toISOString().split('T')[0];
-  const hora = `${String(dt.getUTCHours()).padStart(2,'0')}:${String(dt.getUTCMinutes()).padStart(2,'0')}`;
+  const { data, hora } = splitApiDateTime(a.scheduled_at);
   const statusMap: Record<string, StatusAgendamento> = {
     requested: 'pendente', confirmed: 'confirmado',
     completed: 'realizado', cancelled: 'cancelado',
@@ -189,7 +204,7 @@ export function apiAppointmentToAgendamento(a: ApiAppointment): Agendamento {
     pacienteId:  a.patient_id,
     medicoId:    a.doctor_id,
     data, hora,
-    tipo:        (a.type as TipoConsulta) ?? 'Primeira Consulta',
+    tipo:        'Primeira Consulta',
     status:      statusMap[a.status] ?? 'pendente',
     observacoes: a.notes,
     duracao: a.duration_minutes ? `${a.duration_minutes} min` : undefined,
@@ -211,7 +226,6 @@ export function agendamentoToApiAppointment(
     duration_minutes: a.duracao ? parseInt(a.duracao) : 30,
     status:           statusMap[a.status],
     notes:            a.observacoes,
-    type:             a.tipo,
     created_by:       createdBy,
   };
 }

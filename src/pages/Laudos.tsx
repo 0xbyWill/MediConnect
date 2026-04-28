@@ -228,7 +228,6 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
 
     setEditorContent(editorRef.current?.innerHTML || '');
     editorRef.current?.focus();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Aplica fonte — mesma estratégia ──
@@ -257,7 +256,6 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
 
     setEditorContent(editorRef.current?.innerHTML || '');
     editorRef.current?.focus();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Filtros ──
@@ -417,7 +415,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
   // VISÃO: LISTA
   // ─────────────────────────────────────────────────────────────────────────────
   if (view === 'lista') return (
-    <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+    <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
@@ -683,7 +681,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
   const pac = pacientes.find(p => p.id === editingLaudo.pacienteId);
 
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--background)', overflow: 'hidden' }}>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--background)', overflow: 'hidden', minHeight: 0 }}>
 
       {/* ── Cabeçalho do editor ── */}
       <div style={{ background: '#fff', borderBottom: '1px solid var(--gray-100)', flexShrink: 0 }}>
@@ -890,7 +888,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
             }}>
               <input
                 value={editingLaudo.exame || 'RELATÓRIO MÉDICO'}
-                onChange={e => setField('exame', e.target.value as any)}
+                onChange={e => setField('exame', e.target.value)}
                 style={{
                   width: '100%',
                   border: 'none',
@@ -979,7 +977,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <SideField label="CID"           value={editingLaudo.cid || ''}         onChange={v => setField('cid', v)}         placeholder="Ex: M54.5" />
               <SideField label="Data do Exame" value={editingLaudo.data || today}      onChange={v => setField('data', v)}        type="date" />
-              <SideField label="Solicitante"   value={editingLaudo.solicitante || ''} onChange={v => setField('solicitante', v as any)} placeholder="Nome do solicitante" />
+              <SideField label="Solicitante"   value={editingLaudo.solicitante || ''} onChange={v => setField('solicitante', v)} placeholder="Nome do solicitante" />
               <SideField label="Técnica/Exame" value={editingLaudo.tecnica || ''}     onChange={v => setField('tecnica', v)}     placeholder="Ex: Ecocardiograma" />
             </div>
           </div>

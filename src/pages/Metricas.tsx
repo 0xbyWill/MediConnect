@@ -1,4 +1,5 @@
 import { Activity, TrendingUp, TrendingDown, Users, Calendar, Clock, Star } from 'lucide-react';
+import type { ElementType } from 'react';
 import type { Paciente, Agendamento, Laudo } from '../types';
 
 interface MetricasProps {
@@ -7,16 +8,8 @@ interface MetricasProps {
   laudos: Laudo[];
 }
 
-export default function Metricas({ pacientes, agendamentos, laudos }: MetricasProps) {
-  const total = agendamentos.length;
-  const confirmados = agendamentos.filter(a => a.status === 'confirmado').length;
-  const cancelados = agendamentos.filter(a => a.status === 'cancelado').length;
-  const realizados = agendamentos.filter(a => a.status === 'realizado').length;
-  const taxaComp = total > 0 ? Math.round((realizados / total) * 100) : 0;
-  const taxaCanc = total > 0 ? Math.round((cancelados / total) * 100) : 0;
-  const laudosLiberados = laudos.filter(l => l.status === 'liberado').length;
-
-  const Gauge = ({ value, label, color }: { value: number; label: string; color: string }) => (
+function Gauge({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
     <div style={{ textAlign: 'center' }}>
       <div style={{ position: 'relative', width: 80, height: 80, margin: '0 auto 8px' }}>
         <svg viewBox="0 0 80 80" style={{ transform: 'rotate(-90deg)' }}>
@@ -31,8 +24,10 @@ export default function Metricas({ pacientes, agendamentos, laudos }: MetricasPr
       <div style={{ fontSize: 11, color: 'var(--gray-500)', fontWeight: 600 }}>{label}</div>
     </div>
   );
+}
 
-  const MetricCard = ({ label, value, sub, trend, icon: Icon, color }: { label: string; value: string | number; sub?: string; trend?: 'up' | 'down'; icon: React.ElementType; color: string }) => (
+function MetricCard({ label, value, sub, trend, icon: Icon, color }: { label: string; value: string | number; sub?: string; trend?: 'up' | 'down'; icon: ElementType; color: string }) {
+  return (
     <div style={{ background: '#fff', borderRadius: 14, padding: '18px 20px', border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
@@ -54,6 +49,16 @@ export default function Metricas({ pacientes, agendamentos, laudos }: MetricasPr
       </div>
     </div>
   );
+}
+
+export default function Metricas({ pacientes, agendamentos, laudos }: MetricasProps) {
+  const total = agendamentos.length;
+  const confirmados = agendamentos.filter(a => a.status === 'confirmado').length;
+  const cancelados = agendamentos.filter(a => a.status === 'cancelado').length;
+  const realizados = agendamentos.filter(a => a.status === 'realizado').length;
+  const taxaComp = total > 0 ? Math.round((realizados / total) * 100) : 0;
+  const taxaCanc = total > 0 ? Math.round((cancelados / total) * 100) : 0;
+  const laudosLiberados = laudos.filter(l => l.status === 'liberado').length;
 
   // Fluxo por hora (mock)
   const fluxoHoras = [
@@ -65,7 +70,7 @@ export default function Metricas({ pacientes, agendamentos, laudos }: MetricasPr
   const maxFluxo = Math.max(...fluxoHoras.map(h => h.valor));
 
   return (
-    <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 24 }}>
+    <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Métricas de Performance</h1>

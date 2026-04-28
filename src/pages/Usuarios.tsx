@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { UserCog, Plus, Pencil, Trash2, X, Shield, Eye, EyeOff } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { UserCog, Plus, Pencil, Trash2, X, Shield } from 'lucide-react';
+import { doctorsApi, usersApi } from '../lib/api';
+import type { ApiDoctor, CreateUserResponse } from '../lib/api';
 import type { UserRole } from '../types';
 
 interface UsuarioItem {
@@ -8,9 +10,15 @@ interface UsuarioItem {
   email: string;
   role: UserRole;
   status: 'ativo' | 'inativo';
+  cpf?: string;
+  telefone?: string;
+  senha?: string;
   crm?: string;
+  crmUf?: string;
   especialidade?: string;
 }
+
+type UsuarioForm = Omit<UsuarioItem, 'id'>;
 
 const ROLE_LABEL: Record<UserRole, string> = {
   medico:     'Médico',
@@ -19,39 +27,216 @@ const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 const ROLE_COLOR: Record<UserRole, { bg: string; color: string }> = {
-  medico:     { bg: 'var(--mint)',     color: 'var(--dark)' },
-  gestao:     { bg: '#ede9fe',         color: '#7c3aed' },
+  medico:     { bg: 'var(--mint)',      color: 'var(--dark)' },
+  gestao:     { bg: '#ede9fe',          color: '#7c3aed' },
   secretaria: { bg: 'var(--amber-100)', color: 'var(--amber-600)' },
 };
 
-const mockUsuarios: UsuarioItem[] = [
-  { id: 'u1', nome: 'Dr. User Profile', email: 'medico@mediconnect.com', role: 'medico', status: 'ativo', crm: 'CRM/SP 123456', especialidade: 'Cardiologista' },
-  { id: 'u2', nome: 'Coordenadora Ana', email: 'gestao@mediconnect.com', role: 'gestao', status: 'ativo' },
-  { id: 'u3', nome: 'Secretária Maria', email: 'secretaria@mediconnect.com', role: 'secretaria', status: 'ativo' },
-];
-
-const emptyForm: Omit<UsuarioItem, 'id'> & { senha: string } = {
-  nome: '', email: '', role: 'secretaria', status: 'ativo', crm: '', especialidade: '', senha: '',
+const ROLE_API: Record<UserRole, 'medico' | 'admin' | 'secretaria'> = {
+  medico:     'medico',
+  gestao:     'admin',
+  secretaria: 'secretaria',
 };
 
+const UF_OPTIONS = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
+  'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+];
+
+const emptyForm: UsuarioForm = {
+  nome: '',
+  email: '',
+  role: 'secretaria',
+  status: 'ativo',
+  cpf: '',
+  telefone: '',
+  senha: '',
+  crm: '',
+  crmUf: 'SP',
+  especialidade: '',
+};
+
+const digitsOnly = (value = '') => value.replace(/\D/g, '');
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function formatSaveError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : 'Erro ao salvar usuário.';
+  const lower = msg.toLowerCase();
+  if (lower.includes('invalid') && lower.includes('email')) {
+    return 'Informe um e-mail válido. Ex: usuario@clinica.com';
+  }
+  if (msg.includes('400')) return 'A API recusou os dados enviados. Confira os campos obrigatórios.';
+  if (msg.includes('401') || msg.includes('403')) {
+    return 'Seu perfil precisa ser Gestão/Admin para criar usuários.';
+  }
+  return msg;
+}
+
+function responseId(response: ApiDoctor | CreateUserResponse): string {
+  if ('id' in response && response.id) return response.id;
+  if ('user' in response) return response.user?.id ?? Date.now().toString();
+  return Date.now().toString();
+}
+
 export default function Usuarios() {
-  const [usuarios, setUsuarios] = useState<UsuarioItem[]>(mockUsuarios);
-  const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit'; data: typeof emptyForm & { id?: string } }>({ open: false, mode: 'add', data: emptyForm });
+  const [usuarios, setUsuarios] = useState<UsuarioItem[]>([]);
+  const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit'; data: UsuarioForm & { id?: string } }>({ open: false, mode: 'add', data: emptyForm });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [showPass, setShowPass] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const openAdd = () => setModal({ open: true, mode: 'add', data: { ...emptyForm } });
-  const openEdit = (u: UsuarioItem) => setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...u } });
-  const closeModal = () => setModal({ open: false, mode: 'add', data: emptyForm });
+  useEffect(() => {
+    let active = true;
+    doctorsApi.list().then(doctors => {
+      if (!active) return;
+      setUsuarios(doctors.map(doctor => ({
+        id: doctor.id,
+        nome: doctor.full_name,
+        email: doctor.email ?? '',
+        role: 'medico',
+        status: doctor.active === false ? 'inativo' : 'ativo',
+        cpf: doctor.cpf,
+        telefone: doctor.phone_mobile,
+        crm: doctor.crm,
+        crmUf: doctor.crm_uf,
+        especialidade: doctor.specialty,
+      })));
+    }).catch(err => {
+      const msg = err instanceof Error ? err.message : 'Erro ao listar médicos.';
+      setFormError(msg);
+    });
+    return () => { active = false; };
+  }, []);
 
-  const handleSave = () => {
-    if (modal.mode === 'add') {
-      const novo: UsuarioItem = { ...modal.data, id: Date.now().toString() };
-      setUsuarios(prev => [...prev, novo]);
-    } else {
-      setUsuarios(prev => prev.map(u => u.id === modal.data.id ? { ...u, ...modal.data, id: u.id } : u));
+  const openAdd = () => {
+    setFormError(null);
+    setSuccessMessage(null);
+    setModal({ open: true, mode: 'add', data: { ...emptyForm } });
+  };
+
+  const openEdit = (u: UsuarioItem) => {
+    setFormError(null);
+    setSuccessMessage(null);
+    setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...u } });
+  };
+
+  const resetModal = () => {
+    setModal({ open: false, mode: 'add', data: emptyForm });
+    setFormError(null);
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    resetModal();
+  };
+
+  const set = (field: keyof UsuarioForm, value: string) =>
+    setModal(m => ({ ...m, data: { ...m.data, [field]: value } }));
+
+  const validateForm = () => {
+    const d = modal.data;
+    if (!d.nome.trim()) return 'Informe o nome completo.';
+    if (!d.email.trim()) return 'Informe o e-mail.';
+    if (!EMAIL_RE.test(d.email.trim())) return 'Informe um e-mail válido. Ex: usuario@clinica.com';
+    if (!d.telefone?.trim()) return 'Informe o telefone.';
+    if (modal.mode === 'add' && !d.senha?.trim()) return 'Informe a senha inicial.';
+    if (d.senha && d.senha.length < 6) return 'A senha deve ter pelo menos 6 caracteres.';
+    if (d.role === 'secretaria' && digitsOnly(d.cpf).length !== 11) {
+      return 'Informe o CPF da secretária com 11 dígitos.';
     }
-    closeModal();
+    if (d.role === 'medico') {
+      if (digitsOnly(d.cpf).length !== 11) return 'Informe um CPF válido com 11 dígitos.';
+      if (!d.crm?.trim()) return 'Informe o CRM.';
+      if (!d.crmUf?.trim()) return 'Informe a UF do CRM.';
+      if (!d.especialidade?.trim()) return 'Informe a especialidade.';
+    }
+    return null;
+  };
+
+  const handleSave = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    const data = modal.data;
+    setSaving(true);
+    setFormError(null);
+
+    try {
+      if (modal.mode === 'edit') {
+        setUsuarios(prev => prev.map(u => u.id === data.id ? { ...u, ...data, id: u.id } : u));
+        setSuccessMessage('Usuário atualizado na tela.');
+        resetModal();
+        return;
+      }
+
+      if (data.role === 'medico') {
+        const payload = {
+          email: data.email.trim().toLowerCase(),
+          password: data.senha?.trim() ?? '',
+          full_name: data.nome.trim(),
+          phone: data.telefone?.trim(),
+          role: ROLE_API[data.role],
+          cpf: digitsOnly(data.cpf),
+          crm: data.crm?.trim() ?? '',
+          crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
+          specialty: data.especialidade?.trim() ?? '',
+          phone_mobile: data.telefone?.trim() ?? '',
+        };
+
+        const response = await usersApi.createWithPassword(payload);
+        const doctor = 'full_name' in response ? response as ApiDoctor : null;
+        const novo: UsuarioItem = {
+          id: responseId(response),
+          nome: doctor?.full_name ?? payload.full_name,
+          email: doctor?.email ?? payload.email,
+          role: 'medico',
+          status: 'ativo',
+          cpf: doctor?.cpf ?? payload.cpf,
+          telefone: doctor?.phone_mobile ?? payload.phone_mobile,
+          crm: doctor?.crm ?? payload.crm,
+          crmUf: doctor?.crm_uf ?? payload.crm_uf,
+          especialidade: doctor?.specialty ?? payload.specialty,
+        };
+
+        setUsuarios(prev => [...prev, novo]);
+        setSuccessMessage('Médico criado com sucesso.');
+      } else {
+        const payload = {
+          email: data.email.trim().toLowerCase(),
+          full_name: data.nome.trim(),
+          phone: data.telefone?.trim(),
+          phone_mobile: data.telefone?.trim(),
+          role: ROLE_API[data.role],
+          ...(data.cpf?.trim() ? { cpf: digitsOnly(data.cpf) } : {}),
+        };
+
+        const response = data.senha
+          ? await usersApi.createWithPassword({ ...payload, password: data.senha.trim() })
+          : await usersApi.create(payload);
+        const novo: UsuarioItem = {
+          id: responseId(response),
+          nome: response.user?.full_name ?? payload.full_name,
+          email: response.user?.email ?? payload.email,
+          role: data.role,
+          status: 'ativo',
+          cpf: data.cpf ? digitsOnly(data.cpf) : undefined,
+          telefone: payload.phone,
+        };
+
+        setUsuarios(prev => [...prev, novo]);
+        setSuccessMessage(response.message ?? 'Usuário criado com sucesso.');
+      }
+
+      resetModal();
+    } catch (err) {
+      setFormError(formatSaveError(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -59,23 +244,19 @@ export default function Usuarios() {
     setConfirmDelete(null);
   };
 
-  const set = (field: string, value: string) =>
-    setModal(m => ({ ...m, data: { ...m.data, [field]: value } }));
-
   return (
-    <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 24 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+    <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Gestão de Usuários</h1>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>Gerencie os perfis de acesso ao sistema.</p>
+          {successMessage && <p style={{ fontSize: 12, color: 'var(--primary)', marginTop: 8 }}>{successMessage}</p>}
         </div>
         <button onClick={openAdd} style={{ padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
           <Plus size={16} /> Novo Usuário
         </button>
       </div>
 
-      {/* Cards de perfil */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
         {(['medico', 'gestao', 'secretaria'] as UserRole[]).map(role => {
           const count = usuarios.filter(u => u.role === role).length;
@@ -90,12 +271,11 @@ export default function Usuarios() {
         })}
       </div>
 
-      {/* Tabela */}
-      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflow: 'auto', maxWidth: '100%' }}>
+        <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--gray-100)' }}>
-              {['Usuário', 'E-mail', 'Perfil', 'Especialidade', 'Status', 'Ações'].map(h => (
+              {['Usuário', 'E-mail', 'Perfil', 'CPF/CRM', 'Telefone', 'Status', 'Ações'].map(h => (
                 <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
               ))}
             </tr>
@@ -112,7 +292,7 @@ export default function Usuarios() {
                       </div>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{u.nome}</div>
-                        {u.crm && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{u.crm}</div>}
+                        {u.especialidade && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{u.especialidade}</div>}
                       </div>
                     </div>
                   </td>
@@ -123,7 +303,10 @@ export default function Usuarios() {
                       <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: rs.bg, color: rs.color }}>{ROLE_LABEL[u.role]}</span>
                     </div>
                   </td>
-                  <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-500)' }}>{u.especialidade || '—'}</td>
+                  <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-500)' }}>
+                    {u.role === 'medico' ? `${u.crm || '-'}${u.crmUf ? `/${u.crmUf}` : ''}` : u.cpf || '—'}
+                  </td>
+                  <td style={{ padding: '14px 20px', fontSize: 13, color: 'var(--gray-500)' }}>{u.telefone || '—'}</td>
                   <td style={{ padding: '14px 20px' }}>
                     <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: u.status === 'ativo' ? 'var(--mint)' : 'var(--gray-100)', color: u.status === 'ativo' ? 'var(--dark)' : 'var(--gray-400)' }}>
                       {u.status === 'ativo' ? 'Ativo' : 'Inativo'}
@@ -142,11 +325,10 @@ export default function Usuarios() {
         </table>
       </div>
 
-      {/* Modal */}
       {modal.open && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 20, width: 480, maxHeight: '90vh', overflow: 'auto', padding: 32, position: 'relative' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: 'min(620px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '28px 32px 18px', borderBottom: '1px solid var(--gray-100)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <UserCog size={16} color="var(--primary)" />
@@ -155,87 +337,74 @@ export default function Usuarios() {
                   {modal.mode === 'add' ? 'Novo Usuário' : 'Editar Usuário'}
                 </h2>
               </div>
-              <button onClick={closeModal} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} /></button>
+              <button onClick={closeModal} disabled={saving} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: saving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} /></button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {[{ label: 'Nome Completo', field: 'nome', placeholder: 'Ex: Dr. João Silva' },
-                { label: 'E-mail', field: 'email', placeholder: 'usuario@clinica.com' },
-              ].map(f => (
-                <div key={f.field}>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>{f.label}</label>
-                  <input
-                    value={(modal.data as Record<string, string>)[f.field] || ''}
-                    onChange={e => set(f.field, e.target.value)}
-                    placeholder={f.placeholder}
-                    style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }}
-                  />
-                </div>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '20px 32px', overflow: 'auto', minHeight: 0 }}>
+              <FormInput label="Nome completo" value={modal.data.nome} onChange={value => set('nome', value)} placeholder="Ex: Dr. João Silva" />
+              <FormInput label="E-mail" value={modal.data.email} onChange={value => set('email', value)} placeholder="usuario@clinica.com" type="email" />
+              <FormInput label="Telefone" value={modal.data.telefone || ''} onChange={value => set('telefone', value)} placeholder="(11) 99999-9999" />
 
-              {/* Senha */}
-              {modal.mode === 'add' && (
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Senha</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPass ? 'text' : 'password'}
-                      value={modal.data.senha}
-                      onChange={e => set('senha', e.target.value)}
-                      placeholder="••••••••"
-                      style={{ width: '100%', padding: '10px 36px 10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }}
-                    />
-                    <button type="button" onClick={() => setShowPass(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', display: 'flex' }}>
-                      {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Perfil */}
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Perfil de Acesso</label>
-                <select value={modal.data.role} onChange={e => set('role', e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)', cursor: 'pointer' }}>
+                <label style={labelStyle}>Perfil de acesso</label>
+                <select value={modal.data.role} onChange={e => set('role', e.target.value)} style={fieldStyle}>
                   <option value="medico">Médico</option>
                   <option value="gestao">Gestão / Coordenação</option>
                   <option value="secretaria">Secretaria</option>
                 </select>
               </div>
 
+              {modal.data.role === 'secretaria' && (
+                <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', value)} placeholder="12345678901" />
+              )}
+
               {modal.data.role === 'medico' && (
                 <>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>CRM</label>
-                    <input value={modal.data.crm || ''} onChange={e => set('crm', e.target.value)} placeholder="CRM/SP 000000" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
+                  <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', value)} placeholder="12345678901" />
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(96px, 120px)', gap: 12 }}>
+                    <FormInput label="CRM" value={modal.data.crm || ''} onChange={value => set('crm', value)} placeholder="123456" />
+                    <div>
+                      <label style={labelStyle}>UF do CRM</label>
+                      <select value={modal.data.crmUf || 'SP'} onChange={e => set('crmUf', e.target.value)} style={fieldStyle}>
+                        {UF_OPTIONS.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Especialidade</label>
-                    <input value={modal.data.especialidade || ''} onChange={e => set('especialidade', e.target.value)} placeholder="Ex: Cardiologista" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
-                  </div>
+                  <FormInput label="Especialidade" value={modal.data.especialidade || ''} onChange={value => set('especialidade', value)} placeholder="Ex: Cardiologia" />
                 </>
               )}
 
-              {/* Status */}
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Status</label>
-                <select value={modal.data.status} onChange={e => set('status', e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)', cursor: 'pointer' }}>
-                  <option value="ativo">Ativo</option>
-                  <option value="inativo">Inativo</option>
-                </select>
-              </div>
+              {modal.mode === 'add' && (
+                <FormInput label="Senha inicial" value={modal.data.senha || ''} onChange={value => set('senha', value)} placeholder="Mínimo 6 caracteres" type="password" />
+              )}
+
+              {modal.mode === 'edit' && (
+                <div>
+                  <label style={labelStyle}>Status</label>
+                  <select value={modal.data.status} onChange={e => set('status', e.target.value)} style={fieldStyle}>
+                    <option value="ativo">Ativo</option>
+                    <option value="inativo">Inativo</option>
+                  </select>
+                </div>
+              )}
             </div>
 
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
-              <button onClick={closeModal} style={{ padding: '10px 20px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
-              <button onClick={handleSave} style={{ padding: '10px 24px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                {modal.mode === 'add' ? 'Criar Usuário' : 'Salvar Alterações'}
+            {formError && (
+              <div style={{ margin: '0 32px 12px', padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: 'var(--red-500)', fontSize: 12, fontWeight: 600 }}>
+                {formError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', padding: '16px 32px 28px', borderTop: '1px solid var(--gray-100)', flexWrap: 'wrap' }}>
+              <button onClick={closeModal} disabled={saving} style={{ padding: '10px 20px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
+              <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', background: saving ? 'var(--gray-400)' : 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}>
+                {saving ? 'Salvando...' : modal.mode === 'add' ? 'Criar Usuário' : 'Salvar Alterações'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Confirm delete */}
       {confirmDelete && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 360, width: '90%' }}>
@@ -248,6 +417,54 @@ export default function Usuarios() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 700,
+  color: 'var(--gray-600)',
+  textTransform: 'uppercase',
+  letterSpacing: 0.5,
+  display: 'block',
+  marginBottom: 5,
+};
+
+const fieldStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '10px 12px',
+  border: '1px solid var(--gray-200)',
+  borderRadius: 8,
+  fontSize: 13,
+  outline: 'none',
+  background: 'var(--gray-50)',
+};
+
+function FormInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={fieldStyle}
+      />
     </div>
   );
 }
