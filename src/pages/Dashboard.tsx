@@ -140,7 +140,11 @@ export default function Dashboard({
 
   const quickActions = [
     canNavigate('agenda') && { label: 'Novo Agendamento', icon: PlusCircle, onClick: onNovoAgendamento, primary: true },
-    canNavigate('pacientes') && { label: role === 'medico' ? 'Cadastrar Paciente' : 'Novo Paciente', icon: UserCheck, onClick: onNovoPaciente },
+    canNavigate('pacientes') && (
+      role === 'medico'
+        ? { label: 'Pacientes Cadastrados', icon: UserCheck, onClick: () => onNavigate('pacientes') }
+        : { label: 'Novo Paciente', icon: UserCheck, onClick: onNovoPaciente }
+    ),
     canNavigate('laudos') && role !== 'secretaria' && { label: 'Abrir Laudos', icon: FileText, onClick: () => onNavigate('laudos') },
     canNavigate('relatorios') && role === 'gestao' && { label: 'Ver Relatórios', icon: BarChart2, onClick: () => onNavigate('relatorios') },
   ].filter(Boolean) as { label: string; icon: React.ElementType; onClick: () => void; primary?: boolean }[];

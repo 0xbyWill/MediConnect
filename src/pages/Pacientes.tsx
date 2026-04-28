@@ -5,6 +5,7 @@ import {
   AlertCircle, Clock, CheckCircle2,
 } from 'lucide-react';
 import type { Paciente, ConvenioType, StatusPaciente } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const CONVENIOS: ConvenioType[] = [
@@ -182,6 +183,9 @@ function SectionHeader({ label, icon: Icon }: { label: string; icon?: React.Elem
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highlightId, initialOpen, readOnly = false }: PacientesProps) {
+  const { user } = useAuth();
+  const hideAddButton = user?.role === 'medico';
+
   // ── Estados de lista/filtro ──
   const [search, setSearch]               = useState('');
   const [filterConvenio, setFilterConvenio] = useState('');
@@ -230,13 +234,20 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const visible = filtered.slice(0, visibleCount);
 
   // ── Abrir modal ──
-  const openAdd  = () => { setModal({ open: true, mode: 'add', data: { ...emptyForm } }); setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
+  const openAdd  = () => {
+    if (hideAddButton) return;
+    setModal({ open: true, mode: 'add', data: { ...emptyForm } });
+    setActiveTab('dados');
+    setErrors({});
+    setSubmitError('');
+    setDuplicateWarn(false);
+  };
   const openEdit = (p: Paciente) => { setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...p } }); setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
   const openView = (p: Paciente) => { setModal({ open: true, mode: 'view', data: { ...emptyForm, ...p } }); setActiveTab('dados'); };
   const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen]);
+  useEffect(() => { if (initialOpen && !hideAddButton) openAdd(); }, [initialOpen, hideAddButton]);
 
   // ── Set field helper ──
   const setField = useCallback(<K extends keyof PacienteExtended>(field: K, value: PacienteExtended[K]) => {
@@ -323,9 +334,11 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               </div>
             )}
           </div>
-          <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
-            <Plus size={16} /> Adicionar
-          </button>
+          {!hideAddButton && (
+            <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
+              <Plus size={16} /> Adicionar
+            </button>
+          )}
         </div>
 
         {/* Filtros */}
