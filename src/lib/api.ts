@@ -31,10 +31,22 @@ async function request<T>(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
+    const apiError = err as {
+      message?: string;
+      msg?: string;
+      error?: string;
+      error_description?: string;
+      details?: string;
+      hint?: string;
+    };
     throw new Error(
-      (err as { message?: string; error_description?: string })?.message ||
-      (err as { error_description?: string })?.error_description ||
-      'Erro na requisição'
+      apiError.message ||
+      apiError.msg ||
+      apiError.error_description ||
+      apiError.error ||
+      apiError.details ||
+      apiError.hint ||
+      `Erro na requisicao (${res.status})`
     );
   }
   const text = await res.text();
@@ -46,6 +58,17 @@ export interface ApiUser {
   id: string;
   email: string;
   created_at?: string;
+  user_metadata?: {
+    full_name?: string;
+    name?: string;
+    role?: ApiRole;
+    roles?: ApiRole[];
+    phone?: string;
+  };
+  app_metadata?: {
+    role?: ApiRole;
+    roles?: ApiRole[];
+  };
 }
 
 export interface ApiSession {
@@ -59,10 +82,117 @@ export interface ApiSession {
 export interface ApiDoctor {
   id: string;
   full_name: string;
+  email?: string;
+  cpf?: string;
   crm: string;
   crm_uf: string;
   specialty: string;
+  phone_mobile?: string;
   active?: boolean;
+}
+
+export type ApiRole = 'admin' | 'gestor' | 'secretaria' | 'medico' | 'paciente';
+
+export interface CreateUserPayload {
+  email: string;
+  full_name: string;
+  phone?: string;
+  role: ApiRole;
+  create_patient_record?: boolean;
+  cpf?: string;
+  phone_mobile?: string;
+  crm?: string;
+  crm_uf?: string;
+  specialty?: string;
+}
+
+export interface CreateUserWithPasswordPayload extends CreateUserPayload {
+  password: string;
+}
+
+export interface CreateDoctorPayload {
+  email: string;
+  full_name: string;
+  cpf: string;
+  crm: string;
+  crm_uf: string;
+  specialty: string;
+  phone_mobile: string;
+}
+
+export interface CreateUserResponse {
+  success?: boolean;
+  user?: Partial<ApiUser> & {
+    full_name?: string;
+    roles?: string[];
+    email_confirmed_at?: string | null;
+  };
+  profile?: Record<string, unknown>;
+  role?: string;
+  message?: string;
+}
+
+export interface ApiUserInfo {
+  user?: Partial<ApiUser> & {
+    full_name?: string;
+    name?: string;
+    roles?: string[];
+    phone?: string;
+  };
+  profile?: {
+    full_name?: string;
+    name?: string;
+    phone?: string;
+    role?: string;
+    disabled?: boolean;
+  } & Record<string, unknown>;
+  roles?: string[];
+  role?: string;
+}
+
+export interface ApiDoctorAvailability {
+  id: string;
+  doctor_id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  slot_minutes: number;
+  appointment_type?: string;
+  active?: boolean;
+}
+
+export interface ApiDoctorException {
+  id: string;
+  doctor_id: string;
+  date: string;
+  kind: 'bloqueio' | 'liberacao' | string;
+  start_time?: string | null;
+  end_time?: string | null;
+  reason?: string;
+  created_by?: string;
+}
+
+export interface AvailableSlotsPayload {
+  doctor_id: string;
+  date: string;
+}
+
+export interface AvailableSlotsResponse {
+  slots?: string[];
+  available_slots?: string[];
+  data?: string[] | { slots?: string[]; available_slots?: string[] };
+}
+
+export interface SendSmsPayload {
+  phone_number: string;
+  message: string;
+  patient_id?: string;
+}
+
+export interface SendSmsResponse {
+  success?: boolean;
+  message?: string;
+  sid?: string;
 }
 
 export interface ApiPatient {
@@ -72,11 +202,12 @@ export interface ApiPatient {
   email: string;
   phone_mobile: string;
   birth_date?: string;
-  avatar_url?: string;
-  health_insurance?: string;
-  status?: string;
-  etnia?: string;
-  raca?: string;
+  created_by?: string;
+  race?: string;
+  sex?: string;
+  city?: string;
+  state?: string;
+  notes?: string;
 }
 
 export interface ApiAppointment {
@@ -88,7 +219,6 @@ export interface ApiAppointment {
   status: 'requested' | 'confirmed' | 'completed' | 'cancelled';
   created_by?: string;
   notes?: string;
-  type?: string;
 }
 
 export interface ApiReport {
@@ -102,6 +232,7 @@ export interface ApiReport {
   diagnosis?: string;
   conclusion?: string;
   content_html?: string;
+  content_json?: Record<string, unknown>;
   hide_date?: boolean;
   hide_signature?: boolean;
   due_at?: string;
@@ -125,6 +256,37 @@ export const authApi = {
     request<ApiUser>('/auth/v1/user'),
 };
 
+// ─── Usuários ────────────────────────────────────────────────────────────────
+export const usersApi = {
+  currentInfo: () =>
+    request<ApiUserInfo>('/functions/v1/user-info', { method: 'POST' }),
+
+  create: (data: CreateUserPayload) =>
+    request<CreateUserResponse>('/functions/v1/create-user', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  createWithPassword: async (data: CreateUserWithPasswordPayload) => {
+    const options = {
+      method: 'POST',
+      body: JSON.stringify(data),
+    };
+
+    try {
+      return await request<CreateUserResponse>('/create-user-with-password', options);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      const canRetry =
+        msg.includes('404') ||
+        msg.toLowerCase().includes('not found') ||
+        msg.toLowerCase().includes('failed to fetch');
+      if (!canRetry) throw err;
+      return request<CreateUserResponse>('/functions/v1/create-user-with-password', options);
+    }
+  },
+};
+
 // ─── Médicos ──────────────────────────────────────────────────────────────────
 export const doctorsApi = {
   list: (params: { active?: boolean; specialty?: string } = {}) => {
@@ -133,30 +295,45 @@ export const doctorsApi = {
     if (params.specialty) q.set('specialty', `eq.${params.specialty}`);
     return request<ApiDoctor[]>(`/rest/v1/doctors?${q.toString()}`);
   },
+
+  create: (data: CreateDoctorPayload) =>
+    request<ApiDoctor | CreateUserResponse>('/functions/v1/create-doctor', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 // ─── Pacientes ────────────────────────────────────────────────────────────────
 export const patientsApi = {
-  list: (params: { search?: string; cpf?: string; limit?: number; offset?: number } = {}) => {
+  list: (params: { search?: string; cpf?: string; limit?: number; offset?: number; created_by?: string } = {}) => {
     const q = new URLSearchParams({ select: '*', order: 'full_name.asc' });
     if (params.limit) q.set('limit', String(params.limit));
     if (params.offset) q.set('offset', String(params.offset));
     if (params.cpf) q.set('cpf', `eq.${params.cpf}`);
+    if (params.created_by) q.set('created_by', `eq.${params.created_by}`);
     if (params.search) q.set('full_name', `ilike.*${params.search}*`);
     return request<ApiPatient[]>(`/rest/v1/patients?${q.toString()}`);
   },
 
+  listByIds: (ids: string[]) => {
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (uniqueIds.length === 0) return Promise.resolve([] as ApiPatient[]);
+    const q = new URLSearchParams({ select: '*', order: 'full_name.asc' });
+    q.set('id', `in.(${uniqueIds.join(',')})`);
+    return request<ApiPatient[]>(`/rest/v1/patients?${q.toString()}`);
+  },
+
   create: (data: Omit<ApiPatient, 'id'>) =>
-    request<ApiPatient>('/functions/v1/create-patient', {
+    request<ApiPatient[]>('/rest/v1/patients', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
   update: (id: string, data: Partial<ApiPatient>) =>
-    request<ApiPatient>(`/rest/v1/patients?id=eq.${id}`, {
+    request<ApiPatient[]>(`/rest/v1/patients?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/patients?id=eq.${id}`, { method: 'DELETE' }),
@@ -173,22 +350,69 @@ export const appointmentsApi = {
   },
 
   create: (data: Omit<ApiAppointment, 'id'>) =>
-    request<ApiAppointment>('/rest/v1/appointments', {
+    request<ApiAppointment[]>('/rest/v1/appointments', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
   update: (id: string, data: Partial<ApiAppointment>) =>
-    request<ApiAppointment>(`/rest/v1/appointments?id=eq.${id}`, {
+    request<ApiAppointment[]>(`/rest/v1/appointments?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/appointments?id=eq.${id}`, { method: 'DELETE' }),
 };
 
 // ─── Laudos / Reports ─────────────────────────────────────────────────────────
+// ─── Disponibilidade / Slots ─────────────────────────────────────────────────
+export const availabilityApi = {
+  list: (params: { doctor_id?: string; weekday?: number; active?: boolean; appointment_type?: string } = {}) => {
+    const q = new URLSearchParams({ select: '*' });
+    if (params.doctor_id) q.set('doctor_id', `eq.${params.doctor_id}`);
+    if (params.weekday !== undefined) q.set('weekday', `eq.${params.weekday}`);
+    if (params.active !== undefined) q.set('active', `eq.${params.active}`);
+    if (params.appointment_type) q.set('appointment_type', `eq.${params.appointment_type}`);
+    return request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?${q.toString()}`);
+  },
+
+  create: (data: Omit<ApiDoctorAvailability, 'id'>) =>
+    request<ApiDoctorAvailability[]>('/rest/v1/doctor_availability', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+
+  update: (id: string, data: Partial<ApiDoctorAvailability>) =>
+    request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+
+  delete: (id: string) =>
+    request<void>(`/rest/v1/doctor_availability?id=eq.${id}`, { method: 'DELETE' }),
+
+  listExceptions: (params: { doctor_id?: string; date?: string; kind?: string } = {}) => {
+    const q = new URLSearchParams({ select: '*' });
+    if (params.doctor_id) q.set('doctor_id', `eq.${params.doctor_id}`);
+    if (params.date) q.set('date', `eq.${params.date}`);
+    if (params.kind) q.set('kind', `eq.${params.kind}`);
+    return request<ApiDoctorException[]>(`/rest/v1/doctor_exceptions?${q.toString()}`);
+  },
+
+  createException: (data: Omit<ApiDoctorException, 'id'>) =>
+    request<ApiDoctorException[]>('/rest/v1/doctor_exceptions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+
+  getAvailableSlots: (data: AvailableSlotsPayload) =>
+    request<AvailableSlotsResponse>('/functions/v1/get-available-slots', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
 export const reportsApi = {
   list: (params: { patient_id?: string; status?: string; created_by?: string } = {}) => {
     const q = new URLSearchParams({ order: 'created_at.desc' });
@@ -198,18 +422,35 @@ export const reportsApi = {
     return request<ApiReport[]>(`/rest/v1/reports?${q.toString()}`);
   },
 
+  listByCreators: (creatorIds: string[]) => {
+    const uniqueIds = Array.from(new Set(creatorIds.filter(Boolean)));
+    if (uniqueIds.length === 0) return Promise.resolve([] as ApiReport[]);
+    const q = new URLSearchParams({ order: 'created_at.desc' });
+    q.set('created_by', `in.(${uniqueIds.join(',')})`);
+    return request<ApiReport[]>(`/rest/v1/reports?${q.toString()}`);
+  },
+
   create: (data: Omit<ApiReport, 'id' | 'order_number' | 'created_at' | 'updated_at'>) =>
-    request<ApiReport>('/rest/v1/reports', {
+    request<ApiReport[]>('/rest/v1/reports', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
   update: (id: string, data: Partial<ApiReport>) =>
-    request<ApiReport>(`/rest/v1/reports?id=eq.${id}`, {
+    request<ApiReport[]>(`/rest/v1/reports?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }),
+    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/reports?id=eq.${id}`, { method: 'DELETE' }),
+};
+
+// ─── SMS ─────────────────────────────────────────────────────────────────────
+export const smsApi = {
+  send: (data: SendSmsPayload) =>
+    request<SendSmsResponse>('/functions/v1/send-sms', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };

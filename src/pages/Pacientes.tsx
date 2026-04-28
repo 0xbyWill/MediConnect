@@ -66,9 +66,9 @@ interface PacienteExtended extends Paciente {
 
 interface PacientesProps {
   pacientes: Paciente[];
-  onAdd: (p: Omit<Paciente, 'id'>) => void;
-  onUpdate: (p: Paciente) => void;
-  onDelete: (id: string) => void;
+  onAdd: (p: Omit<Paciente, 'id'>) => void | Promise<void>;
+  onUpdate: (p: Paciente) => void | Promise<void>;
+  onDelete: (id: string) => void | Promise<void>;
   highlightId?: string;
   initialOpen?: boolean;
   readOnly?: boolean;
@@ -84,6 +84,10 @@ function formatDateTime(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+function responsiveGrid(min = 180, gap = 12): React.CSSProperties {
+  return { display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap };
+}
+
 function calcIMC(peso: string, altura: string) {
   const p = parseFloat(peso), a = parseFloat(altura);
   if (!p || !a) return '';
@@ -130,7 +134,7 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
   placeholder?: string; type?: string; required?: boolean; disabled?: boolean; error?: string;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
         {label} {required && <span style={{ color: 'var(--red-500)' }}>*</span>}
       </label>
@@ -141,7 +145,7 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
           padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none',
           border: `1px solid ${error ? 'var(--red-500)' : 'var(--gray-200)'}`,
           background: disabled ? 'var(--gray-50)' : '#fff', color: 'var(--gray-800)',
-          width: '100%',
+          width: '100%', boxSizing: 'border-box',
         }}
       />
       {error && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{error}</span>}
@@ -154,12 +158,12 @@ function FieldSelect({ label, value, onChange, options, required = false, disabl
   options: string[]; required?: boolean; disabled?: boolean;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
         {label} {required && <span style={{ color: 'var(--red-500)' }}>*</span>}
       </label>
       <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
-        style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none', border: '1px solid var(--gray-200)', background: disabled ? 'var(--gray-50)' : '#fff', color: 'var(--gray-800)', cursor: disabled ? 'default' : 'pointer', width: '100%' }}>
+        style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none', border: '1px solid var(--gray-200)', background: disabled ? 'var(--gray-50)' : '#fff', color: 'var(--gray-800)', cursor: disabled ? 'default' : 'pointer', width: '100%', boxSizing: 'border-box' }}>
         <option value="">Selecione</option>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -195,6 +199,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   });
   const [activeTab, setActiveTab] = useState('dados');
   const [errors, setErrors]       = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState('');
+  const [saving, setSaving]       = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [duplicateWarn, setDuplicateWarn] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -207,8 +213,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     if (loaderRef.current) obs.observe(loaderRef.current);
     return () => obs.disconnect();
   }, []);
-
-  useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen]);
 
   // ── Filtros ──
   const filtered = pacientes.filter(p => {
@@ -226,10 +230,13 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const visible = filtered.slice(0, visibleCount);
 
   // ── Abrir modal ──
-  const openAdd  = () => { setModal({ open: true, mode: 'add', data: { ...emptyForm } }); setActiveTab('dados'); setErrors({}); setDuplicateWarn(false); };
-  const openEdit = (p: Paciente) => { setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...p } }); setActiveTab('dados'); setErrors({}); setDuplicateWarn(false); };
+  const openAdd  = () => { setModal({ open: true, mode: 'add', data: { ...emptyForm } }); setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
+  const openEdit = (p: Paciente) => { setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...p } }); setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
   const openView = (p: Paciente) => { setModal({ open: true, mode: 'view', data: { ...emptyForm, ...p } }); setActiveTab('dados'); };
-  const closeModal = () => { setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setDuplicateWarn(false); };
+  const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen]);
 
   // ── Set field helper ──
   const setField = useCallback(<K extends keyof PacienteExtended>(field: K, value: PacienteExtended[K]) => {
@@ -249,30 +256,46 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const validate = (d: PacienteExtended) => {
     const e: Record<string, string> = {};
     if (!d.nome.trim()) e.nome = 'Nome obrigatório';
-    if (!d.dataNasc) e.dataNasc = 'Data de nascimento obrigatória';
+    if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
     if (d.cpf && !cpfValido(d.cpf)) e.cpf = 'CPF inválido';
+    if (!d.dataNasc) e.dataNasc = 'Data de nascimento obrigatória';
+    if (!d.email.trim()) e.email = 'E-mail obrigatório pela API';
+    if (!d.telefone.trim()) e.telefone = 'Telefone obrigatório pela API';
     return e;
   };
 
   // ── Salvar ──
-  const handleSave = () => {
+  const savePatient = async (ignoreDuplicate = false) => {
+    if (saving) return;
     const e = validate(modal.data);
     if (Object.keys(e).length) {
       setErrors(e);
       // Vai para a aba que tem o erro
       if (e.nome || e.cpf || e.dataNasc) setActiveTab('dados');
+      else if (e.email || e.telefone) setActiveTab('contato');
       return;
     }
     // Verifica duplicidade por CPF
     const cpfLimpo = modal.data.cpf.replace(/\D/g, '');
-    if (cpfLimpo && modal.mode === 'add') {
+    if (cpfLimpo && modal.mode === 'add' && !ignoreDuplicate) {
       const dup = pacientes.find(p => p.cpf.replace(/\D/g, '') === cpfLimpo);
       if (dup) { setDuplicateWarn(true); return; }
     }
-    if (modal.mode === 'add') onAdd(modal.data as Omit<Paciente, 'id'>);
-    else onUpdate(modal.data as Paciente);
-    closeModal();
+    setSaving(true);
+    setSubmitError('');
+    try {
+      if (modal.mode === 'add') await onAdd(modal.data as Omit<Paciente, 'id'>);
+      else await onUpdate(modal.data as Paciente);
+      setSaving(false);
+      closeModal();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao salvar paciente.';
+      setSubmitError(msg);
+      setSaving(false);
+    }
   };
+
+  const handleSave = () => { void savePatient(); };
 
   const isView = modal.mode === 'view';
   const d = modal.data;
@@ -284,7 +307,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* ── Área scrollável ── */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
@@ -375,8 +398,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
         </div>
 
         {/* Tabela */}
-        <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
+        <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflow: 'auto', maxWidth: '100%' }}>
+          <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
                 {['Nome', 'Telefone', 'Cidade', 'Estado', 'Último atendimento', 'Próximo atendimento', 'Ações'].map(h => (
@@ -476,7 +499,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
           </table>
 
           {/* Rodapé / Scroll infinito */}
-          <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
+          <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--gray-100)', background: 'var(--gray-50)', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
               Exibindo <strong>{Math.min(visible.length, filtered.length)}</strong> de <strong>{filtered.length}</strong> paciente{filtered.length !== 1 ? 's' : ''}
             </span>
@@ -494,13 +517,13 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
       {/* ─── Modal de Cadastro/Edição/Visualização ─────────────────────────── */}
       {modal.open && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 720, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: 'min(720px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
 
             {/* Cabeçalho do modal */}
             <div style={{ padding: '20px 24px 0', borderBottom: '1px solid var(--gray-100)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
                   {/* Avatar */}
                   <div style={{ width: 52, height: 52, borderRadius: 50, background: 'var(--mint)', border: '2px solid var(--light)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', flexShrink: 0, cursor: !isView ? 'pointer' : 'default' }}
                     onClick={() => !isView && fileRef.current?.click()}>
@@ -529,7 +552,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     </button>
                   )}
                 </div>
-                <button onClick={closeModal} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button onClick={closeModal} disabled={saving} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: saving ? 0.6 : 1 }}>
                   <X size={15} />
                 </button>
               </div>
@@ -540,10 +563,16 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--amber-100)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
                   <AlertCircle size={14} color="#d97706" />
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#d97706' }}>Já existe um paciente com este CPF cadastrado. Confirme para continuar mesmo assim.</span>
-                  <button onClick={() => { setDuplicateWarn(false); if (modal.mode === 'add') onAdd(modal.data as Omit<Paciente, 'id'>); closeModal(); }}
-                    style={{ marginLeft: 'auto', padding: '4px 10px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  <button onClick={() => { setDuplicateWarn(false); void savePatient(true); }} disabled={saving}
+                    style={{ marginLeft: 'auto', padding: '4px 10px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
                     Confirmar mesmo assim
                   </button>
+                </div>
+              )}
+              {submitError && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+                  <AlertCircle size={14} color="var(--red-500)" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--red-600)' }}>{submitError}</span>
                 </div>
               )}
 
@@ -563,17 +592,17 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
             </div>
 
             {/* Conteúdo da aba — scrollável */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+            <div style={{ flex: 1, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
 
               {/* ── ABA: Dados Pessoais ── */}
               {activeTab === 'dados' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Identificação" icon={User} />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldInput label="Nome Completo" value={d.nome} onChange={v => setField('nome', v)} required disabled={isView} error={errors.nome} placeholder="Ex: Maria Oliveira da Silva" />
                     <FieldInput label="Nome Social" value={d.nomeSocial || ''} onChange={v => setField('nomeSocial', v)} disabled={isView} placeholder="Apelido ou nome social" />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(160)}>
                     <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', v)} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" />
                     <FieldInput label="RG" value={d.rg || ''} onChange={v => setField('rg', v)} disabled={isView} placeholder="00.000.000-0" />
                     <div>
@@ -590,7 +619,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     {/* Sexo */}
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 8 }}>Sexo</label>
@@ -608,21 +637,21 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} type="date" required disabled={isView} error={errors.dataNasc} />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldSelect label="Etnia" value={d.etnia || ''} onChange={v => setField('etnia', v)} options={ETNIAS} disabled={isView} />
                     <FieldSelect label="Raça" value={d.raca || ''} onChange={v => setField('raca', v)} options={RACAS} disabled={isView} />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldInput label="Naturalidade" value={d.naturalidade || ''} onChange={v => setField('naturalidade', v)} disabled={isView} placeholder="Cidade de nascimento" />
                     <FieldSelect label="Nacionalidade" value={d.nacionalidade || ''} onChange={v => setField('nacionalidade', v)} options={NACIONALIDADES} disabled={isView} />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldInput label="Profissão" value={d.profissao || ''} onChange={v => setField('profissao', v)} disabled={isView} placeholder="Ex: Engenheiro" />
                     <FieldSelect label="Estado Civil" value={d.estadoCivil || ''} onChange={v => setField('estadoCivil', v)} options={ESTADOS_CIVIS} disabled={isView} />
                   </div>
 
                   <SectionHeader label="Filiação e Responsável" />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldInput label="Nome da mãe" value={d.nomeMae || ''} onChange={v => setField('nomeMae', v)} disabled={isView} />
                     <FieldInput label="Profissão da mãe" value={d.profissaoMae || ''} onChange={v => setField('profissaoMae', v)} disabled={isView} />
                     <FieldInput label="Nome do pai" value={d.nomePai || ''} onChange={v => setField('nomePai', v)} disabled={isView} />
@@ -634,7 +663,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                   </div>
 
                   {/* Toggles */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', flexWrap: 'wrap' }}>
                     <Toggle label="RN na Guia do convênio" value={d.rnGuiaConvenio || false} onChange={v => !isView && setField('rnGuiaConvenio', v)} disabled={isView} />
                     <Toggle label="Paciente VIP" value={d.isVip || false} onChange={v => !isView && setField('isVip', v)} disabled={isView} />
                   </div>
@@ -652,9 +681,9 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               {activeTab === 'contato' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Contato" icon={Phone} />
-                  <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" disabled={isView} placeholder="paciente@exemplo.com" />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', v)} disabled={isView} placeholder="(79) 99000-0000" />
+                  <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" required disabled={isView} error={errors.email} placeholder="paciente@exemplo.com" />
+                  <div style={responsiveGrid(220)}>
+                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', v)} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" />
                     <FieldInput label="Telefone 2" value={d.telefone2 || ''} onChange={v => setField('telefone2', v)} disabled={isView} placeholder="(79) 3000-0000" />
                   </div>
                 </div>
@@ -664,16 +693,16 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               {activeTab === 'endereco' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Endereço" icon={MapPin} />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldInput label="CEP" value={d.cep || ''} onChange={v => setField('cep', v)} disabled={isView} placeholder="00000-000" />
                     <FieldInput label="Logradouro / Endereço" value={d.logradouro || ''} onChange={v => setField('logradouro', v)} disabled={isView} placeholder="Rua, Avenida..." />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(150)}>
                     <FieldInput label="Número" value={d.numero || ''} onChange={v => setField('numero', v)} disabled={isView} placeholder="Ex: 123" />
                     <FieldInput label="Complemento" value={d.complemento || ''} onChange={v => setField('complemento', v)} disabled={isView} placeholder="Apto, Bloco..." />
                     <FieldInput label="Bairro" value={d.bairro || ''} onChange={v => setField('bairro', v)} disabled={isView} />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldInput label="Cidade" value={d.cidade || ''} onChange={v => setField('cidade', v)} disabled={isView} />
                     <FieldInput label="Estado" value={d.estado || ''} onChange={v => setField('estado', v)} disabled={isView} placeholder="Ex: Sergipe" />
                   </div>
@@ -684,7 +713,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               {activeTab === 'medico' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Informações Médicas" />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+                  <div style={{ ...responsiveGrid(140), alignItems: 'end' }}>
                     <FieldSelect label="Tipo Sanguíneo" value={d.tipoSanguineo || ''} onChange={v => setField('tipoSanguineo', v)} options={TIPOS_SANGUINEOS} disabled={isView} />
                     <FieldInput label="Peso (kg)" value={d.peso || ''} onChange={v => setField('peso', v)} type="number" disabled={isView} placeholder="Ex: 70" />
                     <FieldInput label="Altura (m)" value={d.altura || ''} onChange={v => setField('altura', v)} type="number" disabled={isView} placeholder="Ex: 1.75" />
@@ -708,7 +737,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               {activeTab === 'convenio' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Informações de Convênio" />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={responsiveGrid(180)}>
                     <FieldSelect label="Convênio" value={d.convenio} onChange={v => setField('convenio', v as ConvenioType)} options={CONVENIOS} disabled={isView || readOnly} />
                     <FieldInput label="Plano" value={d.planoConvenio || ''} onChange={v => setField('planoConvenio', v)} disabled={isView} placeholder="Ex: Enfermaria, Apartamento..." />
                     <FieldInput label="Nº de Matrícula" value={d.matriculaConvenio || ''} onChange={v => setField('matriculaConvenio', v)} disabled={isView} placeholder="Número da carteirinha" />
@@ -742,13 +771,13 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
             {/* Rodapé do modal */}
             {!isView && (
-              <div style={{ padding: '14px 24px', borderTop: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--gray-50)' }}>
+              <div style={{ padding: '14px 24px', borderTop: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--gray-50)', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
                   Campos com <span style={{ color: 'var(--red-500)', fontWeight: 700 }}>*</span> são obrigatórios
                 </div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={closeModal} style={{ padding: '10px 20px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
-                  <button onClick={handleSave} style={{ padding: '10px 24px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button onClick={closeModal} disabled={saving} style={{ padding: '10px 20px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', color: 'var(--gray-700)', opacity: saving ? 0.6 : 1 }}>Cancelar</button>
+                  <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', background: saving ? 'var(--gray-300)' : 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', boxShadow: saving ? 'none' : '0 2px 8px rgba(58,170,53,0.3)' }}>
                     {modal.mode === 'add' ? '+ Salvar Paciente' : 'Salvar Alterações'}
                   </button>
                 </div>

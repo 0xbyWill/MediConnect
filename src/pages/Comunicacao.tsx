@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MessageSquare, Send, Mail, Phone, Bell, Clock, CheckCircle2, XCircle, Search, Plus } from 'lucide-react';
 import type { Paciente } from '../types';
+import { smsApi } from '../lib/api';
 
 interface ComunicacaoProps {
   pacientes: Paciente[];
@@ -50,21 +51,15 @@ const TEMPLATES = [
   { label: 'Boas-vindas', texto: 'Bem-vindo(a) à nossa clínica, {nome}! Estamos à disposição para cuidar da sua saúde.' },
 ];
 
-// Mock de histórico
-const mockMensagens: Mensagem[] = [
-  { id: 'm1', pacienteId: '1', canal: 'whatsapp', texto: 'Confirmamos sua consulta para hoje às 09:00.', status: 'enviado', data: new Date().toISOString().split('T')[0], hora: '08:00' },
-  { id: 'm2', pacienteId: '3', canal: 'email', texto: 'Seu resultado de exame está disponível.', status: 'enviado', data: new Date().toISOString().split('T')[0], hora: '07:30' },
-  { id: 'm3', pacienteId: '2', canal: 'sms', texto: 'Lembrete: consulta amanhã às 10:15.', status: 'pendente', data: new Date().toISOString().split('T')[0], hora: '08:45' },
-];
-
 export default function Comunicacao({ pacientes }: ComunicacaoProps) {
-  const [canal, setCanal] = useState<Canal>('whatsapp');
+  const [canal, setCanal] = useState<Canal>('sms');
   const [pacienteId, setPacienteId] = useState('');
   const [texto, setTexto] = useState('');
   const [search, setSearch] = useState('');
-  const [mensagens] = useState<Mensagem[]>(mockMensagens);
+  const [mensagens, setMensagens] = useState<Mensagem[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [sucesso, setSucesso] = useState(false);
+  const [erro, setErro] = useState('');
 
   const filteredPacientes = pacientes.filter(p =>
     !search || p.nome.toLowerCase().includes(search.toLowerCase())
@@ -77,16 +72,44 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
 
   const handleEnviar = async () => {
     if (!pacienteId || !texto.trim()) return;
+    const paciente = pacientes.find(p => p.id === pacienteId);
+    if (!paciente?.telefone) {
+      setErro('Paciente sem telefone cadastrado.');
+      return;
+    }
+
     setEnviando(true);
-    await new Promise(r => setTimeout(r, 1200));
-    setEnviando(false);
-    setSucesso(true);
-    setTexto('');
-    setTimeout(() => setSucesso(false), 3000);
+    setErro('');
+    try {
+      await smsApi.send({
+        phone_number: paciente.telefone,
+        message: texto.trim(),
+        patient_id: paciente.id,
+      });
+
+      const now = new Date();
+      setMensagens(prev => [{
+        id: String(now.getTime()),
+        pacienteId: paciente.id,
+        canal: 'sms',
+        texto: texto.trim(),
+        status: 'enviado',
+        data: now.toISOString().split('T')[0],
+        hora: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      }, ...prev]);
+      setSucesso(true);
+      setTexto('');
+      setTimeout(() => setSucesso(false), 3000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao enviar SMS.';
+      setErro(msg);
+    } finally {
+      setEnviando(false);
+    }
   };
 
   return (
-    <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 24 }}>
+    <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Comunicação</h1>
@@ -113,10 +136,11 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
                 const Icon = CANAL_ICON[c];
                 const active = canal === c;
                 return (
-                  <button key={c} onClick={() => setCanal(c)} style={{
+                  <button key={c} onClick={() => c === 'sms' && setCanal(c)} disabled={c !== 'sms'} style={{
                     flex: 1, padding: '8px 6px', borderRadius: 10, cursor: 'pointer',
                     border: active ? `2px solid ${CANAL_COLOR[c]}` : '2px solid var(--gray-200)',
-                    background: active ? `${CANAL_COLOR[c]}15` : '#fff',
+                    background: c !== 'sms' ? 'var(--gray-50)' : active ? `${CANAL_COLOR[c]}15` : '#fff',
+                    opacity: c !== 'sms' ? 0.55 : 1,
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                     transition: 'all .15s',
                   }}>
@@ -184,6 +208,13 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--mint)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
               <CheckCircle2 size={15} color="var(--primary)" />
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark)' }}>Mensagem enviada com sucesso!</span>
+            </div>
+          )}
+
+          {erro && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--red-50)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+              <XCircle size={15} color="var(--red-500)" />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--red-600)' }}>{erro}</span>
             </div>
           )}
 

@@ -1,4 +1,5 @@
 import { BarChart2, TrendingUp, Users, Calendar, FileText, Clock, Download } from 'lucide-react';
+import type { ElementType } from 'react';
 import type { Paciente, Agendamento, Laudo } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -6,6 +7,33 @@ interface RelatoriosProps {
   pacientes: Paciente[];
   agendamentos: Agendamento[];
   laudos: Laudo[];
+}
+
+function KPI({ label, value, sub, icon: Icon, color = 'var(--primary)' }: { label: string; value: number | string; sub?: string; icon: ElementType; color?: string }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 14, padding: '20px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)' }}>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+        <div style={{ fontSize: 34, fontWeight: 800, color: 'var(--dark)', margin: '4px 0' }}>{value}</div>
+        {sub && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{sub}</div>}
+      </div>
+      <div style={{ width: 46, height: 46, borderRadius: 12, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={22} color={color} />
+      </div>
+    </div>
+  );
+}
+
+function BarSimple({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ fontSize: 12, color: 'var(--gray-600)', minWidth: 80 }}>{label}</div>
+      <div style={{ flex: 1, height: 8, background: 'var(--gray-100)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${max > 0 ? (value / max) * 100 : 0}%`, background: color, borderRadius: 4, transition: 'width .4s' }} />
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', minWidth: 24, textAlign: 'right' }}>{value}</div>
+    </div>
+  );
 }
 
 export default function Relatorios({ pacientes, agendamentos, laudos }: RelatoriosProps) {
@@ -20,31 +48,8 @@ export default function Relatorios({ pacientes, agendamentos, laudos }: Relatori
   const laudosRascunho = laudos.filter(l => l.status === 'rascunho').length;
   const pacientesAtivos = pacientes.filter(p => p.status === 'Ativo').length;
 
-  const KPI = ({ label, value, sub, icon: Icon, color = 'var(--primary)' }: { label: string; value: number | string; sub?: string; icon: React.ElementType; color?: string }) => (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '20px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)' }}>
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
-        <div style={{ fontSize: 34, fontWeight: 800, color: 'var(--dark)', margin: '4px 0' }}>{value}</div>
-        {sub && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{sub}</div>}
-      </div>
-      <div style={{ width: 46, height: 46, borderRadius: 12, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={22} color={color} />
-      </div>
-    </div>
-  );
-
-  const BarSimple = ({ label, value, max, color }: { label: string; value: number; max: number; color: string }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-      <div style={{ fontSize: 12, color: 'var(--gray-600)', minWidth: 80 }}>{label}</div>
-      <div style={{ flex: 1, height: 8, background: 'var(--gray-100)', borderRadius: 4, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${max > 0 ? (value / max) * 100 : 0}%`, background: color, borderRadius: 4, transition: 'width .4s' }} />
-      </div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', minWidth: 24, textAlign: 'right' }}>{value}</div>
-    </div>
-  );
-
   return (
-    <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 24 }}>
+    <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
         <div>
