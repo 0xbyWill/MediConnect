@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { UserCog, Plus, Pencil, Trash2, X, Shield } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { UserCog, Plus, Pencil, Trash2, X, Shield, Search, RefreshCw } from 'lucide-react';
 import { doctorsApi, usersApi } from '../lib/api';
 import type { ApiDoctor, ApiManagedUser, CreateUserResponse } from '../lib/api';
 import type { UserRole } from '../types';
@@ -136,29 +136,36 @@ export default function Usuarios() {
   const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit'; data: UsuarioForm & { id?: string } }>({ open: false, mode: 'add', data: emptyForm });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    let active = true;
-
-    Promise.all([
-      doctorsApi.list().catch(() => [] as ApiDoctor[]),
-      usersApi.list().catch(() => [] as ApiManagedUser[]),
-    ]).then(([doctors, managedUsers]) => {
-      if (!active) return;
+  const loadUsuarios = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      const [doctors, managedUsers] = await Promise.all([
+        doctorsApi.list().catch(() => [] as ApiDoctor[]),
+        usersApi.list().catch(() => [] as ApiManagedUser[]),
+      ]);
       setUsuarios(mergeUsuarios([
         ...doctors.map(doctorToUsuario),
         ...managedUsers.map(managedUserToUsuario),
       ]));
-    }).catch(err => {
+    } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao listar usuários.';
       setFormError(msg);
-    });
-
-    return () => { active = false; };
+    } finally {
+      setLoadingUsers(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadUsuarios();
+    const intervalId = window.setInterval(() => { void loadUsuarios(); }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [loadUsuarios]);
 
   const openAdd = () => {
     setFormError(null);
@@ -255,6 +262,7 @@ export default function Usuarios() {
 
         setUsuarios(prev => [...prev, novo]);
         setSuccessMessage('Médico criado com sucesso.');
+        await loadUsuarios();
       } else {
         const payload = {
           email: data.email.trim().toLowerCase(),
@@ -280,6 +288,7 @@ export default function Usuarios() {
 
         setUsuarios(prev => [...prev, novo]);
         setSuccessMessage(response.message ?? 'Usuário criado com sucesso.');
+        await loadUsuarios();
       }
 
       resetModal();
@@ -295,9 +304,16 @@ export default function Usuarios() {
     setConfirmDelete(null);
   };
 
-  const filteredUsuarios = roleFilter
-    ? usuarios.filter(u => u.role === roleFilter)
-    : usuarios;
+  const filteredUsuarios = usuarios.filter(u => {
+    const q = search.toLowerCase().trim();
+    const matchRole = !roleFilter || u.role === roleFilter;
+    const matchSearch = !q
+      || u.nome.toLowerCase().includes(q)
+      || u.email.toLowerCase().includes(q)
+      || (u.cpf || '').includes(q)
+      || (u.crm || '').toLowerCase().includes(q);
+    return matchRole && matchSearch;
+  });
 
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
@@ -332,9 +348,20 @@ export default function Usuarios() {
             Filtro de perfil
           </div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-            {filteredUsuarios.length} usuário{filteredUsuarios.length === 1 ? '' : 's'} exibido{filteredUsuarios.length === 1 ? '' : 's'}
+            {loadingUsers ? 'Atualizando dados da API...' : `${filteredUsuarios.length} usuário${filteredUsuarios.length === 1 ? '' : 's'} exibido${filteredUsuarios.length === 1 ? '' : 's'}`}
           </div>
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', minWidth: 260 }}>
+            <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Pesquisar por nome, e-mail, CPF ou CRM..."
+              style={{ width: '100%', padding: '9px 12px 9px 34px', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, outline: 'none', background: '#fff', color: 'var(--gray-700)' }}
+            />
+          </div>
 
         <select
           value={roleFilter}
@@ -346,6 +373,16 @@ export default function Usuarios() {
           <option value="gestao">Gestão</option>
           <option value="secretaria">Secretaria</option>
         </select>
+
+        <button
+          onClick={() => { void loadUsuarios(); }}
+          disabled={loadingUsers}
+          style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid var(--gray-200)', background: loadingUsers ? 'var(--gray-50)' : '#fff', color: loadingUsers ? 'var(--gray-400)' : 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: loadingUsers ? 'default' : 'pointer' }}
+          title="Atualizar usuários"
+        >
+          <RefreshCw size={15} style={{ animation: loadingUsers ? 'spin 1s linear infinite' : undefined }} />
+        </button>
+        </div>
       </div>
 
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflow: 'auto', maxWidth: '100%' }}>
@@ -510,6 +547,7 @@ export default function Usuarios() {
           </div>
         </div>
       )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
