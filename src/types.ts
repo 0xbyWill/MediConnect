@@ -97,7 +97,6 @@ export interface Paciente {
   validadeCarteira?: string;
   // Status / controle
   status: StatusPaciente;
-  isVip?: boolean;
   foto?: string;
   observacoes?: string;
   // Atendimentos (gerados a partir de agendamentos)

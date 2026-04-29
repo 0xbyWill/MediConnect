@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, Plus, Eye, Pencil, Trash2, X, Camera, User, Lock,
-  Star, Cake, Filter, Calendar, ChevronDown, Phone, MapPin,
+  Cake, Filter, Calendar, ChevronDown, Phone, MapPin,
   AlertCircle, Clock, CheckCircle2,
 } from 'lucide-react';
 import type { Paciente, ConvenioType, StatusPaciente } from '../types';
@@ -24,7 +24,6 @@ const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Ag
 // Abas do formulário
 const FORM_TABS = [
   { id: 'dados',     label: 'Dados Pessoais' },
-  { id: 'contato',   label: 'Contato' },
   { id: 'endereco',  label: 'Endereço' },
   { id: 'medico',    label: 'Inf. Médicas' },
   { id: 'convenio',  label: 'Convênio' },
@@ -62,7 +61,6 @@ interface PacienteExtended extends Paciente {
   proximoAtendimento?: string;
   cidade?: string;
   estado?: string;
-  isVip?: boolean;
 }
 
 interface PacientesProps {
@@ -85,6 +83,14 @@ function formatDateTime(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+function formatDateISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function yesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return formatDateISO(d);
+}
 function responsiveGrid(min = 180, gap = 12): React.CSSProperties {
   return { display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap };
 }
@@ -99,8 +105,18 @@ function isAniversariante(dataNasc: string, mes?: number) {
   const m = parseInt(dataNasc.split('-')[1]);
   return mes ? m === mes : m === new Date().getMonth() + 1;
 }
+function digitsOnly(value = '') {
+  return value.replace(/\D/g, '');
+}
+function formatCpf(value: string) {
+  const digits = digitsOnly(value).slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
 function cpfValido(cpf: string) {
-  const c = cpf.replace(/\D/g, '');
+  const c = digitsOnly(cpf);
   if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
   let s = 0;
   for (let i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
@@ -112,6 +128,12 @@ function cpfValido(cpf: string) {
   r = (s * 10) % 11;
   if (r === 10 || r === 11) r = 0;
   return r === parseInt(c[10]);
+}
+function hasResponsibleData(p: PacienteExtended) {
+  return Boolean(
+    p.nomeMae || p.profissaoMae || p.nomePai || p.profissaoPai ||
+    p.nomeResponsavel || p.cpfResponsavel || p.nomeEsposo || p.rnGuiaConvenio
+  );
 }
 
 const emptyForm: PacienteExtended = {
@@ -125,14 +147,15 @@ const emptyForm: PacienteExtended = {
   cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '',
   tipoSanguineo: '', peso: '', altura: '', alergias: '',
   convenio: 'Particular', planoConvenio: '', matriculaConvenio: '', validadeCarteira: '',
-  status: 'Ativo', isVip: false,
+  status: 'Ativo',
   observacoes: '', foto: '',
 };
 
 // ─── Sub-componentes de campo ─────────────────────────────────────────────────
-function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '' }: {
+function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '', max, inputMode, maxLength }: {
   label: string; value: string; onChange: (v: string) => void;
   placeholder?: string; type?: string; required?: boolean; disabled?: boolean; error?: string;
+  max?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']; maxLength?: number;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
@@ -141,6 +164,9 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
       </label>
       <input
         type={type} value={value} placeholder={placeholder}
+        max={max}
+        inputMode={inputMode}
+        maxLength={maxLength}
         onChange={e => onChange(e.target.value)} disabled={disabled}
         style={{
           padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none',
@@ -189,7 +215,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   // ── Estados de lista/filtro ──
   const [search, setSearch]               = useState('');
   const [filterConvenio, setFilterConvenio] = useState('');
-  const [filterVip, setFilterVip]         = useState(false);
   const [filterAnivMes, setFilterAnivMes] = useState('');
   const [showFiltroAvancado, setShowFiltroAvancado] = useState(false);
   const [filtroEstado, setFiltroEstado]   = useState('');
@@ -207,7 +232,9 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const [saving, setSaving]       = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [duplicateWarn, setDuplicateWarn] = useState(false);
+  const [showResponsavel, setShowResponsavel] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const maxBirthDate = yesterdayISO();
 
   // Scroll infinito
   useEffect(() => {
@@ -220,34 +247,50 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
   // ── Filtros ──
   const filtered = pacientes.filter(p => {
-    const q = search.toLowerCase();
+    const q = search.toLowerCase().trim();
+    const qDigits = digitsOnly(search);
     const ext = p as PacienteExtended;
-    const matchSearch = !q || p.nome.toLowerCase().includes(q) || p.cpf.includes(q) || (p.telefone || '').includes(q);
+    const matchSearch = !q
+      || p.nome.toLowerCase().includes(q)
+      || p.cpf.toLowerCase().includes(q)
+      || (qDigits && digitsOnly(p.cpf).includes(qDigits))
+      || (p.telefone || '').toLowerCase().includes(q)
+      || (qDigits && digitsOnly(p.telefone).includes(qDigits));
     const matchConvenio = !filterConvenio || p.convenio === filterConvenio;
-    const matchVip = !filterVip || (ext.isVip === true);
     const matchAniv = !filterAnivMes || isAniversariante(p.dataNasc, parseInt(filterAnivMes));
     const matchEstado = !filtroEstado || (ext.estado || '').toLowerCase().includes(filtroEstado.toLowerCase());
     const matchCidade = !filtroCidade || (ext.cidade || '').toLowerCase().includes(filtroCidade.toLowerCase());
-    return matchSearch && matchConvenio && matchVip && matchAniv && matchEstado && matchCidade;
+    return matchSearch && matchConvenio && matchAniv && matchEstado && matchCidade;
   });
 
   const visible = filtered.slice(0, visibleCount);
 
   // ── Abrir modal ──
-  const openAdd  = () => {
+  const openAdd  = useCallback(() => {
     if (hideAddButton) return;
     setModal({ open: true, mode: 'add', data: { ...emptyForm } });
     setActiveTab('dados');
     setErrors({});
     setSubmitError('');
     setDuplicateWarn(false);
+    setShowResponsavel(false);
+  }, [hideAddButton]);
+  const openEdit = (p: Paciente) => {
+    const data = { ...emptyForm, ...p, cpf: formatCpf(p.cpf) };
+    setModal({ open: true, mode: 'edit', data });
+    setShowResponsavel(hasResponsibleData(data));
+    setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false);
   };
-  const openEdit = (p: Paciente) => { setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...p } }); setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
-  const openView = (p: Paciente) => { setModal({ open: true, mode: 'view', data: { ...emptyForm, ...p } }); setActiveTab('dados'); };
-  const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
+  const openView = (p: Paciente) => {
+    const data = { ...emptyForm, ...p, cpf: formatCpf(p.cpf) };
+    setModal({ open: true, mode: 'view', data });
+    setShowResponsavel(hasResponsibleData(data));
+    setActiveTab('dados');
+  };
+  const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); setShowResponsavel(false); };
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { if (initialOpen && !hideAddButton) openAdd(); }, [initialOpen, hideAddButton]);
+  useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen, openAdd]);
 
   // ── Set field helper ──
   const setField = useCallback(<K extends keyof PacienteExtended>(field: K, value: PacienteExtended[K]) => {
@@ -270,6 +313,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
     if (d.cpf && !cpfValido(d.cpf)) e.cpf = 'CPF inválido';
     if (!d.dataNasc) e.dataNasc = 'Data de nascimento obrigatória';
+    else if (d.dataNasc > maxBirthDate) e.dataNasc = 'A data de nascimento deve ser no mínimo de ontem.';
     if (!d.email.trim()) e.email = 'E-mail obrigatório pela API';
     if (!d.telefone.trim()) e.telefone = 'Telefone obrigatório pela API';
     return e;
@@ -282,14 +326,13 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     if (Object.keys(e).length) {
       setErrors(e);
       // Vai para a aba que tem o erro
-      if (e.nome || e.cpf || e.dataNasc) setActiveTab('dados');
-      else if (e.email || e.telefone) setActiveTab('contato');
+      if (e.nome || e.cpf || e.dataNasc || e.email || e.telefone) setActiveTab('dados');
       return;
     }
     // Verifica duplicidade por CPF
-    const cpfLimpo = modal.data.cpf.replace(/\D/g, '');
+    const cpfLimpo = digitsOnly(modal.data.cpf);
     if (cpfLimpo && modal.mode === 'add' && !ignoreDuplicate) {
-      const dup = pacientes.find(p => p.cpf.replace(/\D/g, '') === cpfLimpo);
+      const dup = pacientes.find(p => digitsOnly(p.cpf) === cpfLimpo);
       if (dup) { setDuplicateWarn(true); return; }
     }
     setSaving(true);
@@ -362,13 +405,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               </select>
             </div>
 
-            {/* VIP */}
-            <button onClick={() => setFilterVip(v => !v)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8, border: `1px solid ${filterVip ? '#f59e0b' : 'var(--gray-200)'}`, background: filterVip ? '#fef3c7' : 'var(--gray-50)', fontSize: 13, fontWeight: 600, color: filterVip ? '#d97706' : 'var(--gray-500)', cursor: 'pointer', transition: 'all .15s' }}>
-              <Star size={14} fill={filterVip ? '#f59e0b' : 'none'} color={filterVip ? '#f59e0b' : 'var(--gray-400)'} />
-              VIP
-            </button>
-
             {/* Aniversariante */}
             <div style={{ position: 'relative' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8, border: `1px solid ${filterAnivMes ? 'var(--primary)' : 'var(--gray-200)'}`, background: filterAnivMes ? 'var(--mint)' : 'var(--gray-50)', cursor: 'pointer' }}
@@ -402,7 +438,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 <input value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} placeholder="Ex: Sergipe"
                   style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
               </div>
-              <button onClick={() => { setFiltroCidade(''); setFiltroEstado(''); setFilterVip(false); setFilterAnivMes(''); setFilterConvenio(''); setSearch(''); }}
+              <button onClick={() => { setFiltroCidade(''); setFiltroEstado(''); setFilterAnivMes(''); setFilterConvenio(''); setSearch(''); }}
                 style={{ alignSelf: 'flex-end', padding: '8px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: 'none', fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', cursor: 'pointer' }}>
                 Limpar filtros
               </button>
@@ -434,14 +470,12 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 34, height: 34, borderRadius: 50, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--dark)', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
                           {p.foto ? <img src={p.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : initials(p.nome)}
-                          {ext.isVip && <Star size={8} fill="#f59e0b" color="#f59e0b" style={{ position: 'absolute', top: 1, right: 1 }} />}
                         </div>
                         <div>
                           <button onClick={() => openView(p)}
                             style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
                             {p.nome}
                           </button>
-                          {ext.isVip && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, background: '#fef3c7', color: '#d97706', padding: '1px 6px', borderRadius: 10 }}>VIP</span>}
                           <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{p.cpf || '—'}</div>
                         </div>
                       </div>
@@ -531,7 +565,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
       {/* ─── Modal de Cadastro/Edição/Visualização ─────────────────────────── */}
       {modal.open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>
-          <div style={{ background: '#fff', borderRadius: 20, width: 'min(720px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: 'min(1080px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
 
             {/* Cabeçalho do modal */}
             <div style={{ padding: '20px 24px 0', borderBottom: '1px solid var(--gray-100)' }}>
@@ -557,13 +591,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                       {modal.mode === 'add' ? 'Preencha os dados abaixo para cadastrar' : d.nome || 'Visualização completa'}
                     </div>
                   </div>
-                  {!isView && (
-                    <button onClick={() => setField('isVip', !d.isVip)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, border: `1px solid ${d.isVip ? '#f59e0b' : 'var(--gray-200)'}`, background: d.isVip ? '#fef3c7' : 'var(--gray-50)', fontSize: 11, fontWeight: 700, color: d.isVip ? '#d97706' : 'var(--gray-400)', cursor: 'pointer' }}>
-                      <Star size={12} fill={d.isVip ? '#f59e0b' : 'none'} color={d.isVip ? '#f59e0b' : 'var(--gray-400)'} />
-                      VIP
-                    </button>
-                  )}
                 </div>
                 <button onClick={closeModal} disabled={saving} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: saving ? 0.6 : 1 }}>
                   <X size={15} />
@@ -590,13 +617,13 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               )}
 
               {/* Abas */}
-              <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
+              <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
                 {FORM_TABS.map(tab => (
                   <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                     style={{ padding: '9px 16px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: `2px solid ${activeTab === tab.id ? 'var(--primary)' : 'transparent'}`, color: activeTab === tab.id ? 'var(--primary)' : 'var(--gray-500)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s' }}>
                     {tab.label}
                     {/* Indicador de erro na aba */}
-                    {tab.id === 'dados' && (errors.nome || errors.cpf || errors.dataNasc) && (
+                    {tab.id === 'dados' && (errors.nome || errors.cpf || errors.dataNasc || errors.email || errors.telefone) && (
                       <span style={{ marginLeft: 4, width: 6, height: 6, borderRadius: '50%', background: 'var(--red-500)', display: 'inline-block' }} />
                     )}
                   </button>
@@ -611,12 +638,12 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
               {activeTab === 'dados' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Identificação" icon={User} />
-                  <div style={responsiveGrid(180)}>
+                  <div style={responsiveGrid(240)}>
                     <FieldInput label="Nome Completo" value={d.nome} onChange={v => setField('nome', v)} required disabled={isView} error={errors.nome} placeholder="Ex: Maria Oliveira da Silva" />
                     <FieldInput label="Nome Social" value={d.nomeSocial || ''} onChange={v => setField('nomeSocial', v)} disabled={isView} placeholder="Apelido ou nome social" />
                   </div>
-                  <div style={responsiveGrid(160)}>
-                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', v)} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" />
+                  <div style={responsiveGrid(220)}>
+                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', formatCpf(v))} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                     <FieldInput label="RG" value={d.rg || ''} onChange={v => setField('rg', v)} disabled={isView} placeholder="00.000.000-0" />
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Outros documentos</label>
@@ -632,7 +659,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     </div>
                   </div>
 
-                  <div style={responsiveGrid(180)}>
+                  <div style={responsiveGrid(220)}>
                     {/* Sexo */}
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 8 }}>Sexo</label>
@@ -647,39 +674,50 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                         ))}
                       </div>
                     </div>
-                    <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} type="date" required disabled={isView} error={errors.dataNasc} />
+                    <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} type="date" max={maxBirthDate} required disabled={isView} error={errors.dataNasc} />
                   </div>
 
-                  <div style={responsiveGrid(180)}>
+                  <div style={responsiveGrid(220)}>
                     <FieldSelect label="Etnia" value={d.etnia || ''} onChange={v => setField('etnia', v)} options={ETNIAS} disabled={isView} />
                     <FieldSelect label="Raça" value={d.raca || ''} onChange={v => setField('raca', v)} options={RACAS} disabled={isView} />
                   </div>
-                  <div style={responsiveGrid(180)}>
+                  <div style={responsiveGrid(220)}>
                     <FieldInput label="Naturalidade" value={d.naturalidade || ''} onChange={v => setField('naturalidade', v)} disabled={isView} placeholder="Cidade de nascimento" />
                     <FieldSelect label="Nacionalidade" value={d.nacionalidade || ''} onChange={v => setField('nacionalidade', v)} options={NACIONALIDADES} disabled={isView} />
                   </div>
-                  <div style={responsiveGrid(180)}>
+                  <div style={responsiveGrid(220)}>
                     <FieldInput label="Profissão" value={d.profissao || ''} onChange={v => setField('profissao', v)} disabled={isView} placeholder="Ex: Engenheiro" />
                     <FieldSelect label="Estado Civil" value={d.estadoCivil || ''} onChange={v => setField('estadoCivil', v)} options={ESTADOS_CIVIS} disabled={isView} />
                   </div>
 
-                  <SectionHeader label="Filiação e Responsável" />
-                  <div style={responsiveGrid(180)}>
-                    <FieldInput label="Nome da mãe" value={d.nomeMae || ''} onChange={v => setField('nomeMae', v)} disabled={isView} />
-                    <FieldInput label="Profissão da mãe" value={d.profissaoMae || ''} onChange={v => setField('profissaoMae', v)} disabled={isView} />
-                    <FieldInput label="Nome do pai" value={d.nomePai || ''} onChange={v => setField('nomePai', v)} disabled={isView} />
-                    <FieldInput label="Profissão do pai" value={d.profissaoPai || ''} onChange={v => setField('profissaoPai', v)} disabled={isView} />
-                    <FieldInput label="Nome do responsável" value={d.nomeResponsavel || ''} onChange={v => setField('nomeResponsavel', v)} disabled={isView} />
-                    <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', v)} disabled={isView} placeholder="000.000.000-00" />
-                    <FieldInput label="Nome do esposo(a)" value={d.nomeEsposo || ''} onChange={v => setField('nomeEsposo', v)} disabled={isView} />
-                    <FieldInput label="Código legado" value={d.codigoLegado || ''} onChange={v => setField('codigoLegado', v)} disabled={isView} placeholder="ID de outro sistema" />
+                  <SectionHeader label="Contato" icon={Phone} />
+                  <div style={responsiveGrid(240)}>
+                    <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" required disabled={isView} error={errors.email} placeholder="paciente@exemplo.com" />
+                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', v)} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" />
+                    <FieldInput label="Telefone 2" value={d.telefone2 || ''} onChange={v => setField('telefone2', v)} disabled={isView} placeholder="(79) 3000-0000" />
                   </div>
 
                   {/* Toggles */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', flexWrap: 'wrap' }}>
-                    <Toggle label="RN na Guia do convênio" value={d.rnGuiaConvenio || false} onChange={v => !isView && setField('rnGuiaConvenio', v)} disabled={isView} />
-                    <Toggle label="Paciente VIP" value={d.isVip || false} onChange={v => !isView && setField('isVip', v)} disabled={isView} />
+                    <Toggle label="Paciente menor de idade?" value={showResponsavel} onChange={setShowResponsavel} disabled={isView} />
                   </div>
+
+                  {showResponsavel && (
+                    <>
+                      <SectionHeader label="Filiação e Responsável" />
+                      <div style={responsiveGrid(240)}>
+                        <FieldInput label="Nome da mãe" value={d.nomeMae || ''} onChange={v => setField('nomeMae', v)} disabled={isView} />
+                        <FieldInput label="Profissão da mãe" value={d.profissaoMae || ''} onChange={v => setField('profissaoMae', v)} disabled={isView} />
+                        <FieldInput label="Nome do pai" value={d.nomePai || ''} onChange={v => setField('nomePai', v)} disabled={isView} />
+                        <FieldInput label="Profissão do pai" value={d.profissaoPai || ''} onChange={v => setField('profissaoPai', v)} disabled={isView} />
+                        <FieldInput label="Nome do responsável" value={d.nomeResponsavel || ''} onChange={v => setField('nomeResponsavel', v)} disabled={isView} />
+                        <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', formatCpf(v))} disabled={isView} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                        <FieldInput label="Nome do esposo(a)" value={d.nomeEsposo || ''} onChange={v => setField('nomeEsposo', v)} disabled={isView} />
+                        <FieldInput label="Código legado" value={d.codigoLegado || ''} onChange={v => setField('codigoLegado', v)} disabled={isView} placeholder="ID de outro sistema" />
+                      </div>
+                      <Toggle label="RN na Guia do convênio" value={d.rnGuiaConvenio || false} onChange={v => !isView && setField('rnGuiaConvenio', v)} disabled={isView} />
+                    </>
+                  )}
 
                   {/* Status */}
                   {!readOnly && (
@@ -687,18 +725,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                       <FieldSelect label="Status" value={d.status} onChange={v => setField('status', v as StatusPaciente)} options={['Ativo', 'Inativo']} disabled={isView} />
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* ── ABA: Contato ── */}
-              {activeTab === 'contato' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <SectionHeader label="Contato" icon={Phone} />
-                  <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" required disabled={isView} error={errors.email} placeholder="paciente@exemplo.com" />
-                  <div style={responsiveGrid(220)}>
-                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', v)} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" />
-                    <FieldInput label="Telefone 2" value={d.telefone2 || ''} onChange={v => setField('telefone2', v)} disabled={isView} placeholder="(79) 3000-0000" />
-                  </div>
                 </div>
               )}
 
