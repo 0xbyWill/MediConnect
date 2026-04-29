@@ -6,7 +6,6 @@ import { useAuth } from '../contexts/AuthContext';
 interface SidebarProps {
   currentPage: PageType;
   onNavigate: (page: PageType) => void;
-  capacidade: number;
 }
 
 // ─── Definição de todos os itens de navegação ─────────────────────────────────
@@ -35,7 +34,7 @@ const ROLE_COLOR: Record<UserRole, string> = {
 };
 
 // ─── Componente ───────────────────────────────────────────────────────────────
-export default function Sidebar({ currentPage, onNavigate, capacidade }: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
   const { user, logout } = useAuth();
   const role = user?.role ?? 'secretaria';
   const allowed = ROLE_PAGES[role];
@@ -148,18 +147,7 @@ export default function Sidebar({ currentPage, onNavigate, capacidade }: Sidebar
         ))}
       </nav>
 
-      {/* Capacidade */}
       <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 10, marginBottom: 8 }}>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-            Capacidade Clínica
-          </div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', margin: '2px 0 5px' }}>{capacidade}%</div>
-          <div style={{ height: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ height: '100%', background: 'linear-gradient(90deg, var(--light), var(--primary))', borderRadius: 2, width: `${capacidade}%`, transition: 'width .3s' }} />
-          </div>
-        </div>
-
         {/* Logout */}
         <button
           onClick={logout}

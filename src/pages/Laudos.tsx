@@ -11,7 +11,10 @@ import type { Laudo, Paciente, StatusLaudo } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-const today = new Date().toISOString().split('T')[0];
+function dateToISO(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+const today = dateToISO(new Date());
 
 const FONTES   = ['Helvetica','Arial','Times New Roman','Courier New','Georgia','Verdana'];
 const TAMANHOS = ['8','10','12','14','16','18','20','24','28','32'];
@@ -55,6 +58,37 @@ function formatDateBR(iso: string) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
+}
+function parseISODate(iso: string) {
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+function endOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+function startOfWeek(date: Date) {
+  const d = startOfDay(date);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+function endOfWeek(date: Date) {
+  const d = startOfWeek(date);
+  d.setDate(d.getDate() + 6);
+  return endOfDay(d);
+}
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+function endOfMonth(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+function isDateInRange(iso: string, start: Date, end: Date) {
+  const date = parseISODate(iso);
+  return Boolean(date && date >= start && date <= end);
 }
 function calcIdade(dataNasc: string) {
   if (!dataNasc) return '';
@@ -102,6 +136,7 @@ interface LaudosProps {
 
 type ViewMode = 'lista' | 'editor' | 'preview';
 type AbaLista = 'rascunho' | 'liberado' | 'todos';
+type PeriodoFiltro = 'todos' | 'hoje' | 'semana' | 'mes';
 
 const emptyLaudo = (): Omit<Laudo & LaudoExtra, 'id'> => ({
   pacienteId: '', cid: '', data: today,
@@ -119,6 +154,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
   // ── Estados gerais ──
   const [view, setView]                     = useState<ViewMode>('lista');
   const [abaLista, setAbaLista]             = useState<AbaLista>('rascunho');
+  const [periodoFiltro, setPeriodoFiltro]   = useState<PeriodoFiltro>('todos');
   const [search, setSearch]                 = useState('');
   const [editingLaudo, setEditingLaudo]     = useState<Partial<Laudo & LaudoExtra> & { id?: string }>({});
   const [isNew, setIsNew]                   = useState(false);
@@ -259,20 +295,40 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
   }, []);
 
   // ── Filtros ──
+  const hoje = startOfDay(new Date());
+  const periodos: Record<PeriodoFiltro, { label: string; match: (data: string) => boolean }> = {
+    todos:  { label: 'Todos',  match: () => true },
+    hoje:   { label: 'Hoje',   match: data => data === today },
+    semana: { label: 'Semana', match: data => isDateInRange(data, startOfWeek(hoje), endOfWeek(hoje)) },
+    mes:    { label: 'Mês',    match: data => isDateInRange(data, startOfMonth(hoje), endOfMonth(hoje)) },
+  };
+
   const filtered = laudos.filter(l => {
     const pac = pacientes.find(p => p.id === l.pacienteId);
-    const q   = search.toLowerCase();
+    const q   = search.toLowerCase().trim();
     const matchSearch = !q
       || pac?.nome.toLowerCase().includes(q)
+      || pac?.cpf.includes(q)
+      || l.orderNumber?.toLowerCase().includes(q)
       || l.cid.toLowerCase().includes(q)
-      || l.diagnostico.toLowerCase().includes(q);
+      || l.diagnostico.toLowerCase().includes(q)
+      || l.exame?.toLowerCase().includes(q)
+      || l.solicitante?.toLowerCase().includes(q);
     // FIX #3: 'todos' mostra todos os status (label corrigido no JSX)
     const matchAba = abaLista === 'todos' || l.status === abaLista;
-    return matchSearch && matchAba;
+    const matchPeriodo = periodos[periodoFiltro].match(l.data);
+    return matchSearch && matchAba && matchPeriodo;
   }).sort((a, b) => b.data.localeCompare(a.data));
 
   const countRascunho = laudos.filter(l => l.status === 'rascunho').length;
   const countLiberado = laudos.filter(l => l.status === 'liberado').length;
+  const periodoOptions: PeriodoFiltro[] = ['todos', 'hoje', 'semana', 'mes'];
+  const hasActiveFilters = search.trim() || periodoFiltro !== 'todos' || abaLista !== 'todos';
+  const clearFilters = () => {
+    setSearch('');
+    setPeriodoFiltro('todos');
+    setAbaLista('todos');
+  };
 
   // ── Abrir editor ──
   const openNew = () => {
@@ -454,14 +510,22 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente/pedido..."
             style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: '#fff' }} />
         </div>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 600, color: 'var(--gray-600)', cursor: 'pointer' }}>Hoje</button>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 600, color: 'var(--gray-600)', cursor: 'pointer' }}>Semana</button>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: '1px solid var(--primary)', borderRadius: 8, background: 'var(--mint)', fontSize: 13, fontWeight: 700, color: 'var(--primary)', cursor: 'pointer' }}>Mês</button>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#fff', fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', cursor: 'pointer' }}>
-          <AlignLeft size={13} /> Filtros
+        {periodoOptions.map(periodo => {
+          const active = periodoFiltro === periodo;
+          return (
+            <button key={periodo} onClick={() => setPeriodoFiltro(periodo)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: `1px solid ${active ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 8, background: active ? 'var(--mint)' : '#fff', fontSize: 13, fontWeight: active ? 700 : 600, color: active ? 'var(--primary)' : 'var(--gray-600)', cursor: 'pointer' }}>
+              {periodos[periodo].label}
+            </button>
+          );
+        })}
+        <button onClick={clearFilters}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: `1px solid ${hasActiveFilters ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 8, background: hasActiveFilters ? 'var(--mint)' : '#fff', fontSize: 12, fontWeight: 600, color: hasActiveFilters ? 'var(--primary)' : 'var(--gray-600)', cursor: 'pointer' }}>
+          <AlignLeft size={13} /> Limpar filtros
         </button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#fff', fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', cursor: 'pointer' }}>
+          <button onClick={() => setSearch(value => value.trim())}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#fff', fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', cursor: 'pointer' }}>
             <Search size={13} /> Pesquisar
           </button>
           <button style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: 'none', borderRadius: 8, background: 'var(--primary)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
