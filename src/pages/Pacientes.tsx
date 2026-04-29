@@ -85,6 +85,14 @@ function formatDateTime(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+function formatDateISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function yesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return formatDateISO(d);
+}
 function responsiveGrid(min = 180, gap = 12): React.CSSProperties {
   return { display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap };
 }
@@ -99,8 +107,18 @@ function isAniversariante(dataNasc: string, mes?: number) {
   const m = parseInt(dataNasc.split('-')[1]);
   return mes ? m === mes : m === new Date().getMonth() + 1;
 }
+function digitsOnly(value = '') {
+  return value.replace(/\D/g, '');
+}
+function formatCpf(value: string) {
+  const digits = digitsOnly(value).slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
 function cpfValido(cpf: string) {
-  const c = cpf.replace(/\D/g, '');
+  const c = digitsOnly(cpf);
   if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
   let s = 0;
   for (let i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
@@ -130,9 +148,10 @@ const emptyForm: PacienteExtended = {
 };
 
 // ─── Sub-componentes de campo ─────────────────────────────────────────────────
-function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '' }: {
+function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '', max, inputMode, maxLength }: {
   label: string; value: string; onChange: (v: string) => void;
   placeholder?: string; type?: string; required?: boolean; disabled?: boolean; error?: string;
+  max?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']; maxLength?: number;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
@@ -141,6 +160,9 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
       </label>
       <input
         type={type} value={value} placeholder={placeholder}
+        max={max}
+        inputMode={inputMode}
+        maxLength={maxLength}
         onChange={e => onChange(e.target.value)} disabled={disabled}
         style={{
           padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none',
@@ -208,6 +230,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [duplicateWarn, setDuplicateWarn] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const maxBirthDate = yesterdayISO();
 
   // Scroll infinito
   useEffect(() => {
@@ -220,9 +243,15 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
   // ── Filtros ──
   const filtered = pacientes.filter(p => {
-    const q = search.toLowerCase();
+    const q = search.toLowerCase().trim();
+    const qDigits = digitsOnly(search);
     const ext = p as PacienteExtended;
-    const matchSearch = !q || p.nome.toLowerCase().includes(q) || p.cpf.includes(q) || (p.telefone || '').includes(q);
+    const matchSearch = !q
+      || p.nome.toLowerCase().includes(q)
+      || p.cpf.toLowerCase().includes(q)
+      || (qDigits && digitsOnly(p.cpf).includes(qDigits))
+      || (p.telefone || '').toLowerCase().includes(q)
+      || (qDigits && digitsOnly(p.telefone).includes(qDigits));
     const matchConvenio = !filterConvenio || p.convenio === filterConvenio;
     const matchVip = !filterVip || (ext.isVip === true);
     const matchAniv = !filterAnivMes || isAniversariante(p.dataNasc, parseInt(filterAnivMes));
@@ -234,20 +263,20 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const visible = filtered.slice(0, visibleCount);
 
   // ── Abrir modal ──
-  const openAdd  = () => {
+  const openAdd  = useCallback(() => {
     if (hideAddButton) return;
     setModal({ open: true, mode: 'add', data: { ...emptyForm } });
     setActiveTab('dados');
     setErrors({});
     setSubmitError('');
     setDuplicateWarn(false);
-  };
-  const openEdit = (p: Paciente) => { setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...p } }); setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
-  const openView = (p: Paciente) => { setModal({ open: true, mode: 'view', data: { ...emptyForm, ...p } }); setActiveTab('dados'); };
+  }, [hideAddButton]);
+  const openEdit = (p: Paciente) => { setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...p, cpf: formatCpf(p.cpf) } }); setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
+  const openView = (p: Paciente) => { setModal({ open: true, mode: 'view', data: { ...emptyForm, ...p, cpf: formatCpf(p.cpf) } }); setActiveTab('dados'); };
   const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); };
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { if (initialOpen && !hideAddButton) openAdd(); }, [initialOpen, hideAddButton]);
+  useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen, openAdd]);
 
   // ── Set field helper ──
   const setField = useCallback(<K extends keyof PacienteExtended>(field: K, value: PacienteExtended[K]) => {
@@ -270,6 +299,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
     if (d.cpf && !cpfValido(d.cpf)) e.cpf = 'CPF inválido';
     if (!d.dataNasc) e.dataNasc = 'Data de nascimento obrigatória';
+    else if (d.dataNasc > maxBirthDate) e.dataNasc = 'A data de nascimento deve ser no mínimo de ontem.';
     if (!d.email.trim()) e.email = 'E-mail obrigatório pela API';
     if (!d.telefone.trim()) e.telefone = 'Telefone obrigatório pela API';
     return e;
@@ -287,9 +317,9 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
       return;
     }
     // Verifica duplicidade por CPF
-    const cpfLimpo = modal.data.cpf.replace(/\D/g, '');
+    const cpfLimpo = digitsOnly(modal.data.cpf);
     if (cpfLimpo && modal.mode === 'add' && !ignoreDuplicate) {
-      const dup = pacientes.find(p => p.cpf.replace(/\D/g, '') === cpfLimpo);
+      const dup = pacientes.find(p => digitsOnly(p.cpf) === cpfLimpo);
       if (dup) { setDuplicateWarn(true); return; }
     }
     setSaving(true);
@@ -616,7 +646,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     <FieldInput label="Nome Social" value={d.nomeSocial || ''} onChange={v => setField('nomeSocial', v)} disabled={isView} placeholder="Apelido ou nome social" />
                   </div>
                   <div style={responsiveGrid(160)}>
-                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', v)} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" />
+                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', formatCpf(v))} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                     <FieldInput label="RG" value={d.rg || ''} onChange={v => setField('rg', v)} disabled={isView} placeholder="00.000.000-0" />
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Outros documentos</label>
@@ -647,7 +677,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                         ))}
                       </div>
                     </div>
-                    <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} type="date" required disabled={isView} error={errors.dataNasc} />
+                    <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} type="date" max={maxBirthDate} required disabled={isView} error={errors.dataNasc} />
                   </div>
 
                   <div style={responsiveGrid(180)}>
@@ -670,7 +700,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     <FieldInput label="Nome do pai" value={d.nomePai || ''} onChange={v => setField('nomePai', v)} disabled={isView} />
                     <FieldInput label="Profissão do pai" value={d.profissaoPai || ''} onChange={v => setField('profissaoPai', v)} disabled={isView} />
                     <FieldInput label="Nome do responsável" value={d.nomeResponsavel || ''} onChange={v => setField('nomeResponsavel', v)} disabled={isView} />
-                    <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', v)} disabled={isView} placeholder="000.000.000-00" />
+                    <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', formatCpf(v))} disabled={isView} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                     <FieldInput label="Nome do esposo(a)" value={d.nomeEsposo || ''} onChange={v => setField('nomeEsposo', v)} disabled={isView} />
                     <FieldInput label="Código legado" value={d.codigoLegado || ''} onChange={v => setField('codigoLegado', v)} disabled={isView} placeholder="ID de outro sistema" />
                   </div>
