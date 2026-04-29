@@ -277,8 +277,6 @@ export default function App() {
   }, [refresh]);
 
   // ─── Navegação ────────────────────────────────────────────────────────────
-  const capacidade = Math.min(100, Math.round((pacientes.length / 300) * 100));
-
   const handleNavigate = (p: PageType) => {
     if (!user) return;
     if (ROLE_PAGES[user.role].includes(p)) {
@@ -304,7 +302,7 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden' }}>
-      <Sidebar currentPage={currentPage} onNavigate={handleNavigate} capacidade={capacidade}/>
+      <Sidebar currentPage={currentPage} onNavigate={handleNavigate}/>
 
       <div style={{ flex: 1, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
         <Topbar currentPage={currentPage}/>
