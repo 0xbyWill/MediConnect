@@ -25,12 +25,14 @@ const ROLE_LABEL: Record<UserRole, string> = {
   medico:    'Médico',
   gestao:    'Gestão',
   secretaria: 'Secretaria',
+  paciente:  'Paciente',
 };
 
 const ROLE_COLOR: Record<UserRole, string> = {
   medico:    'var(--light)',
   gestao:    '#a78bfa',
   secretaria: '#fbbf24',
+  paciente:  '#93c5fd',
 };
 
 // ─── Componente ───────────────────────────────────────────────────────────────

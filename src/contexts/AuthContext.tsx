@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authApi, doctorsApi, usersApi } from '../lib/api';
+import { authApi, doctorsApi, patientsApi, usersApi } from '../lib/api';
 import type { ApiUser, ApiUserInfo } from '../lib/api';
 import type { AuthUser, UserRole } from '../types';
 
@@ -27,8 +27,22 @@ function normalizeRole(role?: string): UserRole {
   const r = role?.toLowerCase().trim();
   if (r === 'medico' || r === 'doctor' || r === 'physician') return 'medico';
   if (r === 'secretaria' || r === 'secretary' || r === 'receptionist') return 'secretaria';
+  if (r === 'paciente' || r === 'patient') return 'paciente';
   // gestor, admin, gestao, manager → gestao
   return 'gestao';
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readPatientId(apiUser: ApiUser, info?: ApiUserInfo | null): string | undefined {
+  return (
+    readString(info?.profile?.patient_id) ??
+    readString(info?.user?.patient_id) ??
+    readString(apiUser.user_metadata?.patient_id) ??
+    readString(apiUser.app_metadata?.patient_id)
+  );
 }
 
 function readApiRole(apiUser: ApiUser, info?: ApiUserInfo | null): UserRole | undefined {
@@ -55,10 +69,20 @@ async function findDoctorByEmail(email: string) {
   }
 }
 
+async function findPatientByEmail(email: string) {
+  try {
+    const patients = await patientsApi.list({ email: email.toLowerCase().trim(), limit: 1 });
+    return patients[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Resolve perfil completo do usuário ──────────────────────────────────────
 async function resolveUserProfile(apiUser: ApiUser): Promise<AuthUser> {
   const info = await usersApi.currentInfo().catch(() => null);
   const explicitRole = readApiRole(apiUser, info);
+  const explicitPatientId = readPatientId(apiUser, info);
   const fullName =
     info?.profile?.full_name ??
     info?.profile?.name ??
@@ -67,6 +91,17 @@ async function resolveUserProfile(apiUser: ApiUser): Promise<AuthUser> {
     apiUser.user_metadata?.full_name ??
     apiUser.user_metadata?.name ??
     apiUser.email.split('@')[0];
+
+  if (explicitRole === 'paciente') {
+    const patient = explicitPatientId ? null : await findPatientByEmail(apiUser.email);
+    return {
+      id:         apiUser.id,
+      email:      apiUser.email,
+      role:       'paciente',
+      full_name:  patient?.full_name ?? fullName,
+      patient_id: explicitPatientId ?? patient?.id,
+    };
+  }
 
   // ── CASO 1: role explícita e NÃO é médico → retorna sem buscar doctors ──
   if (explicitRole && explicitRole !== 'medico') {
@@ -98,7 +133,7 @@ async function resolveUserProfile(apiUser: ApiUser): Promise<AuthUser> {
   return {
     id:        apiUser.id,
     email:     apiUser.email,
-    role:      explicitRole ?? 'gestao',
+    role:      explicitRole ?? 'secretaria',
     full_name: fullName,
   };
 }

@@ -1,7 +1,7 @@
 import type { ApiPatient, ApiAppointment, ApiReport } from './lib/api';
 
 // ─── Perfis de usuário ────────────────────────────────────────────────────────
-export type UserRole = 'medico' | 'gestao' | 'secretaria';
+export type UserRole = 'medico' | 'gestao' | 'secretaria' | 'paciente';
 
 export interface AuthUser {
   id: string;
@@ -12,6 +12,7 @@ export interface AuthUser {
   crm?: string;
   avatar_url?: string;
   doctor_id?: string;
+  patient_id?: string;
 }
 
 // ─── Páginas disponíveis ──────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ export const ROLE_PAGES: Record<UserRole, PageType[]> = {
   medico:     ['dashboard', 'pacientes', 'laudos', 'agenda', 'comunicacao', 'relatorios'],
   gestao:     ['dashboard', 'pacientes', 'laudos', 'agenda', 'comunicacao', 'relatorios', 'usuarios', 'metricas', 'configuracoes'],
   secretaria: ['dashboard', 'agenda', 'pacientes', 'comunicacao'],
+  paciente:   ['dashboard', 'agenda', 'laudos', 'comunicacao'],
 };
 
 // ─── Convênios ────────────────────────────────────────────────────────────────
@@ -57,7 +59,6 @@ export interface Paciente {
   outroDocNumero?: string;
   sexo?: string;
   dataNasc: string;
-  etnia?: string;
   raca?: string;
   naturalidade?: string;
   nacionalidade?: string;
@@ -104,6 +105,70 @@ export interface Paciente {
   proximoAtendimento?: string;
 }
 
+const PATIENT_EXTRA_MARKER = '\n\n__MC_PATIENT_EXTRA__=';
+
+type PatientExtraData = Partial<Omit<Paciente, 'id' | 'nome' | 'cpf' | 'dataNasc' | 'email' | 'telefone' | 'raca' | 'sexo' | 'cidade' | 'estado' | 'observacoes'>>;
+
+function splitPatientNotes(notes?: string): { observacoes?: string; extra: PatientExtraData } {
+  if (!notes) return { observacoes: notes, extra: {} };
+  const markerIndex = notes.indexOf(PATIENT_EXTRA_MARKER);
+  if (markerIndex < 0) return { observacoes: notes, extra: {} };
+
+  const rawExtra = notes.slice(markerIndex + PATIENT_EXTRA_MARKER.length).trim();
+  try {
+    return {
+      observacoes: notes.slice(0, markerIndex).trimEnd(),
+      extra: JSON.parse(rawExtra) as PatientExtraData,
+    };
+  } catch {
+    return { observacoes: notes.slice(0, markerIndex).trimEnd(), extra: {} };
+  }
+}
+
+function buildPatientNotes(p: Omit<Paciente, 'id'>): string | undefined {
+  const extra: PatientExtraData = {
+    nomeSocial: p.nomeSocial,
+    rg: p.rg,
+    outroDocTipo: p.outroDocTipo,
+    outroDocNumero: p.outroDocNumero,
+    naturalidade: p.naturalidade,
+    nacionalidade: p.nacionalidade,
+    profissao: p.profissao,
+    estadoCivil: p.estadoCivil,
+    nomeMae: p.nomeMae,
+    profissaoMae: p.profissaoMae,
+    nomePai: p.nomePai,
+    profissaoPai: p.profissaoPai,
+    nomeResponsavel: p.nomeResponsavel,
+    cpfResponsavel: p.cpfResponsavel,
+    nomeEsposo: p.nomeEsposo,
+    rnGuiaConvenio: p.rnGuiaConvenio,
+    codigoLegado: p.codigoLegado,
+    telefone2: p.telefone2,
+    cep: p.cep,
+    logradouro: p.logradouro,
+    numero: p.numero,
+    complemento: p.complemento,
+    bairro: p.bairro,
+    tipoSanguineo: p.tipoSanguineo,
+    peso: p.peso,
+    altura: p.altura,
+    alergias: p.alergias,
+    convenio: p.convenio,
+    planoConvenio: p.planoConvenio,
+    matriculaConvenio: p.matriculaConvenio,
+    validadeCarteira: p.validadeCarteira,
+    status: p.status,
+    foto: p.foto,
+  };
+  const cleaned = Object.fromEntries(
+    Object.entries(extra).filter(([, value]) => value !== undefined && value !== '')
+  );
+  const base = p.observacoes?.trimEnd() ?? '';
+  if (Object.keys(cleaned).length === 0) return base || undefined;
+  return `${base}${PATIENT_EXTRA_MARKER}${JSON.stringify(cleaned)}`;
+}
+
 // ─── Agendamento ──────────────────────────────────────────────────────────────
 export type TipoConsulta = 'Primeira Consulta' | 'Retorno' | 'Check-up' | 'Urgência';
 export type StatusAgendamento = 'confirmado' | 'pendente' | 'cancelado' | 'realizado';
@@ -145,6 +210,7 @@ export interface Laudo {
 
 // ─── Helpers de mapeamento API ↔ modelo interno ───────────────────────────────
 export function apiPatientToPaciente(p: ApiPatient): Paciente {
+  const { observacoes, extra } = splitPatientNotes(p.notes);
   return {
     id:          p.id,
     nome:        p.full_name,
@@ -152,13 +218,14 @@ export function apiPatientToPaciente(p: ApiPatient): Paciente {
     dataNasc:    p.birth_date ?? '',
     email:       p.email,
     telefone:    p.phone_mobile,
-    convenio:    'Particular',
-    status:      'Ativo',
+    convenio:    extra.convenio ?? 'Particular',
+    status:      extra.status ?? 'Ativo',
     raca:        p.race,
     sexo:        p.sex,
     cidade:      p.city,
     estado:      p.state,
-    observacoes: p.notes,
+    observacoes,
+    ...extra,
   };
 }
 
@@ -173,7 +240,7 @@ export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 
     sex:              p.sexo,
     city:             p.cidade,
     state:            p.estado,
-    notes:            p.observacoes,
+    notes:            buildPatientNotes(p),
   };
 }
 
@@ -214,6 +281,11 @@ export function agendamentoToApiAppointment(
   a: Omit<Agendamento, 'id'>,
   createdBy: string
 ): Omit<ApiAppointment, 'id'> {
+  const today = new Date();
+  const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  if (a.data < todayISO) {
+    throw new Error('A consulta não pode ser agendada para data anterior a hoje.');
+  }
   const statusMap: Record<StatusAgendamento, ApiAppointment['status']> = {
     pendente: 'requested', confirmado: 'confirmed',
     realizado: 'completed', cancelado: 'cancelled',
@@ -222,8 +294,8 @@ export function agendamentoToApiAppointment(
     doctor_id:        a.medicoId ?? '',
     patient_id:       a.pacienteId,
     scheduled_at:     `${a.data}T${a.hora}:00Z`,
-    duration_minutes: a.duracao ? parseInt(a.duracao) : 30,
-    status:           statusMap[a.status],
+    duration_minutes: 30,
+    status:           statusMap[a.status || 'pendente'],
     notes:            a.observacoes,
     created_by:       createdBy,
   };

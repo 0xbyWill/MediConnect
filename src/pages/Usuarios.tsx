@@ -24,18 +24,21 @@ const ROLE_LABEL: Record<UserRole, string> = {
   medico:     'Médico',
   gestao:     'Gestão',
   secretaria: 'Secretaria',
+  paciente:   'Paciente',
 };
 
 const ROLE_COLOR: Record<UserRole, { bg: string; color: string }> = {
   medico:     { bg: 'var(--mint)',      color: 'var(--dark)' },
   gestao:     { bg: '#ede9fe',          color: '#7c3aed' },
   secretaria: { bg: 'var(--amber-100)', color: 'var(--amber-600)' },
+  paciente:   { bg: '#dbeafe',          color: '#2563eb' },
 };
 
-const ROLE_API: Record<UserRole, 'medico' | 'admin' | 'secretaria'> = {
+const ROLE_API: Record<UserRole, 'medico' | 'admin' | 'secretaria' | 'paciente'> = {
   medico:     'medico',
   gestao:     'admin',
   secretaria: 'secretaria',
+  paciente:   'paciente',
 };
 
 const UF_OPTIONS = [
@@ -95,6 +98,7 @@ function normalizeUserRole(role?: string): UserRole {
   const r = role?.toLowerCase().trim();
   if (r === 'medico' || r === 'doctor' || r === 'physician') return 'medico';
   if (r === 'secretaria' || r === 'secretary' || r === 'receptionist') return 'secretaria';
+  if (r === 'paciente' || r === 'patient') return 'paciente';
   return 'gestao';
 }
 
@@ -299,9 +303,19 @@ export default function Usuarios() {
     }
   };
 
-  const handleDelete = (id: string) => {
-    setUsuarios(prev => prev.filter(u => u.id !== id));
-    setConfirmDelete(null);
+  const handleDelete = async (id: string) => {
+    setSaving(true);
+    setFormError(null);
+    try {
+      const response = await usersApi.deletePermanent(id);
+      setSuccessMessage(response.message ?? 'Usuario deletado permanentemente.');
+      setConfirmDelete(null);
+      await loadUsuarios();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao deletar usuario.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filteredUsuarios = usuarios.filter(u => {
@@ -329,7 +343,7 @@ export default function Usuarios() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
-        {(['medico', 'gestao', 'secretaria'] as UserRole[]).map(role => {
+        {(['medico', 'gestao', 'secretaria', 'paciente'] as UserRole[]).map(role => {
           const count = usuarios.filter(u => u.role === role).length;
           const st = ROLE_COLOR[role];
           return (
@@ -372,6 +386,7 @@ export default function Usuarios() {
           <option value="medico">Médico</option>
           <option value="gestao">Gestão</option>
           <option value="secretaria">Secretaria</option>
+          <option value="paciente">Paciente</option>
         </select>
 
         <button
@@ -451,6 +466,15 @@ export default function Usuarios() {
                 </tr>
               );
             })}
+            {filteredUsuarios.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--gray-400)' }}>
+                  <Search size={28} style={{ marginBottom: 8, display: 'block', margin: '0 auto 8px' }} />
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-600)' }}>Nenhum usuário encontrado</div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>Tente ajustar o nome pesquisado ou o filtro de perfil.</div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -481,6 +505,7 @@ export default function Usuarios() {
                   <option value="medico">Médico</option>
                   <option value="gestao">Gestão / Coordenação</option>
                   <option value="secretaria">Secretaria</option>
+                  <option value="paciente">Paciente</option>
                 </select>
               </div>
 
@@ -541,8 +566,8 @@ export default function Usuarios() {
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Confirmar exclusão</h3>
             <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 20 }}>Tem certeza que deseja remover este usuário? Esta ação não pode ser desfeita.</p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setConfirmDelete(null)} style={{ padding: '9px 18px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={() => handleDelete(confirmDelete)} style={{ padding: '9px 18px', background: 'var(--red-500)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Excluir</button>
+              <button disabled={saving} onClick={() => setConfirmDelete(null)} style={{ padding: '9px 18px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>Cancelar</button>
+              <button disabled={saving} onClick={() => void handleDelete(confirmDelete)} style={{ padding: '9px 18px', background: 'var(--red-500)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Excluindo...' : 'Excluir'}</button>
             </div>
           </div>
         </div>

@@ -64,10 +64,12 @@ export interface ApiUser {
     role?: ApiRole;
     roles?: ApiRole[];
     phone?: string;
+    patient_id?: string;
   };
   app_metadata?: {
     role?: ApiRole;
     roles?: ApiRole[];
+    patient_id?: string;
   };
 }
 
@@ -132,12 +134,24 @@ export interface CreateUserResponse {
   message?: string;
 }
 
+export interface DeleteUserResponse {
+  success?: boolean;
+  message?: string;
+  userId?: string;
+}
+
+export interface PasswordResetResponse {
+  success?: boolean;
+  message?: string;
+}
+
 export interface ApiUserInfo {
   user?: Partial<ApiUser> & {
     full_name?: string;
     name?: string;
     roles?: string[];
     phone?: string;
+    patient_id?: string;
   };
   profile?: {
     full_name?: string;
@@ -303,6 +317,12 @@ export const usersApi = {
   currentInfo: () =>
     request<ApiUserInfo>('/functions/v1/user-info', { method: 'POST' }),
 
+  infoById: (userId: string) =>
+    request<ApiUserInfo>('/functions/v1/user-info-by-id', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
+
   list: async (): Promise<ApiManagedUser[]> => {
     const normalizeRole = (role?: string): ApiManagedUser['role'] => {
       const r = role?.toLowerCase().trim();
@@ -393,6 +413,18 @@ export const usersApi = {
       return request<CreateUserResponse>('/functions/v1/create-user-with-password', options);
     }
   },
+
+  requestPasswordReset: (email: string) =>
+    request<PasswordResetResponse>('/request-password-reset', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  deletePermanent: (userId: string) =>
+    request<DeleteUserResponse>('/delete-user', {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
 };
 
 // ─── Médicos ──────────────────────────────────────────────────────────────────
@@ -413,11 +445,12 @@ export const doctorsApi = {
 
 // ─── Pacientes ────────────────────────────────────────────────────────────────
 export const patientsApi = {
-  list: (params: { search?: string; cpf?: string; limit?: number; offset?: number; created_by?: string } = {}) => {
+  list: (params: { search?: string; cpf?: string; email?: string; limit?: number; offset?: number; created_by?: string } = {}) => {
     const q = new URLSearchParams({ select: '*', order: 'full_name.asc' });
     if (params.limit) q.set('limit', String(params.limit));
     if (params.offset) q.set('offset', String(params.offset));
     if (params.cpf) q.set('cpf', `eq.${params.cpf}`);
+    if (params.email) q.set('email', `eq.${params.email}`);
     if (params.created_by) q.set('created_by', `eq.${params.created_by}`);
     if (params.search) q.set('full_name', `ilike.*${params.search}*`);
     return request<ApiPatient[]>(`/rest/v1/patients?${q.toString()}`);
@@ -443,8 +476,19 @@ export const patientsApi = {
       body: JSON.stringify(data),
     }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
-  delete: (id: string) =>
-    request<void>(`/rest/v1/patients?id=eq.${id}`, { method: 'DELETE' }),
+  delete: async (id: string) => {
+    try {
+      await request<void>(`/rest/v1/patients/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      const canFallback =
+        msg.includes('404') ||
+        msg.toLowerCase().includes('not found') ||
+        msg.toLowerCase().includes('erro na requisicao (404)');
+      if (!canFallback) throw err;
+      await request<void>(`/rest/v1/patients?id=eq.${id}`, { method: 'DELETE' });
+    }
+  },
 };
 
 // ─── Agendamentos ─────────────────────────────────────────────────────────────

@@ -59,6 +59,95 @@ function LoadingState({ label = 'Carregando...' }: { label?: string }) {
   );
 }
 
+interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  read: boolean;
+}
+
+function buildRoleNotifications(params: {
+  user: NonNullable<ReturnType<typeof useAuth>['user']>;
+  pacientes: Paciente[];
+  agendamentos: Agendamento[];
+  laudos: Laudo[];
+  doctors: ApiDoctor[];
+  apiError: string | null;
+  todayISO: string;
+  nowTime: string;
+}): Omit<NotificationItem, 'read'>[] {
+  const { user, pacientes, agendamentos, laudos, doctors, apiError, todayISO, nowTime } = params;
+  const formatDate = (iso: string) => iso.split('-').reverse().join('/');
+  const getPaciente = (id: string) => pacientes.find(p => p.id === id);
+  const getDoctorName = (id?: string) => doctors.find(d => d.id === id)?.full_name || user.full_name;
+  const futureAppointments = agendamentos
+    .filter(a => a.data > todayISO || (a.data === todayISO && a.hora >= nowTime))
+    .sort((a, b) => `${a.data} ${a.hora}`.localeCompare(`${b.data} ${b.hora}`));
+
+  if (user.role === 'medico') {
+    return futureAppointments
+      .filter(a => a.data === todayISO && (!user.doctor_id || a.medicoId === user.doctor_id))
+      .slice(0, 6)
+      .map(a => ({
+        id: `medico-${a.id}`,
+        title: 'Paciente de hoje',
+        message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} as ${a.hora}.`,
+      }));
+  }
+
+  if (user.role === 'paciente') {
+    const ownPatientId = user.patient_id ?? pacientes.find(p => p.email?.toLowerCase() === user.email.toLowerCase())?.id;
+    const consultas = futureAppointments
+      .filter(a => !ownPatientId || a.pacienteId === ownPatientId)
+      .slice(0, 4)
+      .map(a => ({
+        id: `paciente-consulta-${a.id}`,
+        title: a.data === todayISO ? 'Consulta hoje' : 'Consulta proxima',
+        message: `${formatDate(a.data)} as ${a.hora} com ${getDoctorName(a.medicoId)}.`,
+      }));
+    const exames = laudos
+      .filter(l => !ownPatientId || l.pacienteId === ownPatientId)
+      .slice(0, 3)
+      .map(l => ({
+        id: `paciente-laudo-${l.id}`,
+        title: l.status === 'liberado' ? 'Exame/laudo disponivel' : 'Exame em processamento',
+        message: `${l.exame || 'Laudo'} - ${formatDate(l.data || todayISO)}.`,
+      }));
+    return [...consultas, ...exames];
+  }
+
+  if (user.role === 'secretaria') {
+    const todaysAppointments = agendamentos
+      .filter(a => a.data === todayISO)
+      .sort((a, b) => a.hora.localeCompare(b.hora));
+    const reminders = todaysAppointments.slice(0, 5).map(a => ({
+      id: `secretaria-lembrete-${a.id}`,
+      title: 'Lembrete de consulta',
+      message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} as ${a.hora}. Confirmar contato.`,
+    }));
+    const confirmed = todaysAppointments
+      .filter(a => a.status === 'confirmado')
+      .slice(0, 4)
+      .map(a => ({
+        id: `secretaria-confirmada-${a.id}`,
+        title: 'Consulta confirmada',
+        message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} confirmado com ${getDoctorName(a.medicoId)}.`,
+      }));
+    return [...reminders, ...confirmed];
+  }
+
+  const errors = apiError ? [{ id: `gestao-error-${apiError}`, title: 'Erro operacional', message: apiError }] : [];
+  const appointmentsToday = agendamentos.filter(a => a.data === todayISO).length;
+  const pendingReports = laudos.filter(l => l.status === 'rascunho').length;
+  const cancelledToday = agendamentos.filter(a => a.data === todayISO && a.status === 'cancelado').length;
+  return [
+    ...errors,
+    { id: `gestao-agenda-${todayISO}-${appointmentsToday}`, title: 'Analise da agenda', message: `${appointmentsToday} consulta(s) previstas hoje.` },
+    { id: `gestao-laudos-${pendingReports}`, title: 'Analise de laudos', message: `${pendingReports} laudo(s) em rascunho aguardando fluxo.` },
+    { id: `gestao-cancelamentos-${todayISO}-${cancelledToday}`, title: 'Indicador operacional', message: `${cancelledToday} cancelamento(s) registrados hoje.` },
+  ];
+}
+
 export default function App() {
   const { user, loading } = useAuth();
 
@@ -69,6 +158,13 @@ export default function App() {
   const [apiLoading,   setApiLoading]   = useState(false);
   const [apiError,     setApiError]     = useState<string | null>(null);
   const [dataLoaded,   setDataLoaded]   = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('mc_read_notifications') || '[]') as string[];
+    } catch {
+      return [];
+    }
+  });
 
   const [openAgendaModal,    setOpenAgendaModal]    = useState(false);
   const [openPacienteModal,  setOpenPacienteModal]  = useState(false);
@@ -161,6 +257,21 @@ export default function App() {
         setLaudos([]);
         setDoctors(apiDoctors);
 
+      } else if (user.role === 'paciente') {
+        const ownPatients = user.patient_id
+          ? await patientsApi.listByIds([user.patient_id]).catch(err => { capture('paciente', err); return [] as ApiPatient[]; })
+          : await patientsApi.list({ email: user.email, limit: 1 }).catch(err => { capture('paciente', err); return [] as ApiPatient[]; });
+        const patientId = user.patient_id ?? ownPatients[0]?.id;
+        const [apiAgendamentos, apiLaudos, apiDoctors] = patientId ? await Promise.all([
+          appointmentsApi.list({ patient_id: patientId }).catch(err => { capture('agendamentos', err); return [] as ApiAppointment[]; }),
+          reportsApi.list({ patient_id: patientId }).catch(err => { capture('laudos', err); return [] as ApiReport[]; }),
+          doctorsApi.list({ active: true }).catch(err => { capture('mÃ©dicos', err); return [] as ApiDoctor[]; }),
+        ]) : [[] as ApiAppointment[], [] as ApiReport[], [] as ApiDoctor[]];
+        setPacientes(ownPatients.map(apiPatientToPaciente));
+        setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento));
+        setLaudos(apiLaudos.map(apiReportToLaudo));
+        setDoctors(apiDoctors);
+
       // ── Perfil Gestão / Admin ──
       } else {
         const [apiPacientes, apiAgendamentos, apiLaudos, apiDoctors] = await Promise.all([
@@ -192,8 +303,12 @@ export default function App() {
     }
   }, [user]);
 
-  // Recarrega quando usuário muda (login/troca de perfil)
-  useEffect(() => { void refresh(); }, [refresh]);
+  // Recarrega quando usuário muda e mantém as telas sincronizadas com a API.
+  useEffect(() => {
+    void refresh();
+    const intervalId = window.setInterval(() => { void refresh(); }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [refresh]);
 
   // ─── CRUD Pacientes ───────────────────────────────────────────────────────
   const addPaciente = useCallback(async (p: Omit<Paciente, 'id'>) => {
@@ -220,8 +335,18 @@ export default function App() {
   }, [refresh]);
 
   const deletePaciente = useCallback(async (id: string) => {
-    await patientsApi.delete(id);
-    await refresh();
+    try {
+      await patientsApi.delete(id);
+      await refresh();
+    } catch (err) {
+      const rawMsg = err instanceof Error ? err.message : 'Erro ao excluir paciente.';
+      const msg =
+        rawMsg.includes('403') || rawMsg.toLowerCase().includes('forbidden')
+          ? 'A API permite excluir pacientes apenas para admin/gestao. Verifique o perfil do usuario logado.'
+          : rawMsg;
+      setApiError(msg);
+      throw new Error(msg);
+    }
   }, [refresh]);
 
   // ─── CRUD Agendamentos ────────────────────────────────────────────────────
@@ -299,13 +424,59 @@ export default function App() {
 
   const allowedPages = ROLE_PAGES[user.role];
   const currentPage  = allowedPages.includes(page) ? page : allowedPages[0];
+  const notificationSeed = (() => {
+    const today = new Date();
+    const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const nowTime = `${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}`;
+    return buildRoleNotifications({ user, pacientes, agendamentos, laudos, doctors, apiError, todayISO, nowTime });
+    /*
+    const soon = agendamentos
+      .filter(a => a.data >= todayISO)
+      .sort((a, b) => `${a.data} ${a.hora}`.localeCompare(`${b.data} ${b.hora}`))
+      .slice(0, 4)
+      .map(a => {
+        const paciente = pacientes.find(p => p.id === a.pacienteId);
+        return {
+          id: `appt-${a.id}`,
+          title: a.data === todayISO ? 'Consulta hoje' : 'Consulta próxima',
+          message: `${paciente?.nome || 'Paciente'} às ${a.hora} em ${a.data.split('-').reverse().join('/')}`,
+        };
+      });
+    const drafts = laudos
+      .filter(l => l.status === 'rascunho')
+      .slice(0, 3)
+      .map(l => {
+        const paciente = pacientes.find(p => p.id === l.pacienteId);
+        return {
+          id: `report-${l.id}`,
+          title: 'Laudo em rascunho',
+          message: `${paciente?.nome || 'Paciente'} aguarda revisão.`,
+        };
+      });
+    const errors = apiError ? [{ id: `error-${apiError}`, title: 'Erro operacional', message: apiError }] : [];
+    return [...errors, ...soon, ...drafts];
+    */
+  })();
+  const notifications: NotificationItem[] = notificationSeed.map(item => ({ ...item, read: readNotificationIds.includes(item.id) }));
+  const markNotificationRead = (id: string) => {
+    setReadNotificationIds(prev => {
+      const next = Array.from(new Set([...prev, id]));
+      localStorage.setItem('mc_read_notifications', JSON.stringify(next));
+      return next;
+    });
+  };
+  const clearNotifications = () => {
+    const next = notificationSeed.map(n => n.id);
+    localStorage.setItem('mc_read_notifications', JSON.stringify(next));
+    setReadNotificationIds(next);
+  };
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden' }}>
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate}/>
 
       <div style={{ flex: 1, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-        <Topbar currentPage={currentPage}/>
+        <Topbar currentPage={currentPage} notifications={notifications} onMarkNotificationRead={markNotificationRead} onClearNotifications={clearNotifications}/>
 
         <main style={{ flex: 1, minWidth: 0, width: '100%', overflow: 'hidden', display: 'flex', position: 'relative', minHeight: 0 }}>
           {!dataLoaded && apiLoading ? (
@@ -337,7 +508,7 @@ export default function App() {
 
           {currentPage === 'dashboard' && (
             <Dashboard
-              pacientes={pacientes} agendamentos={agendamentos} laudos={laudos}
+              pacientes={pacientes} agendamentos={agendamentos} laudos={laudos} doctors={doctors}
               onNavigate={setPage}
               onNovoAgendamento={() => { setOpenAgendaModal(true); setPage('agenda'); }}
               onNovoPaciente={() => { setOpenPacienteModal(true); setPage('pacientes'); }}

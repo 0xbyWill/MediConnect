@@ -5,7 +5,7 @@ import {
   AlignJustify, List, ListOrdered, Download, ZoomIn, ZoomOut,
   FileText, Image, ChevronDown, AlertCircle, Send,
   Star, CheckCircle2, BookOpen, MessageSquare, LayoutTemplate,
-  Maximize2,
+  Maximize2, Mic, MicOff,
 } from 'lucide-react';
 import type { Laudo, Paciente, StatusLaudo } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -138,6 +138,33 @@ type ViewMode = 'lista' | 'editor' | 'preview';
 type AbaLista = 'rascunho' | 'liberado' | 'todos';
 type PeriodoFiltro = 'todos' | 'hoje' | 'semana' | 'mes';
 
+type SpeechRecognitionCtor = new () => SpeechRecognition;
+
+interface SpeechRecognition extends EventTarget {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
+
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionCtor;
+  webkitSpeechRecognition?: SpeechRecognitionCtor;
+};
+
 const emptyLaudo = (): Omit<Laudo & LaudoExtra, 'id'> => ({
   pacienteId: '', cid: '', data: today,
   diagnostico: '', tecnica: '', impressao: '',
@@ -163,6 +190,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
   const [searchPac, setSearchPac]           = useState('');
   const [showPacList, setShowPacList]       = useState(false);
   const [errors, setErrors]                 = useState<Record<string, string>>({});
+  const [voiceState, setVoiceState]         = useState<'idle' | 'listening' | 'unsupported' | 'error'>('idle');
+  const [voiceMessage, setVoiceMessage]     = useState('');
 
   // ── Estados do editor ──
   const [fonte, setFonte]         = useState('Helvetica');
@@ -176,6 +205,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
   const editorRef                 = useRef<HTMLDivElement>(null);
   const fileInputRef              = useRef<HTMLInputElement>(null);
   const imgInputRef               = useRef<HTMLInputElement>(null);
+  const recognitionRef            = useRef<SpeechRecognition | null>(null);
   // Controla se o editor já foi inicializado para evitar sobrescrever o DOM
   const editorInitialized         = useRef(false);
 
@@ -192,6 +222,12 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
       editorInitialized.current = false;
     }
   }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   // ── Salva/restaura seleção — o <select> rouba foco antes do onChange disparar ──
   const savedRangeRef = useRef<Range | null>(null);
@@ -379,6 +415,45 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
     setEditorContent(editorRef.current?.innerHTML || '');
   };
 
+  const toggleVoiceDictation = () => {
+    const SpeechCtor = (window as SpeechWindow).SpeechRecognition || (window as SpeechWindow).webkitSpeechRecognition;
+    if (!SpeechCtor) {
+      setVoiceState('unsupported');
+      setVoiceMessage('Reconhecimento de voz não suportado neste navegador.');
+      return;
+    }
+
+    if (voiceState === 'listening') {
+      recognitionRef.current?.stop();
+      setVoiceState('idle');
+      setVoiceMessage('Ditado pausado.');
+      return;
+    }
+
+    const recognition = new SpeechCtor();
+    recognition.lang = 'pt-BR';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = event => {
+      let text = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) text += event.results[i][0].transcript;
+      }
+      if (text.trim()) insertText(`${text.trim()} `);
+    };
+    recognition.onerror = event => {
+      setVoiceState('error');
+      setVoiceMessage(event.error === 'not-allowed' ? 'Permissão do microfone negada.' : `Erro no ditado: ${event.error}`);
+    };
+    recognition.onend = () => {
+      setVoiceState(state => state === 'listening' ? 'idle' : state);
+    };
+    recognitionRef.current = recognition;
+    setVoiceState('listening');
+    setVoiceMessage('Ouvindo...');
+    recognition.start();
+  };
+
   // ── Resolve campos dinâmicos ──
   const resolveCampos = (texto: string) => {
     const pac = pacientes.find(p => p.id === editingLaudo.pacienteId);
@@ -437,6 +512,42 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
     const html = getEditorHtml();
     setEditorContent(html);
     setView('preview');
+  };
+
+  const exportLaudo = (l?: Laudo & LaudoExtra) => {
+    const target = l || (editingLaudo.id ? laudos.find(item => item.id === editingLaudo.id) : undefined);
+    const current = target || editingLaudo;
+    const pac = pacientes.find(p => p.id === current.pacienteId);
+    const content = sanitizeHtml(current.conteudoHtml || current.diagnostico || editorContent || '');
+    const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1100');
+    if (!win) return;
+    win.document.write(`<!doctype html>
+      <html>
+        <head>
+          <title>${current.exame || 'Laudo'} - ${pac?.nome || 'Paciente'}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111; margin: 48px; line-height: 1.6; }
+            header { text-align: center; border-bottom: 2px solid #111; padding-bottom: 16px; margin-bottom: 28px; }
+            h1 { font-size: 18px; letter-spacing: 1.5px; text-transform: uppercase; }
+            .patient { border-bottom: 1px dashed #ccc; padding-bottom: 12px; margin-bottom: 24px; color: #555; font-size: 13px; }
+            .signature { margin-top: 56px; border-top: 1px solid #111; padding-top: 8px; display: inline-block; min-width: 260px; }
+            @media print { body { margin: 32px; } }
+          </style>
+        </head>
+        <body>
+          <header><h1>${current.exame || 'Relatório Médico'}</h1></header>
+          <section class="patient">
+            <strong>${pac?.nome || 'Paciente não selecionado'}</strong>
+            ${pac ? ` · CPF: ${pac.cpf || ''} · Idade: ${calcIdade(pac.dataNasc)} · Convênio: ${pac.convenio || ''}` : ''}
+            ${current.cid ? ` · CID: ${current.cid}` : ''}
+          </section>
+          <main>${content}</main>
+          <p>${formatDateBR(current.data || today)}</p>
+          <section class="signature"><strong>${user?.full_name || ''}</strong>${user?.crm ? `<br>${user.crm}` : ''}</section>
+          <script>window.onload = () => { window.print(); };</script>
+        </body>
+      </html>`);
+    win.document.close();
   };
 
   // ── Importar PDF (simulado) ──
@@ -524,11 +635,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
           <AlignLeft size={13} /> Limpar filtros
         </button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button onClick={() => setSearch(value => value.trim())}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#fff', fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', cursor: 'pointer' }}>
-            <Search size={13} /> Pesquisar
-          </button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: 'none', borderRadius: 8, background: 'var(--primary)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          <button onClick={() => exportLaudo(filtered[0])} disabled={!filtered[0]}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: 'none', borderRadius: 8, background: filtered[0] ? 'var(--primary)' : 'var(--gray-200)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: filtered[0] ? 'pointer' : 'not-allowed' }}>
             <Download size={13} /> Exportar <ChevronDown size={12} />
           </button>
         </div>
@@ -595,7 +703,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
                     <div style={{ display: 'flex', gap: 3 }}>
                       {isMedico && <TblBtn icon={Pencil} color="var(--amber-600)" title="Editar" onClick={() => openEdit(l)} />}
                       {/* FIX: Removida a race condition — openEdit já define a view como editor; preview vai separado */}
-                      <TblBtn icon={Printer} color="#0369a1" title="Imprimir" onClick={() => { openEdit(l); }} />
+                      <TblBtn icon={Printer} color="#0369a1" title="Exportar/Imprimir" onClick={() => exportLaudo(l)} />
                       {l.status === 'rascunho' && isMedico && (
                         <TblBtn icon={Send} color="var(--primary)" title="Liberar laudo" onClick={() => setConfirmLiberar(l.id)} />
                       )}
@@ -728,7 +836,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
             <button onClick={() => setZoom(z => Math.min(150, z + 10))} style={previewBtnStyle}><ZoomIn size={15} /></button>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
             <button onClick={() => setZoom(100)} style={previewBtnStyle}><Maximize2 size={14} /></button>
-            <button onClick={() => window.print()} style={previewBtnStyle}><Download size={14} /></button>
+            <button onClick={() => exportLaudo()} style={previewBtnStyle}><Download size={14} /></button>
           </div>
           <button onClick={() => setView('editor')}
             style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -871,6 +979,16 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
 
           <FmtBtn title="Inserir imagem" onClick={() => imgInputRef.current?.click()}><Image size={13} /></FmtBtn>
           <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImgUpload} />
+          <button type="button" title="Digitação por voz" onClick={toggleVoiceDictation}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: `1px solid ${voiceState === 'listening' ? 'var(--primary)' : 'var(--gray-200)'}`, background: voiceState === 'listening' ? 'var(--mint)' : '#fff', color: voiceState === 'listening' ? 'var(--primary)' : 'var(--gray-600)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            {voiceState === 'listening' ? <MicOff size={13} /> : <Mic size={13} />}
+            {voiceState === 'listening' ? 'Parar ditado' : 'Digitação por voz'}
+          </button>
+          {voiceMessage && (
+            <span style={{ fontSize: 11, color: voiceState === 'error' || voiceState === 'unsupported' ? 'var(--red-600)' : 'var(--gray-500)', marginLeft: 4 }}>
+              {voiceMessage}
+            </span>
+          )}
         </div>
 
         {/* ── Barra de inserção ── */}
