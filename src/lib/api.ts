@@ -502,16 +502,35 @@ export const patientsApi = {
     }, { Prefer: 'return=representation' }).then(rows => rows[0]),
 
   delete: async (id: string) => {
+    const filter = new URLSearchParams();
+    filter.set('id', `eq.${id}`);
+
+    const deleteByFilter = async () => {
+      const deletedRows = await request<ApiPatient[]>(
+        `/rest/v1/patients?${filter.toString()}`,
+        { method: 'DELETE' },
+        { Prefer: 'return=representation' }
+      );
+
+      if (deletedRows.length === 0) {
+        throw new Error('A API nao excluiu nenhum paciente. Verifique se o perfil logado tem permissao de admin/gestao e se o id existe.');
+      }
+    };
+
     try {
       await request<void>(`/rest/v1/patients/${encodeURIComponent(id)}`, { method: 'DELETE' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
+      const lowerMsg = msg.toLowerCase();
       const canFallback =
+        msg.includes('400') ||
         msg.includes('404') ||
-        msg.toLowerCase().includes('not found') ||
-        msg.toLowerCase().includes('erro na requisicao (404)');
+        lowerMsg.includes('invalid path') ||
+        lowerMsg.includes('not found') ||
+        lowerMsg.includes('erro na requisicao (400)') ||
+        lowerMsg.includes('erro na requisicao (404)');
       if (!canFallback) throw err;
-      await request<void>(`/rest/v1/patients?id=eq.${id}`, { method: 'DELETE' });
+      await deleteByFilter();
     }
   },
 };
@@ -543,6 +562,19 @@ export const appointmentsApi = {
 
   delete: (id: string) =>
     request<void>(`/rest/v1/appointments?id=eq.${id}`, { method: 'DELETE' }),
+
+  cancel: async (id: string) => {
+    const rows = await request<ApiAppointment[]>(`/rest/v1/appointments?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'cancelled' }),
+    }, { Prefer: 'return=representation' });
+
+    if (rows.length === 0) {
+      throw new Error('A API nao cancelou nenhum agendamento. Verifique permissao do perfil logado e se o agendamento existe.');
+    }
+
+    return rows[0];
+  },
 };
 
 // ─── Laudos / Reports ─────────────────────────────────────────────────────────
