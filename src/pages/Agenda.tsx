@@ -259,7 +259,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               {isPaciente ? 'Acompanhe suas consultas agendadas e anteriores.' : 'Consultas organizadas por data, horário e paciente cadastrado.'}
             </p>
           </div>
-          {!isPaciente && (
+          {!isPaciente && !isMedico && (
             <button onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
               <Plus size={16} /> Agendar
             </button>

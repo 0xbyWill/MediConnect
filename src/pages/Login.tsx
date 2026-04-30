@@ -38,7 +38,6 @@ export default function Login({ onCreateAccount }: LoginProps) {
       background: 'linear-gradient(135deg, var(--darker) 0%, var(--dark) 55%, #2d8a45 100%)',
       padding: 24,
     }}>
-      <div style={{ width: '100%', maxWidth: 920, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 18, alignItems: 'stretch' }}>
       {/* Card */}
       <div style={{
         width: '100%', maxWidth: 420,
@@ -260,29 +259,28 @@ export default function Login({ onCreateAccount }: LoginProps) {
         </p>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.96)', borderRadius: 24, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.35)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ position: 'fixed', right: 18, bottom: 18, width: 'min(280px, calc(100vw - 36px))', background: 'rgba(255,255,255,0.96)', borderRadius: 16, padding: 14, boxShadow: '0 14px 36px rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.35)', display: 'flex', flexDirection: 'column', gap: 8, zIndex: 5 }}>
         <div>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--dark)', margin: 0 }}>Acessos rápidos</h2>
-          <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>Preencha automaticamente para testar cada perfil.</p>
+          <h2 style={{ fontSize: 13, fontWeight: 800, color: 'var(--dark)', margin: 0 }}>Acessos rapidos</h2>
+          <p style={{ fontSize: 10, color: 'var(--gray-500)', marginTop: 2 }}>Atalhos de teste</p>
         </div>
 
         <QuickAccessButton icon={Stethoscope} title="Médico" subtitle="Agenda, pacientes, laudos e relatórios" color="var(--primary)" disabled={loading} onClick={() => void quickLogin({ email: 'joao.francisco777@gmail.com', password: 'Teste@123' })} />
         <QuickAccessButton icon={ClipboardList} title="Secretaria" subtitle="Agenda, pacientes e comunicação" color="var(--amber-600)" disabled={loading} onClick={() => void quickLogin({ email: 'isabely.santiny777@gmail.com', password: 'Teste@123' })} />
         <QuickAccessButton icon={Shield} title="Gestor" subtitle="Acesso administrativo completo" color="#7c3aed" disabled={loading} onClick={() => void quickLogin({ email: 'hugo@popcode.com.br', password: 'hdoria' })} />
 
-        <div style={{ height: 1, background: 'var(--gray-100)', margin: '4px 0' }} />
+        <div style={{ height: 1, background: 'var(--gray-100)', margin: '2px 0' }} />
 
         <button type="button" disabled={loading} onClick={demoPatient}
-          style={{ width: '100%', border: '1px solid #bfdbfe', background: '#eff6ff', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: loading ? 'not-allowed' : 'pointer' }}>
-          <div style={{ width: 38, height: 38, borderRadius: 12, background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <UserRound size={18} />
+          style={{ width: '100%', border: '1px solid #bfdbfe', background: '#eff6ff', borderRadius: 10, padding: 8, display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', cursor: loading ? 'not-allowed' : 'pointer' }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <UserRound size={14} />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#1d4ed8' }}>Paciente mockado</div>
-            <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>Visualizar dashboard, agenda e laudos permitidos</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8' }}>Paciente mockado</div>
+            <div style={{ fontSize: 9, color: '#475569', marginTop: 1 }}>Ver permissoes</div>
           </div>
         </button>
-      </div>
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -307,13 +305,13 @@ function QuickAccessButton({
 }) {
   return (
     <button type="button" disabled={disabled} onClick={onClick}
-      style={{ width: '100%', border: '1px solid var(--gray-100)', background: '#fff', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: disabled ? 'not-allowed' : 'pointer' }}>
-      <div style={{ width: 38, height: 38, borderRadius: 12, background: 'var(--gray-50)', color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={18} />
+      style={{ width: '100%', border: '1px solid var(--gray-100)', background: '#fff', borderRadius: 10, padding: 8, display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', cursor: disabled ? 'not-allowed' : 'pointer' }}>
+      <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--gray-50)', color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={14} />
       </div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-800)' }}>{title}</div>
-        <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{subtitle}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-800)' }}>{title}</div>
+        <div style={{ fontSize: 9, color: 'var(--gray-500)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>
       </div>
     </button>
   );
