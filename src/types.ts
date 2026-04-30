@@ -1,8 +1,10 @@
 import type { ApiPatient, ApiAppointment, ApiReport } from './lib/api';
+import type { UserRole } from './shared/constants/roles';
+import { splitApiDateTime } from './shared/utils/date';
+export type { PageType, UserRole } from './shared/constants/roles';
+export { ROLE_PAGES } from './shared/constants/roles';
 
 // ─── Perfis de usuário ────────────────────────────────────────────────────────
-export type UserRole = 'medico' | 'gestao' | 'secretaria' | 'paciente';
-
 export interface AuthUser {
   id: string;
   email: string;
@@ -16,25 +18,7 @@ export interface AuthUser {
 }
 
 // ─── Páginas disponíveis ──────────────────────────────────────────────────────
-export type PageType =
-  | 'dashboard'
-  | 'pacientes'
-  | 'agenda'
-  | 'laudos'
-  | 'comunicacao'
-  | 'relatorios'
-  | 'usuarios'
-  | 'metricas'
-  | 'configuracoes';
-
 // ─── Permissões por perfil ────────────────────────────────────────────────────
-export const ROLE_PAGES: Record<UserRole, PageType[]> = {
-  medico:     ['dashboard', 'pacientes', 'laudos', 'agenda', 'comunicacao', 'relatorios'],
-  gestao:     ['dashboard', 'pacientes', 'laudos', 'agenda', 'comunicacao', 'relatorios', 'usuarios', 'metricas', 'configuracoes'],
-  secretaria: ['dashboard', 'agenda', 'pacientes', 'comunicacao'],
-  paciente:   ['dashboard', 'agenda', 'laudos', 'comunicacao'],
-};
-
 // ─── Convênios ────────────────────────────────────────────────────────────────
 export type ConvenioType =
   | 'Particular'
@@ -241,21 +225,6 @@ export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 
     city:             p.cidade,
     state:            p.estado,
     notes:            buildPatientNotes(p),
-  };
-}
-
-function splitApiDateTime(value: string) {
-  const direct = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
-  if (direct) {
-    return { data: direct[1], hora: `${direct[2]}:${direct[3]}` };
-  }
-
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return { data: '', hora: '' };
-
-  return {
-    data: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
-    hora: `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`,
   };
 }
 

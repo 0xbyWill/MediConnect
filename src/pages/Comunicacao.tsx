@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MessageSquare, Send, Mail, Phone, Bell, Clock, CheckCircle2, XCircle, Search, Plus } from 'lucide-react';
 import type { Paciente } from '../types';
 import { smsApi } from '../lib/api';
@@ -51,12 +51,23 @@ const TEMPLATES = [
   { label: 'Boas-vindas', texto: 'Bem-vindo(a) à nossa clínica, {nome}! Estamos à disposição para cuidar da sua saúde.' },
 ];
 
+const STORAGE_KEY = 'mc_communication_history';
+
+function readStoredMessages(): Mensagem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) as Mensagem[] : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function Comunicacao({ pacientes }: ComunicacaoProps) {
   const [canal, setCanal] = useState<Canal>('sms');
   const [pacienteId, setPacienteId] = useState('');
   const [texto, setTexto] = useState('');
   const [search, setSearch] = useState('');
-  const [mensagens, setMensagens] = useState<Mensagem[]>([]);
+  const [mensagens, setMensagens] = useState<Mensagem[]>(readStoredMessages);
   const [enviando, setEnviando] = useState(false);
   const [sucesso, setSucesso] = useState(false);
   const [erro, setErro] = useState('');
@@ -64,6 +75,10 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
   const filteredPacientes = pacientes.filter(p =>
     !search || p.nome.toLowerCase().includes(search.toLowerCase())
   );
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(mensagens.slice(0, 100)));
+  }, [mensagens]);
 
   const handleTemplate = (t: string) => {
     const p = pacientes.find(x => x.id === pacienteId);

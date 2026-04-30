@@ -3,6 +3,7 @@ import { BarChart2, Calendar, FileText, TrendingDown, TrendingUp, Users } from '
 import type { ElementType } from 'react';
 import type { Agendamento, Laudo, Paciente } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { dateToISO, formatDateBR } from '../shared/utils/date';
 
 interface RelatoriosProps {
   pacientes: Paciente[];
@@ -21,19 +22,10 @@ const PERIODOS: Record<Periodo, { label: string; days: number }> = {
   anual: { label: 'Anual', days: 365 },
 };
 
-function dateToISO(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
 function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
-}
-
-function formatDateBR(iso: string) {
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
 }
 
 function inRange(iso: string, start: string, end: string) {

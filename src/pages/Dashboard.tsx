@@ -18,6 +18,7 @@ import type { ApiDoctor } from '../lib/api';
 import type { Agendamento, Laudo, Paciente, PageType, UserRole } from '../types';
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { dateToISO } from '../shared/utils/date';
 
 interface DashboardProps {
   pacientes: Paciente[];
@@ -65,10 +66,6 @@ const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }>
   cancelado: { bg: 'var(--red-100)', color: 'var(--red-600)', label: 'Cancelada' },
   realizado: { bg: '#ede9fe', color: '#5b21b6', label: 'Realizada' },
 };
-
-function dateToISO(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
 
 function formatDate(iso: string) {
   const [year, month, day] = iso.split('-');
@@ -164,38 +161,38 @@ function buildDashboardModel(params: {
   const laudosRascunho = laudos.filter(l => l.status === 'rascunho');
   const pacAtivos = pacientes.filter(p => p.status === 'Ativo');
   const taxaConfirmacao = todayAppts.length > 0 ? `${Math.round((confirmedAppts.length / todayAppts.length) * 100)}%` : '0%';
-  const patientName = (id: string) => pacientes.find(p => p.id === id)?.nome || 'Paciente nao localizado';
-  const doctorName = (id?: string) => doctors.find(d => d.id === id)?.full_name || 'Medico nao informado';
+  const patientName = (id: string) => pacientes.find(p => p.id === id)?.nome || 'Paciente não localizado';
+  const doctorName = (id?: string) => doctors.find(d => d.id === id)?.full_name || 'Médico não informado';
   const appointmentItem = (a: Agendamento): ListItem => ({
     id: a.id,
     title: patientName(a.pacienteId),
-    subtitle: `${formatDate(a.data)} as ${a.hora} - ${a.tipo}`,
+    subtitle: `${formatDate(a.data)} às ${a.hora} - ${a.tipo}`,
     meta: doctorName(a.medicoId),
     status: a.status,
   });
 
   const baseReminders = {
     medico: [
-      { icon: FileText, text: 'Laudos em rascunho', sub: `${laudosRascunho.length} pendente${laudosRascunho.length === 1 ? '' : 's'} de revisao` },
+      { icon: FileText, text: 'Laudos em rascunho', sub: `${laudosRascunho.length} pendente${laudosRascunho.length === 1 ? '' : 's'} de revisão` },
       { icon: Clock, text: 'Agenda do dia', sub: `${todayAppts.length} consulta${todayAppts.length === 1 ? '' : 's'} programada${todayAppts.length === 1 ? '' : 's'}` },
     ],
     secretaria: [
       { icon: Clock, text: 'Lembretes do dia', sub: `${todayAppts.length} consulta${todayAppts.length === 1 ? '' : 's'} para confirmar ou acompanhar` },
-      { icon: MessageSquare, text: 'Confirmacoes', sub: `${confirmedAppts.length} consulta${confirmedAppts.length === 1 ? '' : 's'} confirmada${confirmedAppts.length === 1 ? '' : 's'}` },
+      { icon: MessageSquare, text: 'Confirmações', sub: `${confirmedAppts.length} consulta${confirmedAppts.length === 1 ? '' : 's'} confirmada${confirmedAppts.length === 1 ? '' : 's'}` },
     ],
     gestao: [
-      { icon: BarChart2, text: 'Indicadores gerais', sub: 'Acompanhe producao, agenda e equipe' },
-      { icon: UserCog, text: 'Equipe ativa', sub: `${doctors.length} medico${doctors.length === 1 ? '' : 's'} cadastrado${doctors.length === 1 ? '' : 's'}` },
+      { icon: BarChart2, text: 'Indicadores gerais', sub: 'Acompanhe produção, agenda e equipe' },
+      { icon: UserCog, text: 'Equipe ativa', sub: `${doctors.length} médico${doctors.length === 1 ? '' : 's'} cadastrado${doctors.length === 1 ? '' : 's'}` },
     ],
     paciente: [
-      { icon: Clock, text: 'Proximas consultas', sub: `${upcomingAppts.length} consulta${upcomingAppts.length === 1 ? '' : 's'} programada${upcomingAppts.length === 1 ? '' : 's'}` },
-      { icon: FileText, text: 'Exames e laudos', sub: `${laudosLiberados.length} laudo${laudosLiberados.length === 1 ? '' : 's'} disponivel${laudosLiberados.length === 1 ? '' : 'is'}` },
+      { icon: Clock, text: 'Próximas consultas', sub: `${upcomingAppts.length} consulta${upcomingAppts.length === 1 ? '' : 's'} programada${upcomingAppts.length === 1 ? '' : 's'}` },
+      { icon: FileText, text: 'Exames e laudos', sub: `${laudosLiberados.length} laudo${laudosLiberados.length === 1 ? '' : 's'} disponível${laudosLiberados.length === 1 ? '' : 'is'}` },
     ],
   } satisfies Record<UserRole, { icon: React.ElementType; text: string; sub: string }[]>;
 
   const models: Record<UserRole, DashboardModel> = {
     medico: {
-      title: 'Visao clinica do dia',
+      title: 'Visão clínica do dia',
       agendaTitle: 'Pacientes do dia',
       kpis: [
         { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
@@ -204,27 +201,27 @@ function buildDashboardModel(params: {
         { label: 'Laudos Emitidos', value: laudosLiberados.length, icon: FileText },
       ],
       mainList: todayAppts.map(appointmentItem),
-      secondaryTitle: 'Proximas consultas',
+      secondaryTitle: 'Próximas consultas',
       secondaryList: upcomingAppts.slice(0, 5).map(appointmentItem),
       reminders: baseReminders.medico,
       showLaudos: true,
       showManagementFlow: false,
     },
     gestao: {
-      title: 'Painel de gestao',
-      agendaTitle: 'Operacao do dia',
+      title: 'Painel de gestão',
+      agendaTitle: 'Operação do dia',
       kpis: [
-        { label: 'Medicos', value: doctors.length, icon: Users },
+        { label: 'Médicos', value: doctors.length, icon: Users },
         { label: 'Pacientes Hoje', value: new Set(todayAppts.map(a => a.pacienteId)).size, icon: UserPlus },
         { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
-        { label: 'Taxa de Confirmacao', value: taxaConfirmacao, icon: Activity },
+        { label: 'Taxa de Confirmação', value: taxaConfirmacao, icon: Activity },
       ],
       mainList: todayAppts.map(appointmentItem),
-      secondaryTitle: 'Medicos responsaveis',
+      secondaryTitle: 'Médicos responsáveis',
       secondaryList: doctors.slice(0, 6).map(d => ({
         id: d.id,
         title: d.full_name,
-        subtitle: d.specialty || 'Especialidade nao informada',
+        subtitle: d.specialty || 'Especialidade não informada',
         meta: d.crm ? `CRM ${d.crm}/${d.crm_uf}` : d.email,
       })),
       reminders: baseReminders.gestao,
@@ -232,20 +229,20 @@ function buildDashboardModel(params: {
       showManagementFlow: true,
     },
     secretaria: {
-      title: 'Organizacao da agenda',
+      title: 'Organização da agenda',
       agendaTitle: 'Pacientes com consulta hoje',
       kpis: [
         { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
         { label: 'Fila de Espera', value: waitAppts.length, icon: Clock, live: true },
         { label: 'Pacientes Ativos', value: pacAtivos.length, icon: UserPlus },
-        { label: 'Confirmacao Hoje', value: taxaConfirmacao, icon: MessageSquare },
+        { label: 'Confirmação Hoje', value: taxaConfirmacao, icon: MessageSquare },
       ],
       mainList: todayAppts.map(appointmentItem),
-      secondaryTitle: 'Medicos do dia',
+      secondaryTitle: 'Médicos do dia',
       secondaryList: todayAppts.slice(0, 6).map(a => ({
         id: `doctor-${a.id}`,
         title: doctorName(a.medicoId),
-        subtitle: `${patientName(a.pacienteId)} as ${a.hora}`,
+        subtitle: `${patientName(a.pacienteId)} às ${a.hora}`,
         status: a.status,
       })),
       reminders: baseReminders.secretaria,
@@ -254,19 +251,19 @@ function buildDashboardModel(params: {
     },
     paciente: {
       title: 'Meu acompanhamento',
-      agendaTitle: 'Minhas proximas consultas',
+      agendaTitle: 'Minhas próximas consultas',
       kpis: [
         { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
-        { label: 'Proximas Consultas', value: upcomingAppts.length, icon: Clock },
-        { label: 'Laudos Disponiveis', value: laudosLiberados.length, icon: FileText },
+        { label: 'Próximas Consultas', value: upcomingAppts.length, icon: Clock },
+        { label: 'Laudos Disponíveis', value: laudosLiberados.length, icon: FileText },
         { label: 'Pendentes', value: laudos.filter(l => l.status === 'rascunho').length, icon: Activity },
       ],
       mainList: upcomingAppts.slice(0, 6).map(appointmentItem),
       secondaryTitle: 'Exames e laudos',
       secondaryList: laudos.slice(0, 6).map(l => ({
         id: l.id,
-        title: l.exame || 'Laudo medico',
-        subtitle: `${formatDate(l.data)} - ${l.status === 'liberado' ? 'Disponivel' : 'Pendente'}`,
+        title: l.exame || 'Laudo médico',
+        subtitle: `${formatDate(l.data)} - ${l.status === 'liberado' ? 'Disponível' : 'Pendente'}`,
         status: l.status,
       })),
       reminders: baseReminders.paciente,
@@ -295,7 +292,7 @@ export default function Dashboard({
   const dateStr = `${DAYS[today.getDay()]}, ${today.getDate()} de ${MONTHS[today.getMonth()]} de ${today.getFullYear()}`;
   const hora = today.getHours();
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
-  const displayName = user?.full_name?.trim() || 'Usuario';
+  const displayName = user?.full_name?.trim() || 'Usuário';
 
   const quickActions = [
     canNavigate('agenda') && role !== 'paciente' && { label: 'Novo Agendamento', icon: PlusCircle, onClick: onNovoAgendamento, primary: true },
@@ -306,7 +303,7 @@ export default function Dashboard({
     ),
     canNavigate('agenda') && { label: role === 'paciente' ? 'Ver minhas consultas' : 'Abrir Agenda', icon: Calendar, onClick: () => onNavigate('agenda') },
     canNavigate('laudos') && role !== 'secretaria' && { label: role === 'paciente' ? 'Ver exames' : 'Abrir Laudos', icon: FileText, onClick: () => onNavigate('laudos') },
-    canNavigate('relatorios') && role === 'gestao' && { label: 'Ver Relatorios', icon: BarChart2, onClick: () => onNavigate('relatorios') },
+    canNavigate('relatorios') && role === 'gestao' && { label: 'Ver Relatórios', icon: BarChart2, onClick: () => onNavigate('relatorios') },
   ].filter(Boolean) as { label: string; icon: React.ElementType; onClick: () => void; primary?: boolean }[];
 
   return (
@@ -337,7 +334,7 @@ export default function Dashboard({
               )}
             </div>
 
-            <ListRows items={model.mainList} emptyText={role === 'paciente' ? 'Nenhuma consulta proxima' : 'Nenhuma consulta hoje'} />
+            <ListRows items={model.mainList} emptyText={role === 'paciente' ? 'Nenhuma consulta próxima' : 'Nenhuma consulta hoje'} />
             {canNavigate('agenda') && model.mainList.length > 0 && (
               <button onClick={() => onNavigate('agenda')}
                 style={{ marginTop: 14, width: '100%', padding: '10px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 12, fontWeight: 700, color: 'var(--gray-600)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -354,9 +351,9 @@ export default function Dashboard({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <Panel style={{ padding: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 14 }}>Acoes Rapidas</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 14 }}>Ações Rápidas</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-              {quickActions.length ? quickActions.map(action => <ActionButton key={action.label} {...action} />) : <EmptyState text="Nenhuma acao disponivel para este perfil" compact />}
+              {quickActions.length ? quickActions.map(action => <ActionButton key={action.label} {...action} />) : <EmptyState text="Nenhuma ação disponível para este perfil" compact />}
             </div>
           </Panel>
 
@@ -396,7 +393,7 @@ export default function Dashboard({
 
           {model.showManagementFlow && (
             <Panel style={{ padding: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 14 }}>Fluxo da Clinica</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 14 }}>Fluxo da Clínica</h3>
               <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 44 }}>
                 {[20, 35, 25, 40, 30, 45, 38, 55, 42, 60].map((h, i) => (
                   <div key={i} style={{ flex: 1, background: i === 9 ? 'var(--primary)' : 'var(--mint)', borderRadius: 3, height: `${h}%`, transition: 'height .3s' }} />

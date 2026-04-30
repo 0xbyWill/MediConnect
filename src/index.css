@@ -8,12 +8,12 @@
 
 :root {
   --primary:       #3aaa35;
-  --primary-hover: #4cb840;
-  --dark:          #1e6b35;
-  --darker:        #1a5c2a;
+  --primary-hover: #32972f;
+  --dark:          #1f6f38;
+  --darker:        #174f28;
   --light:         #72c55c;
-  --mint:          #d4f0d4;
-  --background:    #f5faf5;
+  --mint:          #def5df;
+  --background:    #f4faf5;
   --white:         #ffffff;
   --gray-50:  #f9fafb;
   --gray-100: #f3f4f6;
@@ -30,8 +30,14 @@
   --red-600:   #dc2626;
   --amber-100: #fef3c7;
   --amber-600: #d97706;
-  --sidebar-w: 220px;
-  --topbar-h:  60px;
+  --sidebar-w: 228px;
+  --sidebar-compact-w: 76px;
+  --topbar-h:  64px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --shadow-sm: 0 1px 2px rgba(20, 83, 45, 0.06), 0 1px 8px rgba(20, 83, 45, 0.04);
+  --shadow-md: 0 10px 28px rgba(16, 24, 40, 0.12);
+  --focus-ring: 0 0 0 3px rgba(58, 170, 53, 0.24);
 }
 
 html, body, #root {
@@ -45,15 +51,103 @@ body {
   background: var(--background);
   color: var(--gray-800);
   overflow: hidden;
+  line-height: 1.45;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
   display: flex;
 }
 
-button { font-family: 'Montserrat', sans-serif; cursor: pointer; }
-input, select, textarea { font-family: 'Montserrat', sans-serif; }
+button {
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+}
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+input,
+select,
+textarea {
+  color: var(--gray-800);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: #c7d7cb; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #9fb6a6; border: 2px solid transparent; background-clip: content-box; }
+
+.app-sidebar,
+.app-topbar {
+  transition: width .2s ease, padding .2s ease, box-shadow .2s ease;
+}
+
+.app-sidebar-label,
+.app-sidebar-subtitle,
+.app-sidebar-user-copy,
+.app-topbar-user-copy {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --topbar-h: 58px;
+  }
+
+  .app-sidebar {
+    width: var(--sidebar-compact-w) !important;
+  }
+
+  .app-sidebar-label,
+  .app-sidebar-subtitle,
+  .app-sidebar-user-copy,
+  .app-sidebar-group-label,
+  .app-sidebar-logout-label {
+    display: none !important;
+  }
+
+  .app-sidebar-logo,
+  .app-sidebar-profile,
+  .app-sidebar-nav,
+  .app-sidebar-footer {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .app-sidebar-brand-row,
+  .app-sidebar-profile-card,
+  .app-sidebar-nav-button,
+  .app-sidebar-logout {
+    justify-content: center !important;
+  }
+
+  .app-topbar {
+    padding: 10px 12px !important;
+    gap: 10px !important;
+  }
+
+  .app-topbar-user-copy {
+    display: none !important;
+  }
+}

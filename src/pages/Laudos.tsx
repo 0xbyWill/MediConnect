@@ -9,11 +9,11 @@ import {
 } from 'lucide-react';
 import type { Laudo, Paciente, StatusLaudo } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { dateToISO, formatDateBR } from '../shared/utils/date';
+import { initials } from '../shared/utils/text';
+import { sanitizeHtml } from '../features/laudos/sanitizeHtml';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-function dateToISO(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
 const today = dateToISO(new Date());
 
 const FONTES   = ['Helvetica','Arial','Times New Roman','Courier New','Georgia','Verdana'];
@@ -51,14 +51,6 @@ const CAMPOS_DINAMICOS = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function initials(nome: string) {
-  return nome.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
-}
-function formatDateBR(iso: string) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
-}
 function parseISODate(iso: string) {
   const [year, month, day] = iso.split('-').map(Number);
   if (!year || !month || !day) return null;
@@ -100,24 +92,6 @@ function calcIdade(dataNasc: string) {
   return `${anos} anos`;
 }
 
-// Sanitiza HTML para prevenir XSS (remove scripts e handlers inline)
-function sanitizeHtml(html: string): string {
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  // Remove script tags
-  div.querySelectorAll('script').forEach(el => el.remove());
-  // Remove event handlers inline
-  div.querySelectorAll('*').forEach(el => {
-    Array.from(el.attributes).forEach(attr => {
-      if (attr.name.startsWith('on')) el.removeAttribute(attr.name);
-    });
-    // Remove javascript: hrefs
-    if (el.getAttribute('href')?.startsWith('javascript:')) el.removeAttribute('href');
-    if (el.getAttribute('src')?.startsWith('javascript:'))  el.removeAttribute('src');
-  });
-  return div.innerHTML;
-}
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LaudoExtra {
   exame?: string;
@@ -129,9 +103,9 @@ interface LaudoExtra {
 interface LaudosProps {
   laudos: (Laudo & LaudoExtra)[];
   pacientes: (Paciente & { convenio?: string; cidade?: string })[];
-  onAdd: (l: Omit<Laudo & LaudoExtra, 'id'>) => void;
-  onUpdate: (l: Laudo & LaudoExtra) => void;
-  onDelete: (id: string) => void;
+  onAdd: (l: Omit<Laudo & LaudoExtra, 'id'>) => void | Promise<void>;
+  onUpdate: (l: Laudo & LaudoExtra) => void | Promise<void>;
+  onDelete: (id: string) => void | Promise<void>;
   readOnly?: boolean;
 }
 
@@ -192,6 +166,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const [searchPac, setSearchPac]           = useState('');
   const [showPacList, setShowPacList]       = useState(false);
   const [errors, setErrors]                 = useState<Record<string, string>>({});
+  const [saveError, setSaveError]           = useState('');
+  const [saving, setSaving]                 = useState(false);
   const [voiceState, setVoiceState]         = useState<'idle' | 'listening' | 'unsupported' | 'error'>('idle');
   const [voiceMessage, setVoiceMessage]     = useState('');
 
@@ -375,6 +351,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     setEditorContent('');
     setIsNew(true);
     setErrors({});
+    setSaveError('');
     setSearchPac('');
     editorInitialized.current = false;
     setView('editor');
@@ -385,6 +362,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     setEditorContent(l.conteudoHtml || l.diagnostico || '');
     setIsNew(false);
     setErrors({});
+    setSaveError('');
     editorInitialized.current = false;
     setView('editor');
   };
@@ -486,7 +464,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     return sanitizeHtml(editorContent);
   };
 
-  const handleSave = (novoStatus?: StatusLaudo) => {
+  const handleSave = async (novoStatus?: StatusLaudo) => {
+    if (saving) return;
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
     const conteudo = getEditorHtml();
@@ -504,9 +483,17 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       exame:             editingLaudo.exame || 'RELATÓRIO MÉDICO',
       solicitante:       editingLaudo.solicitante || '',
     };
-    if (isNew) onAdd(payload);
-    else onUpdate({ ...payload, id: editingLaudo.id! });
-    closeEditor();
+    setSaving(true);
+    setSaveError('');
+    try {
+      if (isNew) await onAdd(payload);
+      else await onUpdate({ ...payload, id: editingLaudo.id! });
+      closeEditor();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Erro ao salvar laudo.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // FIX #5: Ao ir para preview, salva o HTML atual do editor no estado antes de desmontar
@@ -591,7 +578,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>{isPaciente ? 'Meus Laudos' : 'Gerenciamento de Laudo'}</h1>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>
-            {isPaciente ? 'Visualize os laudos vinculados ao seu perfil.' : 'Nesta secao voce pode gerenciar todos os laudos gerados.'}
+            {isPaciente ? 'Visualize os laudos vinculados ao seu perfil.' : 'Nesta seção você pode gerenciar todos os laudos gerados.'}
           </p>
         </div>
         {isMedico && (
@@ -899,9 +886,9 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>
               <Eye size={14} /> Pré-visualizar
             </button>
-            <button onClick={() => handleSave('liberado')}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-              <Send size={13} /> Liberar Laudo
+            <button onClick={() => { void handleSave('liberado'); }} disabled={saving}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: saving ? 'var(--gray-300)' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>
+              <Send size={13} /> {saving ? 'Salvando...' : 'Liberar Laudo'}
             </button>
           </div>
         </div>
@@ -1202,15 +1189,20 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       </div>
 
       {/* ── Rodapé ── */}
-      <div style={{ background: '#fff', borderTop: '1px solid var(--gray-100)', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+      <div style={{ background: '#fff', borderTop: '1px solid var(--gray-100)', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           <Toggle label="Ocultar data"       value={editingLaudo.ocultarData || false}       onChange={v => setField('ocultarData', v)} />
           <Toggle label="Ocultar assinatura" value={editingLaudo.ocultarAssinatura || false} onChange={v => setField('ocultarAssinatura', v)} />
         </div>
+        {saveError && (
+          <div style={{ color: 'var(--red-600)', fontSize: 12, fontWeight: 700, flex: 1, minWidth: 220 }}>
+            {saveError}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={closeEditor} style={btnSecStyle}>Cancelar</button>
-          <button onClick={() => handleSave('rascunho')} style={btnPrimStyle}>
-            <Check size={14} /> Salvar Laudo
+          <button onClick={closeEditor} disabled={saving} style={btnSecStyle}>Cancelar</button>
+          <button onClick={() => { void handleSave('rascunho'); }} disabled={saving} style={{ ...btnPrimStyle, background: saving ? 'var(--gray-300)' : btnPrimStyle.background, cursor: saving ? 'not-allowed' : 'pointer' }}>
+            <Check size={14} /> {saving ? 'Salvando...' : 'Salvar Laudo'}
           </button>
         </div>
       </div>
