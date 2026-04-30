@@ -32,6 +32,12 @@ import Relatorios    from './pages/Relatorios';
 import Usuarios      from './pages/Usuarios';
 import Metricas      from './pages/Metricas';
 
+const onlyActiveAppointments = (appointments: ApiAppointment[]) =>
+  appointments.filter(appointment => appointment.status !== 'cancelled');
+
+const toVisibleAgendamentos = (appointments: ApiAppointment[]) =>
+  onlyActiveAppointments(appointments).map(apiAppointmentToAgendamento);
+
 export default function App() {
   const { user, loading } = useAuth();
 
@@ -101,9 +107,11 @@ export default function App() {
             : Promise.resolve([] as ApiPatient[]),
         ]);
 
+        const apiAgendamentosAtivos = onlyActiveAppointments(apiAgendamentos);
+
         // Busca pacientes vinculados aos agendamentos e laudos
         const patientIds = Array.from(new Set([
-          ...apiAgendamentos.map(a => a.patient_id),
+          ...apiAgendamentosAtivos.map(a => a.patient_id),
           ...apiLaudos.map(l => l.patient_id),
         ].filter(Boolean)));
 
@@ -126,7 +134,7 @@ export default function App() {
         );
 
         setPacientes(apiPacientes.map(apiPatientToPaciente));
-        setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento));
+        setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
         setLaudos(apiLaudos.map(apiReportToLaudo));
         setDoctors([]);
 
@@ -138,7 +146,7 @@ export default function App() {
           doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return []; }),
         ]);
         setPacientes(apiPacientes.map(apiPatientToPaciente));
-        setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento));
+        setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
         setLaudos([]);
         setDoctors(apiDoctors);
 
@@ -153,7 +161,7 @@ export default function App() {
           doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return [] as ApiDoctor[]; }),
         ]) : [[] as ApiAppointment[], [] as ApiReport[], [] as ApiDoctor[]];
         setPacientes(ownPatients.map(apiPatientToPaciente));
-        setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento));
+        setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
         setLaudos(apiLaudos.map(apiReportToLaudo));
         setDoctors(apiDoctors);
 
@@ -225,10 +233,23 @@ export default function App() {
       await refresh();
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : 'Erro ao excluir paciente.';
-      const msg =
-        rawMsg.includes('403') || rawMsg.toLowerCase().includes('forbidden')
-          ? 'A API permite excluir pacientes apenas para admin/gestão. Verifique o perfil do usuário logado.'
-          : rawMsg;
+      const lowerMsg = rawMsg.toLowerCase();
+      if (rawMsg.includes('403') || lowerMsg.includes('forbidden')) {
+        const msg = 'A API nao permitiu excluir este paciente para o perfil logado.';
+        setApiError(msg);
+        throw new Error(msg);
+      }
+      if (lowerMsg.includes('nao excluiu nenhum paciente')) {
+        const msg = 'A API nao excluiu o paciente. Pela documentacao, esta acao exige perfil admin/gestao.';
+        setApiError(msg);
+        throw new Error(msg);
+      }
+      if (lowerMsg.includes('foreign key') || lowerMsg.includes('violates') || lowerMsg.includes('referenced')) {
+        const msg = 'Nao foi possivel excluir este paciente porque ele possui registros vinculados na API.';
+        setApiError(msg);
+        throw new Error(msg);
+      }
+      const msg = rawMsg;
       setApiError(msg);
       throw new Error(msg);
     }
@@ -264,9 +285,24 @@ export default function App() {
   }, [refresh, user]);
 
   const deleteAgendamento = useCallback(async (id: string) => {
-    await appointmentsApi.delete(id);
-    await refresh();
-  }, [refresh]);
+    try {
+      if (user?.role === 'secretaria') {
+        await appointmentsApi.cancel(id);
+      } else {
+        await appointmentsApi.delete(id);
+      }
+      await refresh();
+    } catch (err) {
+      const rawMsg = err instanceof Error ? err.message : 'Erro ao excluir agendamento.';
+      const lowerMsg = rawMsg.toLowerCase();
+      const msg =
+        rawMsg.includes('403') || lowerMsg.includes('forbidden')
+          ? 'A API nao permitiu excluir este agendamento para o perfil logado.'
+          : rawMsg;
+      setApiError(msg);
+      throw new Error(msg);
+    }
+  }, [refresh, user?.role]);
 
   // ─── CRUD Laudos ──────────────────────────────────────────────────────────
   const addLaudo = useCallback(async (l: Omit<Laudo, 'id'>) => {
@@ -411,7 +447,7 @@ export default function App() {
             <Pacientes
               pacientes={pacientes} onAdd={addPaciente} onUpdate={updatePaciente}
               onDelete={deletePaciente}
-              initialOpen={openPacienteModal} readOnly={user.role === 'secretaria'}
+              initialOpen={openPacienteModal} readOnly={user.role === 'secretaria'} allowDelete={user.role === 'gestao'}
             />
           )}
           {currentPage === 'agenda' && allowedPages.includes('agenda') && (

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Search, Plus, Eye, Pencil, Trash2, X, Camera, User, Lock,
+  Search, Plus, Eye, Pencil, Trash2, X, Camera, User,
   Filter, Calendar, ChevronDown, Phone, MapPin,
   AlertCircle, Clock, CheckCircle2,
 } from 'lucide-react';
@@ -78,6 +78,7 @@ interface PacientesProps {
   highlightId?: string;
   initialOpen?: boolean;
   readOnly?: boolean;
+  allowDelete?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -189,7 +190,7 @@ function SectionHeader({ label, icon: Icon }: { label: string; icon?: React.Elem
 }
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
-export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highlightId, initialOpen, readOnly = false }: PacientesProps) {
+export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highlightId, initialOpen, readOnly = false, allowDelete = false }: PacientesProps) {
   const { user } = useAuth();
   const hideAddButton = user?.role === 'medico';
 
@@ -364,12 +365,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
             <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
               {readOnly ? 'Cadastro e consulta de pacientes' : 'Gerencie as informações de seus pacientes'}
             </p>
-            {readOnly && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, padding: '3px 10px', background: 'var(--amber-100)', borderRadius: 20, width: 'fit-content' }}>
-                <Lock size={10} color="var(--amber-600)" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-600)' }}>Acesso limitado</span>
-              </div>
-            )}
           </div>
           {!hideAddButton && (
             <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
@@ -507,7 +502,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                         <ActionBtn icon={Eye} color="var(--primary)" title="Ver prontuário" onClick={() => openView(p)} />
                         <ActionBtn icon={Pencil} color="#d97706" title="Editar" onClick={() => openEdit(p)} />
                         <ActionBtn icon={Calendar} color="#7c3aed" title="Marcar consulta" onClick={() => {}} />
-                        {!readOnly && <ActionBtn icon={Trash2} color="var(--red-500)" title="Excluir" onClick={() => { setDeleteError(''); setConfirmDelete(p.id); }} />}
+                        {(!readOnly || allowDelete) && <ActionBtn icon={Trash2} color="var(--red-500)" title="Excluir" onClick={() => { setDeleteError(''); setConfirmDelete(p.id); }} />}
                       </div>
                     </td>
                   </tr>
