@@ -145,6 +145,22 @@ export interface PasswordResetResponse {
   message?: string;
 }
 
+export interface PatientCreatePayload {
+  email: string;
+  full_name: string;
+  cpf: string;
+  phone_mobile: string;
+  birth_date: string;
+  redirect_url?: string;
+}
+
+export interface RegisterPatientResponse {
+  success?: boolean;
+  patient_id?: string;
+  message?: string;
+  email?: string;
+}
+
 export interface ApiUserInfo {
   user?: Partial<ApiUser> & {
     full_name?: string;
@@ -414,6 +430,12 @@ export const usersApi = {
     }
   },
 
+  createPatientAccount: (data: PatientCreatePayload) =>
+    request<RegisterPatientResponse>('/functions/v1/register-patient', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   requestPasswordReset: (email: string) =>
     request<PasswordResetResponse>('/request-password-reset', {
       method: 'POST',
@@ -501,6 +523,9 @@ export const appointmentsApi = {
     return request<ApiAppointment[]>(`/rest/v1/appointments?${q.toString()}`);
   },
 
+  listForPatient: (patientId: string) =>
+    appointmentsApi.list({ patient_id: patientId }),
+
   create: (data: Omit<ApiAppointment, 'id'>) =>
     request<ApiAppointment[]>('/rest/v1/appointments', {
       method: 'POST',
@@ -573,6 +598,9 @@ export const reportsApi = {
     if (params.created_by) q.set('created_by', `eq.${params.created_by}`);
     return request<ApiReport[]>(`/rest/v1/reports?${q.toString()}`);
   },
+
+  listForPatient: (patientId: string) =>
+    reportsApi.list({ patient_id: patientId }),
 
   listByCreators: (creatorIds: string[]) => {
     const uniqueIds = Array.from(new Set(creatorIds.filter(Boolean)));

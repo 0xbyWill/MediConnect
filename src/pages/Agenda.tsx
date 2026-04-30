@@ -25,6 +25,7 @@ interface AgendaProps {
   onUpdate: (a: Agendamento) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   initialOpen?: boolean;
+  readOnly?: boolean;
 }
 
 function dateToISO(date: Date) {
@@ -78,9 +79,17 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 5,
 };
 
-export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen }: AgendaProps) {
+const STATUS_LABEL: Record<Agendamento['status'], { label: string; bg: string; color: string }> = {
+  confirmado: { label: 'Confirmada', bg: 'var(--mint)', color: 'var(--dark)' },
+  pendente: { label: 'Pendente', bg: 'var(--amber-100)', color: 'var(--amber-600)' },
+  cancelado: { label: 'Cancelada', bg: 'var(--red-100)', color: 'var(--red-600)' },
+  realizado: { label: 'Realizada', bg: '#ede9fe', color: '#5b21b6' },
+};
+
+export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, readOnly = false }: AgendaProps) {
   const { user } = useAuth();
   const isMedico = user?.role === 'medico';
+  const isPaciente = user?.role === 'paciente' || readOnly;
   const today = dateToISO(new Date());
 
   const [selectedDate, setSelectedDate] = useState(today);
@@ -99,6 +108,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const openModal = useCallback((appt?: Agendamento, dateOverride = selectedDate, timeOverride = '') => {
+    if (isPaciente) return;
     setErrors({});
     setApiError('');
     if (appt) {
@@ -122,11 +132,11 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     }
     setModal({ open: true, mode: 'add', data: { ...emptyForm(dateOverride), medicoId: filterDoctorId, hora: timeOverride } });
     setPatientSearch('');
-  }, [filterDoctorId, selectedDate]);
+  }, [filterDoctorId, isPaciente, selectedDate]);
 
   useEffect(() => {
-    if (initialOpen) openModal();
-  }, [initialOpen, openModal]);
+    if (initialOpen && !isPaciente) openModal();
+  }, [initialOpen, isPaciente, openModal]);
 
   const closeModal = () => {
     if (saving) return;
@@ -198,6 +208,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   };
 
   const handleSave = async () => {
+    if (isPaciente) return;
     const nextErrors = validate();
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
@@ -231,6 +242,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   };
 
   const handleDelete = async () => {
+    if (isPaciente) return;
     if (!confirmDelete) return;
     try {
       await onDelete(confirmDelete);
@@ -247,11 +259,15 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>Agenda</h1>
-            <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>Consultas organizadas por data, horário e paciente cadastrado.</p>
+            <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>
+              {isPaciente ? 'Acompanhe suas consultas agendadas e anteriores.' : 'Consultas organizadas por data, horario e paciente cadastrado.'}
+            </p>
           </div>
-          <button onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-            <Plus size={16} /> Agendar
-          </button>
+          {!isPaciente && (
+            <button onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <Plus size={16} /> Agendar
+            </button>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
@@ -305,7 +321,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
             </colgroup>
             <thead>
               <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                {['Data', 'Paciente', 'Médico', 'Tipo', 'Observações', 'Ações'].map(h => (
+                {['Data', 'Paciente', 'Medico', 'Tipo', 'Observacoes', isPaciente ? 'Status' : 'Acoes'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                 ))}
               </tr>
@@ -337,10 +353,14 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     </td>
                     <td style={{ ...tdStyle, color: 'var(--gray-500)' }}>{appt.observacoes || '—'}</td>
                     <td style={tdStyle}>
+                      {isPaciente ? (
+                        <StatusBadge status={appt.status} />
+                      ) : (
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                         <IconButton title="Editar" icon={Pencil} color="var(--amber-600)" onClick={() => openModal(appt)} />
                         <IconButton title="Excluir" icon={Trash2} color="var(--red-500)" onClick={() => setConfirmDelete(appt.id)} />
                       </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -350,7 +370,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   <td colSpan={6} style={{ padding: '54px 24px', textAlign: 'center', color: 'var(--gray-400)' }}>
                     <Calendar size={32} style={{ display: 'block', margin: '0 auto 10px' }} />
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-600)' }}>Nenhuma consulta encontrada</div>
-                    <div style={{ fontSize: 12, marginTop: 4 }}>Ajuste os filtros ou crie um novo agendamento.</div>
+                    <div style={{ fontSize: 12, marginTop: 4 }}>{isPaciente ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerao aqui.' : 'Ajuste os filtros ou crie um novo agendamento.'}</div>
                   </td>
                 </tr>
               )}
@@ -523,6 +543,15 @@ function Metric({ label, value, icon: Icon }: { label: string; value: number | s
         <div style={{ fontSize: 20, color: 'var(--dark)', fontWeight: 800 }}>{value}</div>
       </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: Agendamento['status'] }) {
+  const st = STATUS_LABEL[status] ?? STATUS_LABEL.pendente;
+  return (
+    <span style={{ fontSize: 12, fontWeight: 800, padding: '4px 10px', borderRadius: 20, background: st.bg, color: st.color, whiteSpace: 'nowrap' }}>
+      {st.label}
+    </span>
   );
 }
 

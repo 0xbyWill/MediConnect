@@ -9,6 +9,7 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
+  loginMockPatient: () => void;
   logout: () => Promise<void>;
   clearError: () => void;
   refreshUser: () => Promise<void>;
@@ -20,6 +21,15 @@ const KEYS = {
   token:   'mc_access_token',
   refresh: 'mc_refresh_token',
   user:    'mc_user',
+  mock:    'mc_mock_session',
+};
+
+const MOCK_PATIENT_USER: AuthUser = {
+  id: 'mock-paciente-joao-francisco',
+  email: 'joao.francisco777@gmail.com',
+  role: 'paciente',
+  full_name: 'Joao Francisco',
+  patient_id: 'mock-paciente-joao-francisco',
 };
 
 // ─── Normaliza role da API para role interna ──────────────────────────────────
@@ -161,6 +171,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const restoreSession = async () => {
       const raw   = localStorage.getItem(KEYS.user);
       const token = localStorage.getItem(KEYS.token);
+      const mockSession = localStorage.getItem(KEYS.mock) === 'paciente';
+
+      if (raw && mockSession) {
+        try {
+          const cached = JSON.parse(raw) as AuthUser;
+          if (!cancelled) setUser(cached);
+        } catch {
+          localStorage.removeItem(KEYS.user);
+          localStorage.removeItem(KEYS.mock);
+        }
+        if (!cancelled) setLoading(false);
+        return;
+      }
 
       if (raw && token) {
         try {
@@ -224,18 +247,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const loginMockPatient = useCallback(() => {
+    localStorage.removeItem(KEYS.token);
+    localStorage.removeItem(KEYS.refresh);
+    localStorage.setItem(KEYS.mock, 'paciente');
+    localStorage.setItem(KEYS.user, JSON.stringify(MOCK_PATIENT_USER));
+    setError(null);
+    setUser(MOCK_PATIENT_USER);
+  }, []);
+
   const logout = useCallback(async () => {
     try { await authApi.logout(); } catch { /* ignora */ }
     localStorage.removeItem(KEYS.token);
     localStorage.removeItem(KEYS.refresh);
     localStorage.removeItem(KEYS.user);
+    localStorage.removeItem(KEYS.mock);
     setUser(null);
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, logout, clearError, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, error, login, loginMockPatient, logout, clearError, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
