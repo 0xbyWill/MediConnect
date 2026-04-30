@@ -6,6 +6,9 @@ import {
 } from 'lucide-react';
 import type { Paciente, ConvenioType, StatusPaciente } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { dateToISO } from '../shared/utils/date';
+import { digitsOnly, isValidCpf } from '../shared/utils/cpf';
+import { initials } from '../shared/utils/text';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const CONVENIOS: ConvenioType[] = [
@@ -78,17 +81,13 @@ interface PacientesProps {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function initials(nome: string) {
-  return nome.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
-}
-
 function formatDateTime(iso: string) {
   if (!iso) return 'Ainda não houve atendimento';
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 function formatDateISO(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return dateToISO(d);
 }
 function yesterdayISO() {
   const d = new Date();
@@ -104,9 +103,6 @@ function calcIMC(peso: string, altura: string) {
   if (!p || !a) return '';
   return (p / (a * a)).toFixed(1);
 }
-function digitsOnly(value = '') {
-  return value.replace(/\D/g, '');
-}
 function formatCpf(value: string) {
   const digits = digitsOnly(value).slice(0, 11);
   if (digits.length <= 3) return digits;
@@ -114,21 +110,6 @@ function formatCpf(value: string) {
   if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
-function cpfValido(cpf: string) {
-  const c = digitsOnly(cpf);
-  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
-  let s = 0;
-  for (let i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
-  let r = (s * 10) % 11;
-  if (r === 10 || r === 11) r = 0;
-  if (r !== parseInt(c[9])) return false;
-  s = 0;
-  for (let i = 0; i < 10; i++) s += parseInt(c[i]) * (11 - i);
-  r = (s * 10) % 11;
-  if (r === 10 || r === 11) r = 0;
-  return r === parseInt(c[10]);
-}
-
 function hasResponsibleData(p: PacienteExtended) {
   return Boolean(
     p.nomeMae || p.profissaoMae || p.nomePai || p.profissaoPai ||
@@ -310,7 +291,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     const e: Record<string, string> = {};
     if (!d.nome.trim()) e.nome = 'Nome obrigatório';
     if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
-    if (d.cpf && !cpfValido(d.cpf)) e.cpf = 'CPF inválido';
+    if (d.cpf && !isValidCpf(d.cpf)) e.cpf = 'CPF inválido';
     if (!d.dataNasc) e.dataNasc = 'Data de nascimento obrigatória';
     else if (d.dataNasc > maxBirthDate) e.dataNasc = 'A data de nascimento deve ser no mínimo de ontem.';
     if (!d.email.trim()) e.email = 'E-mail obrigatório pela API';

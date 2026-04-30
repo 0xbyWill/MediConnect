@@ -3,6 +3,7 @@ import { UserCog, Plus, Pencil, Trash2, X, Shield, Search, RefreshCw } from 'luc
 import { doctorsApi, usersApi } from '../lib/api';
 import type { ApiDoctor, ApiManagedUser, ApiRole, CreateUserResponse } from '../lib/api';
 import type { UserRole } from '../types';
+import { digitsOnly } from '../shared/utils/cpf';
 
 interface UsuarioItem {
   id: string;
@@ -59,7 +60,6 @@ const emptyForm: UsuarioForm = {
   especialidade: '',
 };
 
-const digitsOnly = (value = '') => value.replace(/\D/g, '');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const cellBaseStyle: React.CSSProperties = {
   padding: '14px 20px',
@@ -204,7 +204,7 @@ export default function Usuarios() {
     if (!d.telefone?.trim()) return 'Informe o telefone.';
     if (modal.mode === 'add' && !d.senha?.trim()) return 'Informe a senha inicial.';
     if (d.senha && d.senha.length < 6) return 'A senha deve ter pelo menos 6 caracteres.';
-    if (d.role === 'gestao' && digitsOnly(d.cpf).length !== 11) return 'Informe o CPF do gestor com 11 digitos.';
+    if (d.role === 'gestao' && digitsOnly(d.cpf).length !== 11) return 'Informe o CPF do gestor com 11 dígitos.';
     if (d.role === 'secretaria' && digitsOnly(d.cpf).length !== 11) {
       return 'Informe o CPF da secretária com 11 dígitos.';
     }
@@ -230,8 +230,33 @@ export default function Usuarios() {
 
     try {
       if (modal.mode === 'edit') {
-        setUsuarios(prev => prev.map(u => u.id === data.id ? { ...u, ...data, id: u.id } : u));
-        setSuccessMessage('Usuário atualizado na tela.');
+        if (!data.id) throw new Error('Usuário não localizado para atualização.');
+
+        if (data.role === 'medico') {
+          await doctorsApi.update(data.id, {
+            full_name: data.nome.trim(),
+            email: data.email.trim().toLowerCase(),
+            cpf: digitsOnly(data.cpf),
+            crm: data.crm?.trim() ?? '',
+            crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
+            specialty: data.especialidade?.trim() ?? '',
+            phone_mobile: data.telefone?.trim() ?? '',
+            active: data.status !== 'inativo',
+          });
+        } else {
+          await usersApi.update(data.id, {
+            email: data.email.trim().toLowerCase(),
+            full_name: data.nome.trim(),
+            phone: data.telefone?.trim(),
+            phone_mobile: data.telefone?.trim(),
+            role: ROLE_API[data.role],
+            ...(data.cpf?.trim() ? { cpf: digitsOnly(data.cpf) } : {}),
+            active: data.status !== 'inativo',
+          });
+        }
+
+        setSuccessMessage('Usuário atualizado com sucesso.');
+        await loadUsuarios();
         resetModal();
         return;
       }
@@ -309,11 +334,11 @@ export default function Usuarios() {
     setFormError(null);
     try {
       const response = await usersApi.deletePermanent(id);
-      setSuccessMessage(response.message ?? 'Usuario deletado permanentemente.');
+      setSuccessMessage(response.message ?? 'Usuário deletado permanentemente.');
       setConfirmDelete(null);
       await loadUsuarios();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Erro ao deletar usuario.');
+      setFormError(err instanceof Error ? err.message : 'Erro ao deletar usuário.');
     } finally {
       setSaving(false);
     }
@@ -625,3 +650,4 @@ function FormInput({
     </div>
   );
 }
+

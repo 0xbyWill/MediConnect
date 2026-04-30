@@ -6,6 +6,8 @@ import {
 import type { Agendamento, Paciente, TipoConsulta } from '../types';
 import type { ApiDoctor } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { dateToISO } from '../shared/utils/date';
+import { initials } from '../shared/utils/text';
 
 const TIPOS: TipoConsulta[] = ['Primeira Consulta', 'Retorno', 'Check-up', 'Urgência'];
 const TIME_SLOTS: string[] = [];
@@ -15,7 +17,7 @@ for (let h = 7; h <= 19; h++) {
   }
 }
 
-type FormData = Omit<Agendamento, 'id' | 'status' | 'duracao'> & { id?: string };
+type FormData = Omit<Agendamento, 'id' | 'duracao'> & { id?: string };
 
 interface AgendaProps {
   agendamentos: Agendamento[];
@@ -26,10 +28,6 @@ interface AgendaProps {
   onDelete: (id: string) => Promise<void>;
   initialOpen?: boolean;
   readOnly?: boolean;
-}
-
-function dateToISO(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function startOfWeek(date: Date) {
@@ -48,10 +46,6 @@ function formatDateBR(iso: string) {
   return `${d}/${m}/${y}`;
 }
 
-function initials(nome: string) {
-  return nome.split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
-}
-
 function emptyForm(date = dateToISO(new Date())): FormData {
   return {
     pacienteId: '',
@@ -59,6 +53,7 @@ function emptyForm(date = dateToISO(new Date())): FormData {
     data: date,
     hora: '',
     tipo: 'Primeira Consulta',
+    status: 'pendente',
     observacoes: '',
     enviarEmail: true,
     enviarWhatsapp: true,
@@ -122,6 +117,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           data: appt.data,
           hora: appt.hora,
           tipo: appt.tipo,
+          status: appt.status,
           observacoes: appt.observacoes || '',
           enviarEmail: false,
           enviarWhatsapp: false,
@@ -227,7 +223,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         observacoes: modal.data.observacoes,
         enviarEmail: modal.data.enviarEmail,
         enviarWhatsapp: modal.data.enviarWhatsapp,
-        status: 'pendente',
+        status: modal.data.status ?? 'pendente',
         duracao: '30 min',
       };
 
@@ -260,7 +256,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>Agenda</h1>
             <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>
-              {isPaciente ? 'Acompanhe suas consultas agendadas e anteriores.' : 'Consultas organizadas por data, horario e paciente cadastrado.'}
+              {isPaciente ? 'Acompanhe suas consultas agendadas e anteriores.' : 'Consultas organizadas por data, horário e paciente cadastrado.'}
             </p>
           </div>
           {!isPaciente && (
@@ -321,7 +317,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
             </colgroup>
             <thead>
               <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                {['Data', 'Paciente', 'Medico', 'Tipo', 'Observacoes', isPaciente ? 'Status' : 'Acoes'].map(h => (
+                {['Data', 'Paciente', 'Médico', 'Tipo', 'Observações', isPaciente ? 'Status' : 'Ações'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                 ))}
               </tr>

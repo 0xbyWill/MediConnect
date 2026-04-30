@@ -204,7 +204,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
         {onCreateAccount && (
           <div style={{ marginTop: 18, textAlign: 'center' }}>
-            <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>Ainda nao tem conta? </span>
+            <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>Ainda não tem conta? </span>
             <button
               type="button"
               onClick={onCreateAccount}
@@ -240,7 +240,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
               { role: 'Médico',     desc: 'Prontuários, laudos e agenda própria', color: 'var(--primary)' },
               { role: 'Gestão',     desc: 'Acesso completo ao sistema',           color: '#7c3aed' },
               { role: 'Secretaria', desc: 'Agendamentos e cadastro de pacientes', color: 'var(--amber-600)' },
-              { role: 'Paciente',   desc: 'Consultas e laudos do proprio perfil', color: '#2563eb' },
+              { role: 'Paciente',   desc: 'Consultas e laudos do próprio perfil', color: '#2563eb' },
             ].map(p => (
               <div key={p.role} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{
@@ -262,12 +262,12 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
       <div style={{ background: 'rgba(255,255,255,0.96)', borderRadius: 24, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.35)', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--dark)', margin: 0 }}>Acessos rapidos</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--dark)', margin: 0 }}>Acessos rápidos</h2>
           <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>Preencha automaticamente para testar cada perfil.</p>
         </div>
 
-        <QuickAccessButton icon={Stethoscope} title="Medico" subtitle="Agenda, pacientes, laudos e relatorios" color="var(--primary)" disabled={loading} onClick={() => void quickLogin({ email: 'joao.francisco777@gmail.com', password: 'Teste@123' })} />
-        <QuickAccessButton icon={ClipboardList} title="Secretaria" subtitle="Agenda, pacientes e comunicacao" color="var(--amber-600)" disabled={loading} onClick={() => void quickLogin({ email: 'isabely.santiny777@gmail.com', password: 'Teste@123' })} />
+        <QuickAccessButton icon={Stethoscope} title="Médico" subtitle="Agenda, pacientes, laudos e relatórios" color="var(--primary)" disabled={loading} onClick={() => void quickLogin({ email: 'joao.francisco777@gmail.com', password: 'Teste@123' })} />
+        <QuickAccessButton icon={ClipboardList} title="Secretaria" subtitle="Agenda, pacientes e comunicação" color="var(--amber-600)" disabled={loading} onClick={() => void quickLogin({ email: 'isabely.santiny777@gmail.com', password: 'Teste@123' })} />
         <QuickAccessButton icon={Shield} title="Gestor" subtitle="Acesso administrativo completo" color="#7c3aed" disabled={loading} onClick={() => void quickLogin({ email: 'hugo@popcode.com.br', password: 'hdoria' })} />
 
         <div style={{ height: 1, background: 'var(--gray-100)', margin: '4px 0' }} />

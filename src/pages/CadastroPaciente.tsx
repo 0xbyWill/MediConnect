@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { usersApi } from '../lib/api';
 import type { PatientCreatePayload } from '../lib/api';
+import { dateToISO } from '../shared/utils/date';
+import { digitsOnly, isValidCpf } from '../shared/utils/cpf';
 
 interface CadastroPacienteProps {
   onBackToLogin: () => void;
@@ -36,54 +38,33 @@ const emptyForm: FormState = {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function digitsOnly(value = '') {
-  return value.replace(/\D/g, '');
-}
-
 function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function isValidCpf(value: string) {
-  const cpf = digitsOnly(value);
-  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
-
-  const calcDigit = (length: number) => {
-    let sum = 0;
-    for (let i = 0; i < length; i += 1) {
-      sum += Number(cpf[i]) * (length + 1 - i);
-    }
-    const mod = (sum * 10) % 11;
-    return mod === 10 ? 0 : mod;
-  };
-
-  return calcDigit(9) === Number(cpf[9]) && calcDigit(10) === Number(cpf[10]);
+  return dateToISO(new Date());
 }
 
 function validate(form: FormState): string | null {
   if (!form.full_name.trim()) return 'Informe seu nome completo.';
-  if (!EMAIL_RE.test(form.email.trim())) return 'Informe um e-mail valido.';
-  if (!isValidCpf(form.cpf)) return 'Informe um CPF valido.';
-  if (digitsOnly(form.phone_mobile).length < 10) return 'Informe um telefone valido.';
+  if (!EMAIL_RE.test(form.email.trim())) return 'Informe um e-mail válido.';
+  if (!isValidCpf(form.cpf)) return 'Informe um CPF válido.';
+  if (digitsOnly(form.phone_mobile).length < 10) return 'Informe um telefone válido.';
   if (!form.birth_date) return 'Informe sua data de nascimento.';
   if (form.birth_date >= todayISO()) return 'A data de nascimento deve ser anterior a hoje.';
   return null;
 }
 
 function formatApiError(err: unknown) {
-  const msg = err instanceof Error ? err.message : 'Nao foi possivel criar sua conta.';
+  const msg = err instanceof Error ? err.message : 'Não foi possível criar sua conta.';
   const lower = msg.toLowerCase();
   if (lower.includes('already') || lower.includes('duplicate') || lower.includes('exists')) {
-    return 'Ja existe uma conta ou paciente com esses dados.';
+    return 'Já existe uma conta ou paciente com esses dados.';
   }
-  if (lower.includes('invalid') && lower.includes('email')) return 'Informe um e-mail valido.';
+  if (lower.includes('invalid') && lower.includes('email')) return 'Informe um e-mail válido.';
   if (msg.includes('400')) return 'A API recusou os dados. Confira CPF, telefone, nascimento e e-mail.';
   if (msg.includes('401') || msg.includes('403')) {
-    return 'A API bloqueou o auto-cadastro publico. Verifique as permissoes da funcao register-patient.';
+    return 'A API bloqueou o auto-cadastro público. Verifique as permissões da função register-patient.';
   }
   if (lower.includes('rate') || lower.includes('too many') || msg.includes('429')) return 'Muitas tentativas. Aguarde um pouco antes de tentar novamente.';
-  if (msg.includes('409')) return 'Ja existe um cadastro para este e-mail ou CPF.';
+  if (msg.includes('409')) return 'Já existe um cadastro para este e-mail ou CPF.';
   return msg;
 }
 

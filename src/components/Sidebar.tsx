@@ -2,6 +2,7 @@ import { LayoutDashboard, Users, Calendar, FileText, Settings, Heart, MessageSqu
 import type { PageType, UserRole } from '../types';
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { initials } from '../shared/utils/text';
 
 interface SidebarProps {
   currentPage: PageType;
@@ -51,29 +52,31 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
   ].filter(g => g.items.length > 0);
 
   return (
-    <aside style={{
-      width: 'clamp(88px, 18vw, var(--sidebar-w))',
+    <aside className="app-sidebar" style={{
+      width: 'var(--sidebar-w)',
       flexShrink: 0,
       height: '100dvh',
       minHeight: 0,
-      background: 'linear-gradient(180deg, var(--darker) 0%, var(--dark) 100%)',
+      background: 'linear-gradient(180deg, #174f28 0%, var(--darker) 44%, var(--dark) 100%)',
       display: 'flex',
       flexDirection: 'column',
       zIndex: 10,
+      boxShadow: 'inset -1px 0 0 rgba(255,255,255,0.08), 8px 0 28px rgba(20,83,45,0.08)',
     }}>
       {/* Logo */}
-      <div style={{ padding: '20px 20px 18px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="app-sidebar-logo" style={{ padding: '18px 18px 16px', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
+        <div className="app-sidebar-brand-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
-            width: 36, height: 36, background: 'var(--primary)', borderRadius: 10,
+            width: 36, height: 36, background: 'linear-gradient(135deg, var(--primary) 0%, var(--light) 100%)', borderRadius: 'var(--radius-md)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(58,170,53,0.4)',
+            boxShadow: '0 8px 18px rgba(58,170,53,0.34)',
+            flexShrink: 0,
           }}>
             <Heart size={18} color="#fff" fill="#fff" />
           </div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', letterSpacing: -0.3 }}>MediConnect</div>
-            <div style={{ fontSize: 9, fontWeight: 500, color: 'rgba(255,255,255,0.45)', letterSpacing: 1.5, textTransform: 'uppercase', marginTop: 1 }}>
+          <div className="app-sidebar-label">
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: 0 }}>MediConnect</div>
+            <div className="app-sidebar-subtitle" style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.52)', letterSpacing: 1.4, textTransform: 'uppercase', marginTop: 1 }}>
               Clinical Sanctuary
             </div>
           </div>
@@ -82,20 +85,21 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
 
       {/* Badge de perfil */}
       {user && (
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-          <div style={{
-            background: 'rgba(255,255,255,0.07)', borderRadius: 10, padding: '8px 10px',
+        <div className="app-sidebar-profile" style={{ padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="app-sidebar-profile-card" style={{
+            background: 'rgba(255,255,255,0.08)', borderRadius: 'var(--radius-md)', padding: '9px 10px',
             display: 'flex', alignItems: 'center', gap: 8,
+            border: '1px solid rgba(255,255,255,0.08)',
           }}>
             <div style={{
-              width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+              width: 30, height: 30, borderRadius: 'var(--radius-sm)', flexShrink: 0,
               background: 'var(--primary)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 11, fontWeight: 800, color: '#fff',
             }}>
-              {user.full_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+              {initials(user.full_name)}
             </div>
-            <div style={{ overflow: 'hidden' }}>
+            <div className="app-sidebar-user-copy" style={{ overflow: 'hidden' }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {user.full_name}
               </div>
@@ -112,12 +116,12 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
       )}
 
       {/* Nav */}
-      <nav style={{ padding: '10px 12px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <nav className="app-sidebar-nav" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {groups.map(group => (
           <div key={group.key}>
-            <div style={{
+            <div className="app-sidebar-group-label" style={{
               fontSize: 9, fontWeight: 700, letterSpacing: 1.8, textTransform: 'uppercase',
-              color: 'rgba(255,255,255,0.3)', padding: '0 8px', margin: '10px 0 5px',
+              color: 'rgba(255,255,255,0.36)', padding: '0 8px', margin: '12px 0 6px',
             }}>
               {group.label}
             </div>
@@ -126,22 +130,24 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
               const Icon = item.icon;
               return (
                 <button
+                  className="app-sidebar-nav-button"
                   key={item.id}
                   onClick={() => onNavigate(item.id)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
-                    color: active ? '#fff' : 'rgba(255,255,255,0.6)',
-                    fontSize: 13.5, fontWeight: 500, marginBottom: 2,
-                    border: active ? '1px solid rgba(58,170,53,0.3)' : '1px solid transparent',
-                    background: active ? 'rgba(58,170,53,0.22)' : 'none',
-                    width: '100%', textAlign: 'left', transition: 'all .15s',
+                    padding: '10px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                    color: active ? '#fff' : 'rgba(255,255,255,0.66)',
+                    fontSize: 13, fontWeight: active ? 700 : 600, marginBottom: 3,
+                    border: active ? '1px solid rgba(114,197,92,0.36)' : '1px solid transparent',
+                    background: active ? 'linear-gradient(90deg, rgba(58,170,53,0.30), rgba(58,170,53,0.12))' : 'transparent',
+                    width: '100%', textAlign: 'left', transition: 'background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease',
+                    boxShadow: active ? 'inset 3px 0 0 var(--light)' : 'none',
                   }}
-                  onMouseEnter={e => { if (!active) { (e.currentTarget).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget).style.color = '#fff'; } }}
-                  onMouseLeave={e => { if (!active) { (e.currentTarget).style.background = 'none'; (e.currentTarget).style.color = 'rgba(255,255,255,0.6)'; } }}
+                  onMouseEnter={e => { if (!active) { (e.currentTarget).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget).style.color = '#fff'; (e.currentTarget).style.transform = 'translateX(2px)'; } }}
+                  onMouseLeave={e => { if (!active) { (e.currentTarget).style.background = 'transparent'; (e.currentTarget).style.color = 'rgba(255,255,255,0.66)'; (e.currentTarget).style.transform = 'translateX(0)'; } }}
                 >
                   <Icon size={16} color={active ? 'var(--light)' : undefined} />
-                  {item.label}
+                  <span className="app-sidebar-label">{item.label}</span>
                 </button>
               );
             })}
@@ -149,21 +155,22 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         ))}
       </nav>
 
-      <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="app-sidebar-footer" style={{ padding: '10px 12px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         {/* Logout */}
         <button
+          className="app-sidebar-logout"
           onClick={logout}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-            padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
-            color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: 500,
+            padding: '10px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+            color: 'rgba(255,255,255,0.56)', fontSize: 13, fontWeight: 600,
             background: 'none', border: '1px solid transparent', transition: 'all .15s',
           }}
           onMouseEnter={e => { (e.currentTarget).style.background = 'rgba(239,68,68,0.15)'; (e.currentTarget).style.color = '#f87171'; (e.currentTarget).style.borderColor = 'rgba(239,68,68,0.25)'; }}
           onMouseLeave={e => { (e.currentTarget).style.background = 'none'; (e.currentTarget).style.color = 'rgba(255,255,255,0.5)'; (e.currentTarget).style.borderColor = 'transparent'; }}
         >
           <LogOut size={15} />
-          Sair do sistema
+          <span className="app-sidebar-logout-label">Sair do sistema</span>
         </button>
       </div>
     </aside>

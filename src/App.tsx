@@ -12,6 +12,11 @@ import {
 import { useAuth } from './contexts/AuthContext';
 import { appointmentsApi, doctorsApi, patientsApi, reportsApi } from './lib/api';
 import type { ApiAppointment, ApiDoctor, ApiPatient, ApiReport } from './lib/api';
+import LoadingState from './app/LoadingState';
+import { buildRoleNotifications } from './app/notifications';
+import type { NotificationItem } from './app/notifications';
+import { dateToISO, timeToHHMM } from './shared/utils/date';
+import { mergeById } from './shared/utils/collection';
 
 import Login         from './pages/Login';
 import CadastroPaciente from './pages/CadastroPaciente';
@@ -26,128 +31,6 @@ import Comunicacao   from './pages/Comunicacao';
 import Relatorios    from './pages/Relatorios';
 import Usuarios      from './pages/Usuarios';
 import Metricas      from './pages/Metricas';
-
-function mergeById<T extends { id: string }>(...groups: T[][]): T[] {
-  return Array.from(new Map(groups.flat().map(item => [item.id, item])).values());
-}
-
-function LoadingState({ label = 'Carregando...' }: { label?: string }) {
-  return (
-    <div style={{
-      position: 'absolute',
-      inset: 0,
-      width: '100%',
-      minHeight: '100%',
-      display: 'grid',
-      placeItems: 'center',
-      background: 'var(--background)',
-      padding: 24,
-    }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          border: '4px solid var(--mint)',
-          borderTop: '4px solid var(--primary)',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-          margin: '0 auto 16px',
-        }}/>
-        <p style={{ fontSize: 14, color: 'var(--gray-500)', fontWeight: 600 }}>{label}</p>
-      </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
-
-interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  read: boolean;
-}
-
-function buildRoleNotifications(params: {
-  user: NonNullable<ReturnType<typeof useAuth>['user']>;
-  pacientes: Paciente[];
-  agendamentos: Agendamento[];
-  laudos: Laudo[];
-  doctors: ApiDoctor[];
-  apiError: string | null;
-  todayISO: string;
-  nowTime: string;
-}): Omit<NotificationItem, 'read'>[] {
-  const { user, pacientes, agendamentos, laudos, doctors, apiError, todayISO, nowTime } = params;
-  const formatDate = (iso: string) => iso.split('-').reverse().join('/');
-  const getPaciente = (id: string) => pacientes.find(p => p.id === id);
-  const getDoctorName = (id?: string) => doctors.find(d => d.id === id)?.full_name || user.full_name;
-  const futureAppointments = agendamentos
-    .filter(a => a.data > todayISO || (a.data === todayISO && a.hora >= nowTime))
-    .sort((a, b) => `${a.data} ${a.hora}`.localeCompare(`${b.data} ${b.hora}`));
-
-  if (user.role === 'medico') {
-    return futureAppointments
-      .filter(a => a.data === todayISO && (!user.doctor_id || a.medicoId === user.doctor_id))
-      .slice(0, 6)
-      .map(a => ({
-        id: `medico-${a.id}`,
-        title: 'Paciente de hoje',
-        message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} as ${a.hora}.`,
-      }));
-  }
-
-  if (user.role === 'paciente') {
-    const ownPatientId = user.patient_id ?? pacientes.find(p => p.email?.toLowerCase() === user.email.toLowerCase())?.id;
-    const consultas = futureAppointments
-      .filter(a => !ownPatientId || a.pacienteId === ownPatientId)
-      .slice(0, 4)
-      .map(a => ({
-        id: `paciente-consulta-${a.id}`,
-        title: a.data === todayISO ? 'Consulta hoje' : 'Consulta proxima',
-        message: `${formatDate(a.data)} as ${a.hora} com ${getDoctorName(a.medicoId)}.`,
-      }));
-    const exames = laudos
-      .filter(l => !ownPatientId || l.pacienteId === ownPatientId)
-      .slice(0, 3)
-      .map(l => ({
-        id: `paciente-laudo-${l.id}`,
-        title: l.status === 'liberado' ? 'Exame/laudo disponivel' : 'Exame em processamento',
-        message: `${l.exame || 'Laudo'} - ${formatDate(l.data || todayISO)}.`,
-      }));
-    return [...consultas, ...exames];
-  }
-
-  if (user.role === 'secretaria') {
-    const todaysAppointments = agendamentos
-      .filter(a => a.data === todayISO)
-      .sort((a, b) => a.hora.localeCompare(b.hora));
-    const reminders = todaysAppointments.slice(0, 5).map(a => ({
-      id: `secretaria-lembrete-${a.id}`,
-      title: 'Lembrete de consulta',
-      message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} as ${a.hora}. Confirmar contato.`,
-    }));
-    const confirmed = todaysAppointments
-      .filter(a => a.status === 'confirmado')
-      .slice(0, 4)
-      .map(a => ({
-        id: `secretaria-confirmada-${a.id}`,
-        title: 'Consulta confirmada',
-        message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} confirmado com ${getDoctorName(a.medicoId)}.`,
-      }));
-    return [...reminders, ...confirmed];
-  }
-
-  const errors = apiError ? [{ id: `gestao-error-${apiError}`, title: 'Erro operacional', message: apiError }] : [];
-  const appointmentsToday = agendamentos.filter(a => a.data === todayISO).length;
-  const pendingReports = laudos.filter(l => l.status === 'rascunho').length;
-  const cancelledToday = agendamentos.filter(a => a.data === todayISO && a.status === 'cancelado').length;
-  return [
-    ...errors,
-    { id: `gestao-agenda-${todayISO}-${appointmentsToday}`, title: 'Analise da agenda', message: `${appointmentsToday} consulta(s) previstas hoje.` },
-    { id: `gestao-laudos-${pendingReports}`, title: 'Analise de laudos', message: `${pendingReports} laudo(s) em rascunho aguardando fluxo.` },
-    { id: `gestao-cancelamentos-${todayISO}-${cancelledToday}`, title: 'Indicador operacional', message: `${cancelledToday} cancelamento(s) registrados hoje.` },
-  ];
-}
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -210,11 +93,11 @@ export default function App() {
             .catch(err => { capture('laudos', err); return [] as ApiReport[]; }),
           patientsApi
             .list({ created_by: user.id, limit: 500 })
-            .catch(err => { capture('pacientes criados pelo usuario', err); return [] as ApiPatient[]; }),
+            .catch(err => { capture('pacientes criados pelo usuário', err); return [] as ApiPatient[]; }),
           doctorId
             ? patientsApi
                 .list({ created_by: doctorId, limit: 500 })
-                .catch(err => { capture('pacientes criados pelo medico', err); return [] as ApiPatient[]; })
+                .catch(err => { capture('pacientes criados pelo médico', err); return [] as ApiPatient[]; })
             : Promise.resolve([] as ApiPatient[]),
         ]);
 
@@ -267,7 +150,7 @@ export default function App() {
         const [apiAgendamentos, apiLaudos, apiDoctors] = patientId ? await Promise.all([
           appointmentsApi.listForPatient(patientId).catch(err => { capture('agendamentos', err); return [] as ApiAppointment[]; }),
           reportsApi.listForPatient(patientId).catch(err => { capture('laudos', err); return [] as ApiReport[]; }),
-          doctorsApi.list({ active: true }).catch(err => { capture('mÃ©dicos', err); return [] as ApiDoctor[]; }),
+          doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return [] as ApiDoctor[]; }),
         ]) : [[] as ApiAppointment[], [] as ApiReport[], [] as ApiDoctor[]];
         setPacientes(ownPatients.map(apiPatientToPaciente));
         setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento));
@@ -344,7 +227,7 @@ export default function App() {
       const rawMsg = err instanceof Error ? err.message : 'Erro ao excluir paciente.';
       const msg =
         rawMsg.includes('403') || rawMsg.toLowerCase().includes('forbidden')
-          ? 'A API permite excluir pacientes apenas para admin/gestao. Verifique o perfil do usuario logado.'
+          ? 'A API permite excluir pacientes apenas para admin/gestão. Verifique o perfil do usuário logado.'
           : rawMsg;
       setApiError(msg);
       throw new Error(msg);
@@ -436,8 +319,8 @@ export default function App() {
   const currentPage  = allowedPages.includes(page) ? page : allowedPages[0];
   const notificationSeed = (() => {
     const today = new Date();
-    const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const nowTime = `${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}`;
+    const todayISO = dateToISO(today);
+    const nowTime = timeToHHMM(today);
     return buildRoleNotifications({ user, pacientes, agendamentos, laudos, doctors, apiError, todayISO, nowTime });
     /*
     const soon = agendamentos
@@ -482,13 +365,13 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', background: 'linear-gradient(135deg, var(--background) 0%, #eef8ef 100%)' }}>
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate}/>
 
       <div style={{ flex: 1, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
         <Topbar currentPage={currentPage} notifications={notifications} onMarkNotificationRead={markNotificationRead} onClearNotifications={clearNotifications}/>
 
-        <main style={{ flex: 1, minWidth: 0, width: '100%', overflow: 'hidden', display: 'flex', position: 'relative', minHeight: 0 }}>
+        <main style={{ flex: 1, minWidth: 0, width: '100%', overflow: 'hidden', display: 'flex', position: 'relative', minHeight: 0, background: 'var(--background)' }}>
           {!dataLoaded && apiLoading ? (
             <LoadingState label="Carregando dados do perfil..." />
           ) : (
