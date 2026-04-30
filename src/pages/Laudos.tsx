@@ -132,6 +132,7 @@ interface LaudosProps {
   onAdd: (l: Omit<Laudo & LaudoExtra, 'id'>) => void;
   onUpdate: (l: Laudo & LaudoExtra) => void;
   onDelete: (id: string) => void;
+  readOnly?: boolean;
 }
 
 type ViewMode = 'lista' | 'editor' | 'preview';
@@ -174,9 +175,10 @@ const emptyLaudo = (): Omit<Laudo & LaudoExtra, 'id'> => ({
 });
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
-export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }: LaudosProps) {
+export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, readOnly = false }: LaudosProps) {
   const { user } = useAuth();
-  const isMedico = user?.role === 'medico' || user?.role === 'gestao';
+  const isPaciente = user?.role === 'paciente' || readOnly;
+  const isMedico = !isPaciente && (user?.role === 'medico' || user?.role === 'gestao');
 
   // ── Estados gerais ──
   const [view, setView]                     = useState<ViewMode>('lista');
@@ -587,8 +589,10 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete }:
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>Gerenciamento de Laudo</h1>
-          <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>Nesta seção você pode gerenciar todos os laudos gerados.</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>{isPaciente ? 'Meus Laudos' : 'Gerenciamento de Laudo'}</h1>
+          <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>
+            {isPaciente ? 'Visualize os laudos vinculados ao seu perfil.' : 'Nesta secao voce pode gerenciar todos os laudos gerados.'}
+          </p>
         </div>
         {isMedico && (
           <button onClick={openNew}

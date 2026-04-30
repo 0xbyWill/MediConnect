@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { UserCog, Plus, Pencil, Trash2, X, Shield, Search, RefreshCw } from 'lucide-react';
 import { doctorsApi, usersApi } from '../lib/api';
-import type { ApiDoctor, ApiManagedUser, CreateUserResponse } from '../lib/api';
+import type { ApiDoctor, ApiManagedUser, ApiRole, CreateUserResponse } from '../lib/api';
 import type { UserRole } from '../types';
 
 interface UsuarioItem {
@@ -34,9 +34,9 @@ const ROLE_COLOR: Record<UserRole, { bg: string; color: string }> = {
   paciente:   { bg: '#dbeafe',          color: '#2563eb' },
 };
 
-const ROLE_API: Record<UserRole, 'medico' | 'admin' | 'secretaria' | 'paciente'> = {
+const ROLE_API: Record<UserRole, ApiRole> = {
   medico:     'medico',
-  gestao:     'admin',
+  gestao:     'gestor',
   secretaria: 'secretaria',
   paciente:   'paciente',
 };
@@ -204,6 +204,7 @@ export default function Usuarios() {
     if (!d.telefone?.trim()) return 'Informe o telefone.';
     if (modal.mode === 'add' && !d.senha?.trim()) return 'Informe a senha inicial.';
     if (d.senha && d.senha.length < 6) return 'A senha deve ter pelo menos 6 caracteres.';
+    if (d.role === 'gestao' && digitsOnly(d.cpf).length !== 11) return 'Informe o CPF do gestor com 11 digitos.';
     if (d.role === 'secretaria' && digitsOnly(d.cpf).length !== 11) {
       return 'Informe o CPF da secretária com 11 dígitos.';
     }
@@ -509,7 +510,7 @@ export default function Usuarios() {
                 </select>
               </div>
 
-              {modal.data.role === 'secretaria' && (
+              {(modal.data.role === 'secretaria' || modal.data.role === 'gestao') && (
                 <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', value)} placeholder="12345678901" />
               )}
 

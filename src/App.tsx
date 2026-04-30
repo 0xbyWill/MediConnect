@@ -14,6 +14,7 @@ import { appointmentsApi, doctorsApi, patientsApi, reportsApi } from './lib/api'
 import type { ApiAppointment, ApiDoctor, ApiPatient, ApiReport } from './lib/api';
 
 import Login         from './pages/Login';
+import CadastroPaciente from './pages/CadastroPaciente';
 import Sidebar       from './components/Sidebar';
 import Topbar        from './components/Topbar';
 import Dashboard     from './pages/Dashboard';
@@ -169,6 +170,7 @@ export default function App() {
   const [openAgendaModal,    setOpenAgendaModal]    = useState(false);
   const [openPacienteModal,  setOpenPacienteModal]  = useState(false);
   const [page, setPage]                             = useState<PageType>('dashboard');
+  const [authView, setAuthView]                     = useState<'login' | 'cadastro-paciente'>('login');
 
   // ─── Carrega dados da API ─────────────────────────────────────────────────
   const refresh = useCallback(async () => {
@@ -263,8 +265,8 @@ export default function App() {
           : await patientsApi.list({ email: user.email, limit: 1 }).catch(err => { capture('paciente', err); return [] as ApiPatient[]; });
         const patientId = user.patient_id ?? ownPatients[0]?.id;
         const [apiAgendamentos, apiLaudos, apiDoctors] = patientId ? await Promise.all([
-          appointmentsApi.list({ patient_id: patientId }).catch(err => { capture('agendamentos', err); return [] as ApiAppointment[]; }),
-          reportsApi.list({ patient_id: patientId }).catch(err => { capture('laudos', err); return [] as ApiReport[]; }),
+          appointmentsApi.listForPatient(patientId).catch(err => { capture('agendamentos', err); return [] as ApiAppointment[]; }),
+          reportsApi.listForPatient(patientId).catch(err => { capture('laudos', err); return [] as ApiReport[]; }),
           doctorsApi.list({ active: true }).catch(err => { capture('mÃ©dicos', err); return [] as ApiDoctor[]; }),
         ]) : [[] as ApiAppointment[], [] as ApiReport[], [] as ApiDoctor[]];
         setPacientes(ownPatients.map(apiPatientToPaciente));
@@ -420,7 +422,15 @@ export default function App() {
     );
   }
 
-  if (!user) return <Login />;
+  if (!user) {
+    return authView === 'cadastro-paciente' ? (
+      <CadastroPaciente
+        onBackToLogin={() => setAuthView('login')}
+      />
+    ) : (
+      <Login onCreateAccount={() => setAuthView('cadastro-paciente')} />
+    );
+  }
 
   const allowedPages = ROLE_PAGES[user.role];
   const currentPage  = allowedPages.includes(page) ? page : allowedPages[0];
@@ -509,7 +519,7 @@ export default function App() {
           {currentPage === 'dashboard' && (
             <Dashboard
               pacientes={pacientes} agendamentos={agendamentos} laudos={laudos} doctors={doctors}
-              onNavigate={setPage}
+              onNavigate={handleNavigate}
               onNovoAgendamento={() => { setOpenAgendaModal(true); setPage('agenda'); }}
               onNovoPaciente={() => { setOpenPacienteModal(true); setPage('pacientes'); }}
             />
@@ -525,12 +535,12 @@ export default function App() {
             <Agenda
               agendamentos={agendamentos} pacientes={pacientes} doctors={doctors}
               onAdd={addAgendamento} onUpdate={updateAgendamento}
-              onDelete={deleteAgendamento} initialOpen={openAgendaModal}
+              onDelete={deleteAgendamento} initialOpen={openAgendaModal} readOnly={user.role === 'paciente'}
             />
           )}
           {currentPage === 'laudos' && allowedPages.includes('laudos') && (
             <Laudos laudos={laudos} pacientes={pacientes}
-              onAdd={addLaudo} onUpdate={updateLaudo} onDelete={deleteLaudo}/>
+              onAdd={addLaudo} onUpdate={updateLaudo} onDelete={deleteLaudo} readOnly={user.role === 'paciente'}/>
           )}
           {currentPage === 'comunicacao' && allowedPages.includes('comunicacao') && (
             <Comunicacao pacientes={pacientes}/>

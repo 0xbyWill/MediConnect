@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Heart, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
+import { Heart, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, Shield, Stethoscope, UserRound, ClipboardList } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-export default function Login() {
-  const { login, loading, error, clearError } = useAuth();
+interface LoginProps {
+  onCreateAccount?: () => void;
+}
+
+export default function Login({ onCreateAccount }: LoginProps) {
+  const { login, loginMockPatient, loading, error, clearError } = useAuth();
   const [email, setEmail]     = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -15,6 +19,18 @@ export default function Login() {
     await login(email.trim(), password);
   };
 
+  const quickLogin = async (preset: { email: string; password: string }) => {
+    setEmail(preset.email);
+    setPassword(preset.password);
+    clearError();
+    await login(preset.email, preset.password);
+  };
+
+  const demoPatient = () => {
+    clearError();
+    loginMockPatient();
+  };
+
   return (
     <div style={{
       minHeight: '100dvh', width: '100%',
@@ -22,6 +38,7 @@ export default function Login() {
       background: 'linear-gradient(135deg, var(--darker) 0%, var(--dark) 55%, #2d8a45 100%)',
       padding: 24,
     }}>
+      <div style={{ width: '100%', maxWidth: 920, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 18, alignItems: 'stretch' }}>
       {/* Card */}
       <div style={{
         width: '100%', maxWidth: 420,
@@ -185,6 +202,27 @@ export default function Login() {
           </button>
         </form>
 
+        {onCreateAccount && (
+          <div style={{ marginTop: 18, textAlign: 'center' }}>
+            <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>Ainda nao tem conta? </span>
+            <button
+              type="button"
+              onClick={onCreateAccount}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--primary)',
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              Criar conta
+            </button>
+          </div>
+        )}
+
         {/* Info de perfis */}
         <div style={{
           marginTop: 28, padding: 16,
@@ -202,6 +240,7 @@ export default function Login() {
               { role: 'Médico',     desc: 'Prontuários, laudos e agenda própria', color: 'var(--primary)' },
               { role: 'Gestão',     desc: 'Acesso completo ao sistema',           color: '#7c3aed' },
               { role: 'Secretaria', desc: 'Agendamentos e cadastro de pacientes', color: 'var(--amber-600)' },
+              { role: 'Paciente',   desc: 'Consultas e laudos do proprio perfil', color: '#2563eb' },
             ].map(p => (
               <div key={p.role} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{
@@ -221,7 +260,61 @@ export default function Login() {
         </p>
       </div>
 
+      <div style={{ background: 'rgba(255,255,255,0.96)', borderRadius: 24, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.35)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--dark)', margin: 0 }}>Acessos rapidos</h2>
+          <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>Preencha automaticamente para testar cada perfil.</p>
+        </div>
+
+        <QuickAccessButton icon={Stethoscope} title="Medico" subtitle="Agenda, pacientes, laudos e relatorios" color="var(--primary)" disabled={loading} onClick={() => void quickLogin({ email: 'joao.francisco777@gmail.com', password: 'Teste@123' })} />
+        <QuickAccessButton icon={ClipboardList} title="Secretaria" subtitle="Agenda, pacientes e comunicacao" color="var(--amber-600)" disabled={loading} onClick={() => void quickLogin({ email: 'isabely.santiny777@gmail.com', password: 'Teste@123' })} />
+        <QuickAccessButton icon={Shield} title="Gestor" subtitle="Acesso administrativo completo" color="#7c3aed" disabled={loading} onClick={() => void quickLogin({ email: 'hugo@popcode.com.br', password: 'hdoria' })} />
+
+        <div style={{ height: 1, background: 'var(--gray-100)', margin: '4px 0' }} />
+
+        <button type="button" disabled={loading} onClick={demoPatient}
+          style={{ width: '100%', border: '1px solid #bfdbfe', background: '#eff6ff', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: loading ? 'not-allowed' : 'pointer' }}>
+          <div style={{ width: 38, height: 38, borderRadius: 12, background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <UserRound size={18} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#1d4ed8' }}>Paciente mockado</div>
+            <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>Visualizar dashboard, agenda e laudos permitidos</div>
+          </div>
+        </button>
+      </div>
+      </div>
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+  );
+}
+
+function QuickAccessButton({
+  icon: Icon,
+  title,
+  subtitle,
+  color,
+  disabled,
+  onClick,
+}: {
+  icon: React.ElementType;
+  title: string;
+  subtitle: string;
+  color: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" disabled={disabled} onClick={onClick}
+      style={{ width: '100%', border: '1px solid var(--gray-100)', background: '#fff', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: disabled ? 'not-allowed' : 'pointer' }}>
+      <div style={{ width: 38, height: 38, borderRadius: 12, background: 'var(--gray-50)', color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={18} />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-800)' }}>{title}</div>
+        <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{subtitle}</div>
+      </div>
+    </button>
   );
 }
