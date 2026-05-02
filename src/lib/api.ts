@@ -180,6 +180,12 @@ type ApiUserListResponse =
       items?: ApiProfileRecord[];
     };
 
+function expectOne<T>(rows: T[], entity: string): T {
+  const row = rows[0];
+  if (!row) throw new Error(`A API nao retornou ${entity}. Verifique permissoes e dados enviados.`);
+  return row;
+}
+
 export interface ApiDoctorAvailability {
   id: string;
   doctor_id: string;
@@ -465,7 +471,7 @@ export const doctorsApi = {
     request<ApiDoctor[]>(`/rest/v1/doctors?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'medico atualizado')),
 };
 
 // ─── Pacientes ────────────────────────────────────────────────────────────────
@@ -493,13 +499,13 @@ export const patientsApi = {
     request<ApiPatient[]>('/rest/v1/patients', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'paciente criado')),
 
   update: (id: string, data: Partial<ApiPatient>) =>
     request<ApiPatient[]>(`/rest/v1/patients?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'paciente atualizado')),
 
   delete: async (id: string) => {
     const filter = new URLSearchParams();
@@ -552,13 +558,13 @@ export const appointmentsApi = {
     request<ApiAppointment[]>('/rest/v1/appointments', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'agendamento criado')),
 
   update: (id: string, data: Partial<ApiAppointment>) =>
     request<ApiAppointment[]>(`/rest/v1/appointments?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'agendamento atualizado')),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/appointments?id=eq.${id}`, { method: 'DELETE' }),
@@ -593,13 +599,13 @@ export const availabilityApi = {
     request<ApiDoctorAvailability[]>('/rest/v1/doctor_availability', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'disponibilidade criada')),
 
   update: (id: string, data: Partial<ApiDoctorAvailability>) =>
     request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'disponibilidade atualizada')),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/doctor_availability?id=eq.${id}`, { method: 'DELETE' }),
@@ -616,7 +622,7 @@ export const availabilityApi = {
     request<ApiDoctorException[]>('/rest/v1/doctor_exceptions', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'excecao criada')),
 
   getAvailableSlots: (data: AvailableSlotsPayload) =>
     request<AvailableSlotsResponse>('/functions/v1/get-available-slots', {
@@ -649,13 +655,13 @@ export const reportsApi = {
     request<ApiReport[]>('/rest/v1/reports', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'laudo criado')),
 
   update: (id: string, data: Partial<ApiReport>) =>
     request<ApiReport[]>(`/rest/v1/reports?id=eq.${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => rows[0]),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'laudo atualizado')),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/reports?id=eq.${id}`, { method: 'DELETE' }),

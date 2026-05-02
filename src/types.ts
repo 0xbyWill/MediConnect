@@ -1,6 +1,8 @@
 import type { ApiPatient, ApiAppointment, ApiReport } from './lib/api';
 import type { UserRole } from './shared/constants/roles';
 import { splitApiDateTime } from './shared/utils/date';
+import { digitsOnly } from './shared/utils/cpf';
+import { normalizeCep, normalizeDecimalText, normalizeEmail, normalizePhoneBR } from './shared/utils/validation';
 export type { PageType, UserRole } from './shared/constants/roles';
 export { ROLE_PAGES } from './shared/constants/roles';
 
@@ -111,36 +113,36 @@ function splitPatientNotes(notes?: string): { observacoes?: string; extra: Patie
 
 function buildPatientNotes(p: Omit<Paciente, 'id'>): string | undefined {
   const extra: PatientExtraData = {
-    nomeSocial: p.nomeSocial,
-    rg: p.rg,
+    nomeSocial: p.nomeSocial?.trim(),
+    rg: p.rg?.trim(),
     outroDocTipo: p.outroDocTipo,
-    outroDocNumero: p.outroDocNumero,
-    naturalidade: p.naturalidade,
+    outroDocNumero: p.outroDocNumero?.trim(),
+    naturalidade: p.naturalidade?.trim(),
     nacionalidade: p.nacionalidade,
-    profissao: p.profissao,
+    profissao: p.profissao?.trim(),
     estadoCivil: p.estadoCivil,
-    nomeMae: p.nomeMae,
-    profissaoMae: p.profissaoMae,
-    nomePai: p.nomePai,
-    profissaoPai: p.profissaoPai,
-    nomeResponsavel: p.nomeResponsavel,
-    cpfResponsavel: p.cpfResponsavel,
-    nomeEsposo: p.nomeEsposo,
+    nomeMae: p.nomeMae?.trim(),
+    profissaoMae: p.profissaoMae?.trim(),
+    nomePai: p.nomePai?.trim(),
+    profissaoPai: p.profissaoPai?.trim(),
+    nomeResponsavel: p.nomeResponsavel?.trim(),
+    cpfResponsavel: p.cpfResponsavel ? digitsOnly(p.cpfResponsavel) : undefined,
+    nomeEsposo: p.nomeEsposo?.trim(),
     rnGuiaConvenio: p.rnGuiaConvenio,
-    codigoLegado: p.codigoLegado,
-    telefone2: p.telefone2,
-    cep: p.cep,
-    logradouro: p.logradouro,
-    numero: p.numero,
-    complemento: p.complemento,
-    bairro: p.bairro,
+    codigoLegado: p.codigoLegado?.trim(),
+    telefone2: p.telefone2 ? normalizePhoneBR(p.telefone2) : undefined,
+    cep: p.cep ? normalizeCep(p.cep) : undefined,
+    logradouro: p.logradouro?.trim(),
+    numero: p.numero?.trim(),
+    complemento: p.complemento?.trim(),
+    bairro: p.bairro?.trim(),
     tipoSanguineo: p.tipoSanguineo,
-    peso: p.peso,
-    altura: p.altura,
-    alergias: p.alergias,
+    peso: p.peso ? normalizeDecimalText(p.peso) : undefined,
+    altura: p.altura ? normalizeDecimalText(p.altura) : undefined,
+    alergias: p.alergias?.trim(),
     convenio: p.convenio,
-    planoConvenio: p.planoConvenio,
-    matriculaConvenio: p.matriculaConvenio,
+    planoConvenio: p.planoConvenio?.trim(),
+    matriculaConvenio: p.matriculaConvenio?.trim(),
     validadeCarteira: p.validadeCarteira,
     status: p.status,
     foto: p.foto,
@@ -215,15 +217,15 @@ export function apiPatientToPaciente(p: ApiPatient): Paciente {
 
 export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 'id'> {
   return {
-    full_name:        p.nome,
-    cpf:              p.cpf.replace(/\D/g, ''),
+    full_name:        p.nome.trim(),
+    cpf:              digitsOnly(p.cpf),
     birth_date:       p.dataNasc,
-    email:            p.email,
-    phone_mobile:     p.telefone,
+    email:            normalizeEmail(p.email),
+    phone_mobile:     normalizePhoneBR(p.telefone),
     race:             p.raca,
     sex:              p.sexo,
-    city:             p.cidade,
-    state:            p.estado,
+    city:             p.cidade?.trim(),
+    state:            p.estado?.trim(),
     notes:            buildPatientNotes(p),
   };
 }
@@ -255,6 +257,10 @@ export function agendamentoToApiAppointment(
   if (a.data < todayISO) {
     throw new Error('A consulta não pode ser agendada para data anterior a hoje.');
   }
+  if (!a.pacienteId) throw new Error('Selecione um paciente para o agendamento.');
+  if (!a.medicoId) throw new Error('Selecione um medico para o agendamento.');
+  if (!a.hora) throw new Error('Informe o horario do agendamento.');
+  if (!createdBy) throw new Error('Usuario autenticado nao identificado para criar o agendamento.');
   const statusMap: Record<StatusAgendamento, ApiAppointment['status']> = {
     pendente: 'requested', confirmado: 'confirmed',
     realizado: 'completed', cancelado: 'cancelled',
