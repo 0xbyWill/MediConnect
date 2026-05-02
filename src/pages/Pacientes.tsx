@@ -7,7 +7,8 @@ import {
 import type { Paciente, ConvenioType, StatusPaciente } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { dateToISO } from '../shared/utils/date';
-import { digitsOnly, isValidCpf } from '../shared/utils/cpf';
+import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
+import { formatCep, formatPhoneBR, isValidCep, isValidEmail, isValidPhoneBR, validateImageFile } from '../shared/utils/validation';
 import { initials } from '../shared/utils/text';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -104,13 +105,6 @@ function calcIMC(peso: string, altura: string) {
   if (!p || !a) return '';
   return (p / (a * a)).toFixed(1);
 }
-function formatCpf(value: string) {
-  const digits = digitsOnly(value).slice(0, 11);
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
-  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
-  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
-}
 function hasResponsibleData(p: PacienteExtended) {
   return Boolean(
     p.nomeMae || p.profissaoMae || p.nomePai || p.profissaoPai ||
@@ -150,6 +144,8 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
         inputMode={inputMode}
         maxLength={maxLength}
         onChange={e => onChange(e.target.value)} disabled={disabled}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${label.replace(/\s+/g, '-').toLowerCase()}-error` : undefined}
         style={{
           padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none',
           border: `1px solid ${error ? 'var(--red-500)' : 'var(--gray-200)'}`,
@@ -157,7 +153,7 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
           width: '100%', boxSizing: 'border-box',
         }}
       />
-      {error && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{error}</span>}
+      {error && <span id={`${label.replace(/\s+/g, '-').toLowerCase()}-error`} role="alert" style={{ fontSize: 11, color: 'var(--red-500)' }}>{error}</span>}
     </div>
   );
 }
@@ -282,7 +278,14 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const fileError = validateImageFile(file, 2);
+    if (fileError) {
+      setSubmitError(fileError);
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
+    reader.onerror = () => setSubmitError('Nao foi possivel ler a imagem selecionada.');
     reader.onload = ev => setField('foto', ev.target?.result as string);
     reader.readAsDataURL(file);
   };
@@ -290,6 +293,11 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   // ── Validação ──
   const validate = (d: PacienteExtended) => {
     const e: Record<string, string> = {};
+    if (d.cpfResponsavel && !isValidCpf(d.cpfResponsavel)) e.cpfResponsavel = 'CPF do responsavel invalido';
+    if (d.email.trim() && !isValidEmail(d.email)) e.email = 'Informe um e-mail valido.';
+    if (d.telefone.trim() && !isValidPhoneBR(d.telefone)) e.telefone = 'Informe um telefone com DDD.';
+    if (d.telefone2 && !isValidPhoneBR(d.telefone2, false)) e.telefone2 = 'Informe um telefone com DDD.';
+    if (d.cep && !isValidCep(d.cep)) e.cep = 'Informe um CEP com 8 digitos.';
     if (!d.nome.trim()) e.nome = 'Nome obrigatório';
     if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
     if (d.cpf && !isValidCpf(d.cpf)) e.cpf = 'CPF inválido';
@@ -668,8 +676,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                   <SectionHeader label="Contato" icon={Phone} />
                   <div style={responsiveGrid(240)}>
                     <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" required disabled={isView} error={errors.email} placeholder="paciente@exemplo.com" />
-                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', v)} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" />
-                    <FieldInput label="Telefone 2" value={d.telefone2 || ''} onChange={v => setField('telefone2', v)} disabled={isView} placeholder="(79) 3000-0000" />
+                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', formatPhoneBR(v))} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" inputMode="tel" maxLength={15} />
+                    <FieldInput label="Telefone 2" value={d.telefone2 || ''} onChange={v => setField('telefone2', formatPhoneBR(v))} disabled={isView} error={errors.telefone2} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
                   </div>
 
                   {/* Toggles */}
@@ -708,7 +716,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Endereço" icon={MapPin} />
                   <div style={responsiveGrid(180)}>
-                    <FieldInput label="CEP" value={d.cep || ''} onChange={v => setField('cep', v)} disabled={isView} placeholder="00000-000" />
+                    <FieldInput label="CEP" value={d.cep || ''} onChange={v => setField('cep', formatCep(v))} disabled={isView} error={errors.cep} placeholder="00000-000" inputMode="numeric" maxLength={9} />
                     <FieldInput label="Logradouro / Endereço" value={d.logradouro || ''} onChange={v => setField('logradouro', v)} disabled={isView} placeholder="Rua, Avenida..." />
                   </div>
                   <div style={responsiveGrid(150)}>

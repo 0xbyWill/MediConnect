@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { HTMLAttributes } from 'react';
 import { UserCog, Plus, Pencil, Trash2, X, Shield, Search, RefreshCw } from 'lucide-react';
 import { doctorsApi, usersApi } from '../lib/api';
 import type { ApiDoctor, ApiManagedUser, ApiRole, CreateUserResponse } from '../lib/api';
 import type { UserRole } from '../types';
-import { digitsOnly } from '../shared/utils/cpf';
+import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
+import { formatPhoneBR, isValidEmail, isValidPhoneBR, normalizeEmail } from '../shared/utils/validation';
 
 interface UsuarioItem {
   id: string;
@@ -61,6 +63,7 @@ const emptyForm: UsuarioForm = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const cellBaseStyle: React.CSSProperties = {
   padding: '14px 20px',
   minWidth: 0,
@@ -200,10 +203,15 @@ export default function Usuarios() {
     const d = modal.data;
     if (!d.nome.trim()) return 'Informe o nome completo.';
     if (!d.email.trim()) return 'Informe o e-mail.';
+    if (!isValidEmail(d.email)) return 'Informe um e-mail valido. Ex: usuario@clinica.com';
     if (!EMAIL_RE.test(d.email.trim())) return 'Informe um e-mail válido. Ex: usuario@clinica.com';
     if (!d.telefone?.trim()) return 'Informe o telefone.';
+    if (!isValidPhoneBR(d.telefone)) return 'Informe um telefone com DDD.';
     if (modal.mode === 'add' && !d.senha?.trim()) return 'Informe a senha inicial.';
     if (d.senha && d.senha.length < 6) return 'A senha deve ter pelo menos 6 caracteres.';
+    if ((d.role === 'gestao' || d.role === 'secretaria' || d.role === 'medico') && !isValidCpf(d.cpf || '')) {
+      return 'Informe um CPF valido.';
+    }
     if (d.role === 'gestao' && digitsOnly(d.cpf).length !== 11) return 'Informe o CPF do gestor com 11 dígitos.';
     if (d.role === 'secretaria' && digitsOnly(d.cpf).length !== 11) {
       return 'Informe o CPF da secretária com 11 dígitos.';
@@ -235,20 +243,20 @@ export default function Usuarios() {
         if (data.role === 'medico') {
           await doctorsApi.update(data.id, {
             full_name: data.nome.trim(),
-            email: data.email.trim().toLowerCase(),
+            email: normalizeEmail(data.email),
             cpf: digitsOnly(data.cpf),
             crm: data.crm?.trim() ?? '',
             crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
             specialty: data.especialidade?.trim() ?? '',
-            phone_mobile: data.telefone?.trim() ?? '',
+            phone_mobile: digitsOnly(data.telefone),
             active: data.status !== 'inativo',
           });
         } else {
           await usersApi.update(data.id, {
             email: data.email.trim().toLowerCase(),
             full_name: data.nome.trim(),
-            phone: data.telefone?.trim(),
-            phone_mobile: data.telefone?.trim(),
+            phone: digitsOnly(data.telefone),
+            phone_mobile: digitsOnly(data.telefone),
             role: ROLE_API[data.role],
             ...(data.cpf?.trim() ? { cpf: digitsOnly(data.cpf) } : {}),
             active: data.status !== 'inativo',
@@ -263,16 +271,16 @@ export default function Usuarios() {
 
       if (data.role === 'medico') {
         const payload = {
-          email: data.email.trim().toLowerCase(),
+          email: normalizeEmail(data.email),
           password: data.senha?.trim() ?? '',
           full_name: data.nome.trim(),
-          phone: data.telefone?.trim(),
+          phone: digitsOnly(data.telefone),
           role: ROLE_API[data.role],
           cpf: digitsOnly(data.cpf),
           crm: data.crm?.trim() ?? '',
           crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
           specialty: data.especialidade?.trim() ?? '',
-          phone_mobile: data.telefone?.trim() ?? '',
+          phone_mobile: digitsOnly(data.telefone),
         };
 
         const response = await usersApi.createWithPassword(payload);
@@ -295,10 +303,10 @@ export default function Usuarios() {
         await loadUsuarios();
       } else {
         const payload = {
-          email: data.email.trim().toLowerCase(),
+          email: normalizeEmail(data.email),
           full_name: data.nome.trim(),
-          phone: data.telefone?.trim(),
-          phone_mobile: data.telefone?.trim(),
+          phone: digitsOnly(data.telefone),
+          phone_mobile: digitsOnly(data.telefone),
           role: ROLE_API[data.role],
           ...(data.cpf?.trim() ? { cpf: digitsOnly(data.cpf) } : {}),
         };
@@ -522,8 +530,8 @@ export default function Usuarios() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '20px 32px', overflow: 'auto', minHeight: 0 }}>
               <FormInput label="Nome completo" value={modal.data.nome} onChange={value => set('nome', value)} placeholder="Ex: Dr. João Silva" />
-              <FormInput label="E-mail" value={modal.data.email} onChange={value => set('email', value)} placeholder="usuario@clinica.com" type="email" />
-              <FormInput label="Telefone" value={modal.data.telefone || ''} onChange={value => set('telefone', value)} placeholder="(11) 99999-9999" />
+              <FormInput label="E-mail" value={modal.data.email} onChange={value => set('email', value)} placeholder="usuario@clinica.com" type="email" autoComplete="email" />
+              <FormInput label="Telefone" value={modal.data.telefone || ''} onChange={value => set('telefone', formatPhoneBR(value))} placeholder="(11) 99999-9999" inputMode="tel" autoComplete="tel" />
 
               <div>
                 <label style={labelStyle}>Perfil de acesso</label>
@@ -536,12 +544,12 @@ export default function Usuarios() {
               </div>
 
               {(modal.data.role === 'secretaria' || modal.data.role === 'gestao') && (
-                <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', value)} placeholder="12345678901" />
+                <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', formatCpf(value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
               )}
 
               {modal.data.role === 'medico' && (
                 <>
-                  <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', value)} placeholder="12345678901" />
+                  <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', formatCpf(value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(96px, 120px)', gap: 12 }}>
                     <FormInput label="CRM" value={modal.data.crm || ''} onChange={value => set('crm', value)} placeholder="123456" />
                     <div>
@@ -630,21 +638,32 @@ function FormInput({
   onChange,
   placeholder,
   type = 'text',
+  inputMode,
+  autoComplete,
+  maxLength,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   type?: string;
+  inputMode?: HTMLAttributes<HTMLInputElement>['inputMode'];
+  autoComplete?: string;
+  maxLength?: number;
 }) {
+  const inputId = `usuario-${label.replace(/\s+/g, '-').toLowerCase()}`;
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
+      <label htmlFor={inputId} style={labelStyle}>{label}</label>
       <input
+        id={inputId}
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
+        maxLength={maxLength}
         style={fieldStyle}
       />
     </div>

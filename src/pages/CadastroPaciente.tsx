@@ -14,7 +14,8 @@ import {
 import { usersApi } from '../lib/api';
 import type { PatientCreatePayload } from '../lib/api';
 import { dateToISO } from '../shared/utils/date';
-import { digitsOnly, isValidCpf } from '../shared/utils/cpf';
+import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
+import { formatPhoneBR, normalizeEmail } from '../shared/utils/validation';
 
 interface CadastroPacienteProps {
   onBackToLogin: () => void;
@@ -88,7 +89,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
     }
 
     const payload: PatientCreatePayload = {
-      email: form.email.trim().toLowerCase(),
+      email: normalizeEmail(form.email),
       full_name: form.full_name.trim(),
       cpf: digitsOnly(form.cpf),
       phone_mobile: digitsOnly(form.phone_mobile),
@@ -161,15 +162,15 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
             </Field>
 
             <Field label="CPF" icon={User}>
-              <input value={form.cpf} onChange={e => setField('cpf', e.target.value)} placeholder="12345678901" inputMode="numeric" style={fieldStyle} />
+              <input value={form.cpf} onChange={e => setField('cpf', formatCpf(e.target.value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} style={fieldStyle} />
             </Field>
 
             <Field label="Telefone" icon={Phone}>
-              <input value={form.phone_mobile} onChange={e => setField('phone_mobile', e.target.value)} placeholder="(11) 99999-9999" autoComplete="tel" style={fieldStyle} />
+              <input value={form.phone_mobile} onChange={e => setField('phone_mobile', formatPhoneBR(e.target.value))} placeholder="(11) 99999-9999" autoComplete="tel" inputMode="tel" maxLength={15} style={fieldStyle} />
             </Field>
 
             <Field label="Nascimento" icon={Calendar}>
-              <input type="date" max={todayISO()} value={form.birth_date} onChange={e => setField('birth_date', e.target.value)} style={fieldStyle} />
+              <input type="date" max={todayISO()} value={form.birth_date} onChange={e => setField('birth_date', e.target.value)} autoComplete="bday" style={fieldStyle} />
             </Field>
 
           </div>
@@ -237,7 +238,7 @@ function Field({ label, icon: Icon, children }: { label: string; icon: React.Ele
 function MessageBox({ tone, icon: Icon, text }: { tone: 'error' | 'success'; icon: React.ElementType; text: string }) {
   const isError = tone === 'error';
   return (
-    <div style={{
+    <div role={isError ? 'alert' : 'status'} aria-live={isError ? 'assertive' : 'polite'} style={{
       display: 'flex',
       alignItems: 'flex-start',
       gap: 10,

@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { dateToISO, formatDateBR } from '../shared/utils/date';
 import { initials } from '../shared/utils/text';
 import { sanitizeHtml } from '../features/laudos/sanitizeHtml';
+import { validateImageFile, validatePdfFile } from '../shared/utils/validation';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const today = dateToISO(new Date());
@@ -543,6 +544,12 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const handleImportPDF = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const fileError = validatePdfFile(file, 10);
+    if (fileError) {
+      setSaveError(fileError);
+      e.target.value = '';
+      return;
+    }
     insertText(`\n[Arquivo anexado: ${file.name}]\n`);
     e.target.value = '';
   };
@@ -551,7 +558,14 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const handleImgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const fileError = validateImageFile(file, 2);
+    if (fileError) {
+      setSaveError(fileError);
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
+    reader.onerror = () => setSaveError('Nao foi possivel ler a imagem selecionada.');
     reader.onload = ev => {
       editorRef.current?.focus();
       document.execCommand('insertImage', false, ev.target?.result as string);

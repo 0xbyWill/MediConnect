@@ -4,6 +4,29 @@
 
 ---
 
+## Estrutura atual
+
+```text
+src/
+├── app/              # estados globais de UI e notificações
+├── components/       # componentes de layout compartilhados
+├── contexts/         # autenticação e providers React
+├── features/         # lógicas por domínio
+├── lib/              # API, HTTP client e integração Supabase
+├── pages/            # telas da aplicação
+├── shared/           # constantes, máscaras, validações e utilitários
+├── types.ts          # tipos globais e mapeamento API/UI
+├── App.tsx           # composição principal e navegação por estado
+├── main.tsx          # entrada da aplicação
+└── index.css         # estilos globais
+```
+
+## Padrões de formulários
+
+Formulários validam no envio, exibem mensagens no fluxo e normalizam dados antes da API. CPF usa `digitsOnly`/`formatCpf`/`isValidCpf`; e-mail é salvo em lowercase; telefone e CEP usam utilitários de `src/shared/utils/validation.ts`; datas internas usam ISO `YYYY-MM-DD`.
+
+Consulte `docs/form-patterns.md` e `AGENTS.md` para as convenções de manutenção.
+
 ## 🚀 Tecnologias utilizadas
 
 - [React 19](https://react.dev/)

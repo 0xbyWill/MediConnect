@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MessageSquare, Send, Mail, Phone, Bell, Clock, CheckCircle2, XCircle, Search, Plus } from 'lucide-react';
 import type { Paciente } from '../types';
 import { smsApi } from '../lib/api';
+import { normalizePhoneBR } from '../shared/utils/validation';
 
 interface ComunicacaoProps {
   pacientes: Paciente[];
@@ -97,7 +98,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     setErro('');
     try {
       await smsApi.send({
-        phone_number: paciente.telefone,
+        phone_number: normalizePhoneBR(paciente.telefone),
         message: texto.trim(),
         patient_id: paciente.id,
       });
