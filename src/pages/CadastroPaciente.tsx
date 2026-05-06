@@ -3,19 +3,18 @@ import type { FormEvent } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
-  Calendar,
   CheckCircle2,
   Heart,
   Loader2,
+  Lock,
   Mail,
   Phone,
   User,
 } from 'lucide-react';
 import { usersApi } from '../lib/api';
-import type { PatientCreatePayload } from '../lib/api';
-import { dateToISO } from '../shared/utils/date';
+import type { CreateUserWithPasswordPayload } from '../lib/api';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
-import { formatPhoneBR, normalizeEmail } from '../shared/utils/validation';
+import { formatPhoneBR, isValidEmail, isValidPhoneBR, normalizeEmail, normalizePhoneBR } from '../shared/utils/validation';
 
 interface CadastroPacienteProps {
   onBackToLogin: () => void;
@@ -26,7 +25,8 @@ type FormState = {
   email: string;
   cpf: string;
   phone_mobile: string;
-  birth_date: string;
+  password: string;
+  confirm_password: string;
 };
 
 const emptyForm: FormState = {
@@ -34,22 +34,17 @@ const emptyForm: FormState = {
   email: '',
   cpf: '',
   phone_mobile: '',
-  birth_date: '',
+  password: '',
+  confirm_password: '',
 };
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function todayISO() {
-  return dateToISO(new Date());
-}
 
 function validate(form: FormState): string | null {
   if (!form.full_name.trim()) return 'Informe seu nome completo.';
-  if (!EMAIL_RE.test(form.email.trim())) return 'Informe um e-mail válido.';
+  if (!isValidEmail(form.email)) return 'Informe um e-mail válido.';
   if (!isValidCpf(form.cpf)) return 'Informe um CPF válido.';
-  if (digitsOnly(form.phone_mobile).length < 10) return 'Informe um telefone válido.';
-  if (!form.birth_date) return 'Informe sua data de nascimento.';
-  if (form.birth_date >= todayISO()) return 'A data de nascimento deve ser anterior a hoje.';
+  if (!isValidPhoneBR(form.phone_mobile)) return 'Informe um telefone válido.';
+  if (form.password.length < 6) return 'A senha deve ter pelo menos 6 caracteres.';
+  if (form.password !== form.confirm_password) return 'As senhas informadas nao conferem.';
   return null;
 }
 
@@ -60,9 +55,9 @@ function formatApiError(err: unknown) {
     return 'Já existe uma conta ou paciente com esses dados.';
   }
   if (lower.includes('invalid') && lower.includes('email')) return 'Informe um e-mail válido.';
-  if (msg.includes('400')) return 'A API recusou os dados. Confira CPF, telefone, nascimento e e-mail.';
+  if (msg.includes('400')) return 'A API recusou os dados. Confira CPF, telefone, e-mail e senha.';
   if (msg.includes('401') || msg.includes('403')) {
-    return 'A API bloqueou o auto-cadastro público. Verifique as permissões da função register-patient.';
+    return 'A API exige um usuário admin, gestor ou secretaria para criar contas por este endpoint. Para cadastro público de paciente, libere essa função no backend apenas para role paciente ou exponha uma função pública dedicada.';
   }
   if (lower.includes('rate') || lower.includes('too many') || msg.includes('429')) return 'Muitas tentativas. Aguarde um pouco antes de tentar novamente.';
   if (msg.includes('409')) return 'Já existe um cadastro para este e-mail ou CPF.';
@@ -88,21 +83,26 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
       return;
     }
 
-    const payload: PatientCreatePayload = {
+    const cleanPhone = normalizePhoneBR(form.phone_mobile);
+    const formattedPhone = formatPhoneBR(cleanPhone);
+    const payload: CreateUserWithPasswordPayload = {
       email: normalizeEmail(form.email),
+      password: form.password,
       full_name: form.full_name.trim(),
       cpf: digitsOnly(form.cpf),
-      phone_mobile: digitsOnly(form.phone_mobile),
-      birth_date: form.birth_date,
-      redirect_url: window.location.origin,
+      phone: formattedPhone,
+      phone_mobile: formattedPhone,
+      role: 'paciente',
+      create_patient_record: true,
     };
 
     setSaving(true);
     setError('');
     setSuccess('');
     try {
-      const response = await usersApi.createPatientAccount(payload);
-      setSuccess(response.message ?? 'Cadastro realizado com sucesso. Verifique seu e-mail para acessar a plataforma.');
+      const response = await usersApi.createWithPassword(payload);
+      setSuccess(response.message ?? 'Cadastro realizado com sucesso. Volte para o login e acesse com seu e-mail e senha.');
+      setForm(emptyForm);
     } catch (err) {
       setError(formatApiError(err));
       setSuccess('');
@@ -136,7 +136,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
             </div>
             <div style={{ minWidth: 0 }}>
               <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--dark)', margin: 0 }}>Criar conta de paciente</h1>
-              <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>Preencha seus dados para receber o acesso por e-mail.</p>
+              <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>Preencha seus dados para acessar com perfil de paciente.</p>
             </div>
           </div>
           <button type="button" onClick={onBackToLogin} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--gray-200)', background: '#fff', borderRadius: 10, padding: '9px 12px', color: 'var(--gray-700)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
@@ -153,26 +153,29 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-            <Field label="Nome completo" icon={User}>
-              <input value={form.full_name} onChange={e => setField('full_name', e.target.value)} placeholder="Seu nome completo" autoComplete="name" style={fieldStyle} />
+            <Field id="patient-full-name" label="Nome completo" icon={User}>
+              <input id="patient-full-name" value={form.full_name} onChange={e => setField('full_name', e.target.value)} placeholder="Maria Santos" autoComplete="name" maxLength={120} required style={fieldStyle} />
             </Field>
 
-            <Field label="E-mail" icon={Mail}>
-              <input type="email" value={form.email} onChange={e => setField('email', e.target.value)} placeholder="paciente@email.com" autoComplete="email" style={fieldStyle} />
+            <Field id="patient-email" label="E-mail" icon={Mail}>
+              <input id="patient-email" type="email" value={form.email} onChange={e => setField('email', e.target.value)} placeholder="paciente@exemplo.com" autoComplete="email" maxLength={160} required style={fieldStyle} />
             </Field>
 
-            <Field label="CPF" icon={User}>
-              <input value={form.cpf} onChange={e => setField('cpf', formatCpf(e.target.value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} style={fieldStyle} />
+            <Field id="patient-cpf" label="CPF" icon={User}>
+              <input id="patient-cpf" value={form.cpf} onChange={e => setField('cpf', formatCpf(e.target.value))} placeholder="000.000.000-00" inputMode="numeric" autoComplete="off" maxLength={14} required style={fieldStyle} />
             </Field>
 
-            <Field label="Telefone" icon={Phone}>
-              <input value={form.phone_mobile} onChange={e => setField('phone_mobile', formatPhoneBR(e.target.value))} placeholder="(11) 99999-9999" autoComplete="tel" inputMode="tel" maxLength={15} style={fieldStyle} />
+            <Field id="patient-phone" label="Telefone" icon={Phone}>
+              <input id="patient-phone" value={form.phone_mobile} onChange={e => setField('phone_mobile', formatPhoneBR(e.target.value))} placeholder="(11) 99999-9999" autoComplete="tel" inputMode="tel" maxLength={15} required style={fieldStyle} />
             </Field>
 
-            <Field label="Nascimento" icon={Calendar}>
-              <input type="date" max={todayISO()} value={form.birth_date} onChange={e => setField('birth_date', e.target.value)} autoComplete="bday" style={fieldStyle} />
+            <Field id="patient-password" label="Senha" icon={Lock}>
+              <input id="patient-password" type="password" value={form.password} onChange={e => setField('password', e.target.value)} placeholder="minhasenha123" autoComplete="new-password" minLength={6} maxLength={72} required style={fieldStyle} />
             </Field>
 
+            <Field id="patient-confirm-password" label="Confirmar senha" icon={Lock}>
+              <input id="patient-confirm-password" type="password" value={form.confirm_password} onChange={e => setField('confirm_password', e.target.value)} placeholder="Repita sua senha" autoComplete="new-password" minLength={6} maxLength={72} required style={fieldStyle} />
+            </Field>
           </div>
 
           <button type="submit" disabled={saving} style={{
@@ -223,10 +226,10 @@ const fieldStyle: React.CSSProperties = {
   color: 'var(--gray-800)',
 };
 
-function Field({ label, icon: Icon, children }: { label: string; icon: React.ElementType; children: React.ReactNode }) {
+function Field({ id, label, icon: Icon, children }: { id: string; label: string; icon: React.ElementType; children: React.ReactNode }) {
   return (
     <div>
-      <label style={labelStyle}>{label}</label>
+      <label htmlFor={id} style={labelStyle}>{label}</label>
       <div style={{ position: 'relative' }}>
         <Icon size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }} />
         {children}

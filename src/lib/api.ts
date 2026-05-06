@@ -79,6 +79,7 @@ export interface CreateUserResponse {
   };
   profile?: Record<string, unknown>;
   role?: string;
+  patient_id?: string | null;
   message?: string;
 }
 
@@ -577,18 +578,26 @@ export const usersApi = {
       method: 'POST',
       body: JSON.stringify(data),
     };
+    const candidates = [
+      '/create-user-with-password',
+      '/functions/v1/create-user-with-password',
+    ];
 
-    try {
-      return await request<CreateUserResponse>('/create-user-with-password', options);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      const canRetry =
-        msg.includes('404') ||
-        msg.toLowerCase().includes('not found') ||
-        msg.toLowerCase().includes('failed to fetch');
-      if (!canRetry) throw err;
-      return request<CreateUserResponse>('/functions/v1/create-user-with-password', options);
+    for (const path of candidates) {
+      try {
+        return await request<CreateUserResponse>(path, options);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        const lowerMsg = msg.toLowerCase();
+        const canRetry =
+          msg.includes('404') ||
+          lowerMsg.includes('not found') ||
+          lowerMsg.includes('failed to fetch');
+        if (!canRetry) throw err;
+      }
     }
+
+    throw new Error('Endpoint de criacao de usuario com senha nao encontrado.');
   },
 
   createPatientAccount: (data: PatientCreatePayload) =>

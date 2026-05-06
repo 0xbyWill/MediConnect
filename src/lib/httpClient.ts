@@ -8,10 +8,11 @@ function getToken(): string | null {
 
 function buildHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const token = getToken();
+  const bearer = token ?? ANON_KEY;
   return {
     'Content-Type': 'application/json',
     apikey: ANON_KEY,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    Authorization: `Bearer ${bearer}`,
     ...extra,
   };
 }
@@ -37,6 +38,7 @@ export async function request<T>(
       msg?: string;
       error?: string;
       error_description?: string;
+      detail?: string;
       details?: string;
       hint?: string;
     };
@@ -45,6 +47,7 @@ export async function request<T>(
       apiError.msg ||
       apiError.error_description ||
       apiError.error ||
+      apiError.detail ||
       apiError.details ||
       apiError.hint ||
       `Erro na requisicao (${res.status})`
