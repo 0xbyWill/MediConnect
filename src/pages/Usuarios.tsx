@@ -78,6 +78,14 @@ const ellipsisStyle: React.CSSProperties = {
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 };
+const feedbackStyle: React.CSSProperties = {
+  marginTop: 10,
+  padding: '10px 12px',
+  border: '1px solid',
+  borderRadius: 10,
+  fontSize: 12,
+  fontWeight: 700,
+};
 
 function formatSaveError(err: unknown): string {
   const msg = err instanceof Error ? err.message : 'Erro ao salvar usuário.';
@@ -148,6 +156,8 @@ export default function Usuarios() {
   const [saving, setSaving] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<StaffRole | ''>('');
   const [search, setSearch] = useState('');
@@ -163,9 +173,10 @@ export default function Usuarios() {
         ...doctors.map(doctorToUsuario),
         ...managedUsers.map(managedUserToUsuario).filter((user): user is UsuarioItem => Boolean(user)),
       ]));
+      setPageError(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao listar usuários.';
-      setFormError(msg);
+      setPageError(msg);
     } finally {
       setLoadingUsers(false);
     }
@@ -179,12 +190,16 @@ export default function Usuarios() {
 
   const openAdd = () => {
     setFormError(null);
+    setDeleteError(null);
+    setPageError(null);
     setSuccessMessage(null);
     setModal({ open: true, mode: 'add', data: { ...emptyForm } });
   };
 
   const openEdit = (u: UsuarioItem) => {
     setFormError(null);
+    setDeleteError(null);
+    setPageError(null);
     setSuccessMessage(null);
     setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...u } });
   };
@@ -238,6 +253,7 @@ export default function Usuarios() {
     const data = modal.data;
     setSaving(true);
     setFormError(null);
+    setPageError(null);
 
     try {
       if (modal.mode === 'edit') {
@@ -342,14 +358,18 @@ export default function Usuarios() {
 
   const handleDelete = async (id: string) => {
     setSaving(true);
-    setFormError(null);
+    setDeleteError(null);
+    setPageError(null);
+    setSuccessMessage(null);
     try {
       const response = await usersApi.deletePermanent(id);
       setSuccessMessage(response.message ?? 'Usuário deletado permanentemente.');
       setConfirmDelete(null);
       await loadUsuarios();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Erro ao deletar usuário.');
+      const msg = err instanceof Error ? err.message : 'Erro ao deletar usuário.';
+      setDeleteError(msg);
+      setPageError(msg);
     } finally {
       setSaving(false);
     }
@@ -372,7 +392,16 @@ export default function Usuarios() {
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Gestão de Usuários</h1>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>Gerencie os perfis de acesso ao sistema.</p>
-          {successMessage && <p style={{ fontSize: 12, color: 'var(--primary)', marginTop: 8 }}>{successMessage}</p>}
+          {successMessage && (
+            <div role="status" style={{ ...feedbackStyle, background: '#ecfdf5', color: 'var(--primary)', borderColor: 'var(--mint)' }}>
+              {successMessage}
+            </div>
+          )}
+          {pageError && (
+            <div role="alert" style={{ ...feedbackStyle, background: '#fef2f2', color: 'var(--red-500)', borderColor: '#fecaca' }}>
+              {pageError}
+            </div>
+          )}
         </div>
         <button onClick={openAdd} style={{ padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
           <Plus size={16} /> Novo Usuário
@@ -496,7 +525,7 @@ export default function Usuarios() {
                   <td style={cellBaseStyle}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                       <button onClick={() => openEdit(u)} style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber-600)' }}><Pencil size={14} /></button>
-                      <button onClick={() => setConfirmDelete(u.id)} style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--red-500)' }}><Trash2 size={14} /></button>
+                      <button onClick={() => { setDeleteError(null); setConfirmDelete(u.id); }} style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--red-500)' }}><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -580,7 +609,7 @@ export default function Usuarios() {
             </div>
 
             {formError && (
-              <div style={{ margin: '0 32px 12px', padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: 'var(--red-500)', fontSize: 12, fontWeight: 600 }}>
+              <div role="alert" style={{ margin: '0 32px 12px', padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: 'var(--red-500)', fontSize: 12, fontWeight: 600 }}>
                 {formError}
               </div>
             )}
@@ -600,8 +629,13 @@ export default function Usuarios() {
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 360, width: '90%' }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Confirmar exclusão</h3>
             <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 20 }}>Tem certeza que deseja remover este usuário? Esta ação não pode ser desfeita.</p>
+            {deleteError && (
+              <div role="alert" style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: 'var(--red-500)', fontSize: 12, fontWeight: 600 }}>
+                {deleteError}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button disabled={saving} onClick={() => setConfirmDelete(null)} style={{ padding: '9px 18px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>Cancelar</button>
+              <button disabled={saving} onClick={() => { setDeleteError(null); setConfirmDelete(null); }} style={{ padding: '9px 18px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>Cancelar</button>
               <button disabled={saving} onClick={() => void handleDelete(confirmDelete)} style={{ padding: '9px 18px', background: 'var(--red-500)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Excluindo...' : 'Excluir'}</button>
             </div>
           </div>

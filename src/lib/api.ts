@@ -584,11 +584,29 @@ export const usersApi = {
       body: JSON.stringify({ email }),
     }),
 
-  deletePermanent: (userId: string) =>
-    request<DeleteUserResponse>('/delete-user', {
-      method: 'POST',
-      body: JSON.stringify({ userId }),
-    }),
+  deletePermanent: async (userId: string) => {
+    const body = JSON.stringify({ userId, user_id: userId, id: userId });
+    const candidates = [
+      '/delete-user',
+      '/functions/v1/delete-user',
+    ];
+
+    for (const path of candidates) {
+      try {
+        return await request<DeleteUserResponse>(path, { method: 'POST', body });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        const lowerMsg = msg.toLowerCase();
+        const canRetry =
+          msg.includes('404') ||
+          lowerMsg.includes('not found') ||
+          lowerMsg.includes('failed to fetch');
+        if (!canRetry) throw err;
+      }
+    }
+
+    throw new Error('Endpoint de exclusao de usuario nao encontrado.');
+  },
 };
 
 // ─── Médicos ──────────────────────────────────────────────────────────────────
