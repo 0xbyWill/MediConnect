@@ -13,6 +13,12 @@ import { dateToISO, formatDateBR } from '../shared/utils/date';
 import { initials } from '../shared/utils/text';
 import { sanitizeHtml } from '../features/laudos/sanitizeHtml';
 import { validateImageFile, validatePdfFile } from '../shared/utils/validation';
+import { LaudoTemplatePicker } from '../modules/laudos/components/LaudoTemplatePicker';
+import {
+  applyLaudoTemplatePlaceholders,
+  type LaudoTemplate,
+} from '../modules/laudos/templates/laudoTemplates';
+import { reviewLaudoQuality, type LaudoQualityReview } from '../modules/laudos/quality/laudoQuality';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const today = dateToISO(new Date());
@@ -83,6 +89,13 @@ function isDateInRange(iso: string, start: Date, end: Date) {
   const date = parseISODate(iso);
   return Boolean(date && date >= start && date <= end);
 }
+function isWithinLastHours(value: string | undefined, hours: number) {
+  if (!value) return false;
+  const date = value.includes('T') ? new Date(value) : parseISODate(value);
+  if (!date || Number.isNaN(date.getTime())) return false;
+  const diff = Date.now() - date.getTime();
+  return diff >= 0 && diff <= hours * 60 * 60 * 1000;
+}
 function calcIdade(dataNasc: string) {
   if (!dataNasc) return '';
   const nasc = new Date(dataNasc);
@@ -93,12 +106,49 @@ function calcIdade(dataNasc: string) {
   return `${anos} anos`;
 }
 
+function textToEditorHtml(text: string) {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const lines = escaped.split('\n');
+  const html: string[] = [];
+  let paragraph: string[] = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p style="margin:0 0 10px; line-height:1.65; text-align:justify;">${paragraph.join('<br>')}</p>`);
+    paragraph = [];
+  };
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      return;
+    }
+    if (index === 0 && /^(LAUDO|RELATORIO|AVALIACAO|ENCAMINHAMENTO|SOLICITACAO|RESUMO)/i.test(trimmed)) {
+      return;
+    }
+    if (trimmed.endsWith(':')) {
+      flushParagraph();
+      html.push(`<h3 style="font-size:11px; margin:15px 0 6px; text-transform:uppercase; letter-spacing:.04em; color:#155e36;">${trimmed}</h3>`);
+      return;
+    }
+    paragraph.push(trimmed);
+  });
+
+  flushParagraph();
+  return html.join('');
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LaudoExtra {
   exame?: string;
   solicitante?: string;
   orderNumber?: string;
   cidade?: string;
+  templateId?: string;
 }
 
 interface LaudosProps {
@@ -171,6 +221,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const [saving, setSaving]                 = useState(false);
   const [voiceState, setVoiceState]         = useState<'idle' | 'listening' | 'unsupported' | 'error'>('idle');
   const [voiceMessage, setVoiceMessage]     = useState('');
+  const [showEditorPanel, setShowEditorPanel] = useState(true);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   // ── Estados do editor ──
   const [fonte, setFonte]         = useState('Helvetica');
@@ -207,6 +259,12 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       recognitionRef.current?.stop();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isPaciente) return;
+    setAbaLista('todos');
+    setPeriodoFiltro('todos');
+  }, [isPaciente]);
 
   // ── Salva/restaura seleção — o <select> rouba foco antes do onChange disparar ──
   const savedRangeRef = useRef<Range | null>(null);
@@ -318,7 +376,17 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     mes:    { label: 'Mês',    match: data => isDateInRange(data, startOfMonth(hoje), endOfMonth(hoje)) },
   };
 
-  const filtered = laudos.filter(l => {
+  const visibleLaudos = isPaciente ? laudos.filter(l => l.status === 'liberado') : laudos;
+  const releasedAt = (l: Laudo & LaudoExtra) => l.updatedAt || l.createdAt || l.data;
+  const isRecentReleased = (l: Laudo & LaudoExtra) => l.status === 'liberado' && isWithinLastHours(releasedAt(l), 24);
+  const matchesActiveTab = (l: Laudo & LaudoExtra) => {
+    if (isPaciente) return l.status === 'liberado';
+    if (abaLista === 'rascunho') return l.status === 'rascunho';
+    if (abaLista === 'liberado') return isRecentReleased(l);
+    return true;
+  };
+
+  const filtered = visibleLaudos.filter(l => {
     const pac = pacientes.find(p => p.id === l.pacienteId);
     const q   = search.toLowerCase().trim();
     const matchSearch = !q
@@ -329,16 +397,23 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       || l.diagnostico.toLowerCase().includes(q)
       || l.exame?.toLowerCase().includes(q)
       || l.solicitante?.toLowerCase().includes(q);
-    // FIX #3: 'todos' mostra todos os status (label corrigido no JSX)
-    const matchAba = abaLista === 'todos' || l.status === abaLista;
-    const matchPeriodo = periodos[periodoFiltro].match(l.data);
+    const matchAba = matchesActiveTab(l);
+    const matchPeriodo = abaLista === 'todos' || abaLista === 'liberado' || periodos[periodoFiltro].match(l.data);
     return matchSearch && matchAba && matchPeriodo;
   }).sort((a, b) => b.data.localeCompare(a.data));
 
-  const countRascunho = laudos.filter(l => l.status === 'rascunho').length;
-  const countLiberado = laudos.filter(l => l.status === 'liberado').length;
+  const countRascunho = visibleLaudos.filter(l => l.status === 'rascunho').length;
+  const countLiberado = visibleLaudos.filter(isRecentReleased).length;
   const periodoOptions: PeriodoFiltro[] = ['todos', 'hoje', 'semana', 'mes'];
-  const hasActiveFilters = search.trim() || periodoFiltro !== 'todos' || abaLista !== 'todos';
+  const usesPeriodoFilter = abaLista === 'rascunho';
+  const hasActiveFilters = search.trim() || (usesPeriodoFilter && periodoFiltro !== 'todos') || abaLista !== 'todos';
+  const tabsLista: { id: AbaLista; label: string; count: number }[] = isPaciente
+    ? [{ id: 'todos', label: 'Disponiveis', count: visibleLaudos.length }]
+    : [
+        { id: 'rascunho', label: 'A descrever', count: countRascunho },
+        { id: 'liberado', label: 'Liberado', count: countLiberado },
+        { id: 'todos', label: 'Todos', count: visibleLaudos.length },
+      ];
   const clearFilters = () => {
     setSearch('');
     setPeriodoFiltro('todos');
@@ -354,6 +429,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     setErrors({});
     setSaveError('');
     setSearchPac('');
+    setShowTemplatePicker(false);
     editorInitialized.current = false;
     setView('editor');
   };
@@ -364,6 +440,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     setIsNew(false);
     setErrors({});
     setSaveError('');
+    setShowTemplatePicker(false);
     editorInitialized.current = false;
     setView('editor');
   };
@@ -373,6 +450,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     setShowModelos(false);
     setShowFrases(false);
     setShowCampos(false);
+    setShowTemplatePicker(false);
   };
 
   // ── Set field ──
@@ -381,6 +459,17 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   }, []);
 
   // ── Executa comando de formatação (bold, italic, underline, alinhamento, listas) ──
+  const qualityBlockMessage = (review: LaudoQualityReview, origin: 'editor' | 'lista') => {
+    const criticalIssues = review.issues.filter(issue => issue.severity === 'critical');
+    const details = criticalIssues.slice(0, 3).map(issue => issue.title).join('; ');
+    const action = origin === 'lista'
+      ? 'Abra o laudo para revisar antes de liberar.'
+      : 'Revise os pontos indicados antes de liberar.';
+    return details
+      ? `A liberacao foi bloqueada: ${details}. ${action}`
+      : `A liberacao foi bloqueada pela validacao final. ${action}`;
+  };
+
   const execCmd = (cmd: string, val?: string) => {
     document.execCommand('styleWithCSS', false, 'true');
     document.execCommand(cmd, false, val);
@@ -465,11 +554,68 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     return sanitizeHtml(editorContent);
   };
 
+  const handleUseTemplate = (template: LaudoTemplate) => {
+    const pac = pacientes.find(p => p.id === editingLaudo.pacienteId);
+    const text = applyLaudoTemplatePlaceholders(template, {
+      nomePaciente: pac?.nome,
+      cpf: pac?.cpf,
+      data: formatDateBR(editingLaudo.data || today),
+      idade: pac ? calcIdade(pac.dataNasc) : undefined,
+      sexo: pac?.sexo,
+      nomeMedico: user?.full_name,
+      crm: user?.crm,
+      especialidadeMedico: user?.specialty,
+      cid: editingLaudo.cid || template.cid,
+      diagnostico: editingLaudo.diagnostico,
+      conduta: editingLaudo.impressao,
+      exames: editingLaudo.tecnica || editingLaudo.exame,
+      observacoes: editingLaudo.solicitante,
+      peso: pac?.peso,
+      altura: pac?.altura,
+      imc: pac?.peso && pac?.altura
+        ? (Number(pac.peso.replace(',', '.')) / (Number(pac.altura.replace(',', '.')) ** 2)).toFixed(2)
+        : undefined,
+      allowCid: false,
+    });
+    const templateHtml = textToEditorHtml(text);
+    const currentHtml = getEditorHtml();
+    const hasContent = currentHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, '').trim().length > 0;
+    const shouldReplace = !hasContent || window.confirm('Substituir conteudo atual ou adicionar ao final?\n\nOK: substituir conteudo atual\nCancelar: adicionar ao final');
+    const nextHtml = shouldReplace
+      ? templateHtml
+      : `${currentHtml}<p><br></p>${templateHtml}`;
+
+    if (editorRef.current) {
+      editorRef.current.innerHTML = sanitizeHtml(nextHtml);
+    }
+    setEditorContent(sanitizeHtml(nextHtml));
+    setField('templateId', template.id);
+    setField('exame', template.title.toUpperCase());
+  };
+
   const handleSave = async (novoStatus?: StatusLaudo) => {
     if (saving) return;
+    if (novoStatus === 'liberado' && !isMedico) {
+      setSaveError('Apenas medico ou gestor pode liberar laudo para o paciente.');
+      return;
+    }
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
     const conteudo = getEditorHtml();
+    const review = reviewLaudoQuality({
+      laudo: { ...editingLaudo, status: novoStatus ?? editingLaudo.status },
+      paciente: pacientes.find(p => p.id === editingLaudo.pacienteId),
+      html: conteudo,
+    });
+    if (novoStatus === 'liberado' && !review.canApprove) {
+      console.info('laudo_quality_blocked', {
+        score: review.score,
+        criticalIssues: review.issues.filter(issue => issue.severity === 'critical').length,
+        warningIssues: review.issues.filter(issue => issue.severity === 'warning').length,
+      });
+      setSaveError(qualityBlockMessage(review, 'editor'));
+      return;
+    }
     const payload: Omit<Laudo & LaudoExtra, 'id'> = {
       pacienteId:        editingLaudo.pacienteId!,
       cid:               editingLaudo.cid || '',
@@ -483,15 +629,57 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       ocultarAssinatura: editingLaudo.ocultarAssinatura,
       exame:             editingLaudo.exame || 'RELATÓRIO MÉDICO',
       solicitante:       editingLaudo.solicitante || '',
+      templateId:         editingLaudo.templateId,
     };
     setSaving(true);
     setSaveError('');
     try {
       if (isNew) await onAdd(payload);
       else await onUpdate({ ...payload, id: editingLaudo.id! });
+      if (novoStatus === 'liberado') {
+        setAbaLista('liberado');
+        setPeriodoFiltro('todos');
+      }
       closeEditor();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Erro ao salvar laudo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReleaseFromList = async () => {
+    if (saving || !confirmLiberar) return;
+    if (!isMedico) {
+      setSaveError('Apenas medico ou gestor pode liberar laudo para o paciente.');
+      setConfirmLiberar(null);
+      return;
+    }
+    const laudo = laudos.find(item => item.id === confirmLiberar);
+    if (!laudo) {
+      setConfirmLiberar(null);
+      return;
+    }
+    const review = reviewLaudoQuality({
+      laudo: { ...laudo, status: 'liberado' },
+      paciente: pacientes.find(p => p.id === laudo.pacienteId),
+      html: laudo.conteudoHtml || laudo.diagnostico || '',
+    });
+    if (!review.canApprove) {
+      setSaveError(qualityBlockMessage(review, 'lista'));
+      setConfirmLiberar(null);
+      return;
+    }
+
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onUpdate({ ...laudo, status: 'liberado' });
+      setAbaLista('liberado');
+      setPeriodoFiltro('todos');
+      setConfirmLiberar(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Erro ao liberar laudo para o paciente.');
     } finally {
       setSaving(false);
     }
@@ -509,6 +697,11 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     const current = target || editingLaudo;
     const pac = pacientes.find(p => p.id === current.pacienteId);
     const content = sanitizeHtml(current.conteudoHtml || current.diagnostico || editorContent || '');
+    const controlCode = current.orderNumber || '202605/000';
+    const validationToken = `MC-${(current.id || 'XXXXX').slice(0, 8).toUpperCase()}`;
+    const doctorName = user?.full_name || 'Dr. Medico Exemplo';
+    const doctorInfo = `${user?.crm || 'CRM 0000 - UF'}${user?.specialty ? ` - ${user.specialty}` : ' - Especialidade medica'}`;
+    const patientBirth = pac?.dataNasc ? `${formatDateBR(pac.dataNasc)} (${calcIdade(pac.dataNasc)})` : '-';
     const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1100');
     if (!win) return;
     win.document.write(`<!doctype html>
@@ -516,24 +709,64 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         <head>
           <title>${current.exame || 'Laudo'} - ${pac?.nome || 'Paciente'}</title>
           <style>
-            body { font-family: Arial, sans-serif; color: #111; margin: 48px; line-height: 1.6; }
-            header { text-align: center; border-bottom: 2px solid #111; padding-bottom: 16px; margin-bottom: 28px; }
-            h1 { font-size: 18px; letter-spacing: 1.5px; text-transform: uppercase; }
-            .patient { border-bottom: 1px dashed #ccc; padding-bottom: 12px; margin-bottom: 24px; color: #555; font-size: 13px; }
-            .signature { margin-top: 56px; border-top: 1px solid #111; padding-top: 8px; display: inline-block; min-width: 260px; }
-            @media print { body { margin: 32px; } }
+            @page { size: A4; margin: 0; }
+            * { box-sizing: border-box; }
+            body { margin: 0; background: #d9dde3; font-family: Arial, Helvetica, sans-serif; color: #101828; }
+            .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 13mm; border: 1px solid #23352b; position: relative; }
+            .topline { position: absolute; left: 0; right: 0; top: 0; height: 4mm; background: #155e36; }
+            header { display: grid; grid-template-columns: 34mm 1fr 34mm; gap: 8mm; align-items: center; border-bottom: 1px solid #d0d5dd; padding: 7mm 0 5mm; }
+            .logo { height: 24mm; border: 1px solid #98a2b3; display: flex; align-items: center; justify-content: center; color: #155e36; font-weight: 800; font-size: 10px; text-align: center; text-transform: uppercase; }
+            .clinic { text-align: center; font-size: 10px; line-height: 1.5; color: #475467; }
+            .clinic strong { display: block; font-size: 15px; color: #101828; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 3px; }
+            .qr { text-align: center; font-size: 8px; color: #475467; }
+            .qrbox { width: 23mm; height: 23mm; margin: 0 auto 3px; border: 1px solid #667085; background: repeating-linear-gradient(45deg,#111 0 2px,#fff 2px 4px); opacity: .8; }
+            .titlebar { display: flex; align-items: center; justify-content: space-between; border: 1px solid #d0d5dd; background: #f8fafc; padding: 7px 10px; margin: 6mm 0 5mm; }
+            h1 { flex: 1; margin: 0; text-align: center; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; }
+            .control { font-size: 9px; color: #475467; min-width: 32mm; text-align: right; }
+            .patient { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #d0d5dd; margin-bottom: 7mm; font-size: 10.5px; }
+            .field { padding: 6px 8px; border-right: 1px solid #e4e7ec; border-bottom: 1px solid #e4e7ec; }
+            .field:nth-child(2n) { border-right: 0; }
+            .field span { display: block; color: #667085; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+            main { min-height: 132mm; position: relative; z-index: 1; font-size: 12px; line-height: 1.65; }
+            main h3 { font-size: 11px; margin: 15px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: #155e36; }
+            .watermark { position: absolute; inset: 92mm 0 auto; text-align: center; font-size: 88px; color: rgba(16,24,40,.045); font-weight: 900; transform: rotate(-18deg); pointer-events: none; }
+            .signature { margin-top: 18mm; margin-left: auto; width: 78mm; text-align: center; font-size: 11px; color: #344054; }
+            .line { border-top: 1px solid #101828; padding-top: 6px; font-weight: 800; color: #101828; }
+            footer { position: absolute; left: 13mm; right: 13mm; bottom: 10mm; border-top: 1px solid #d0d5dd; padding-top: 5mm; font-size: 9px; color: #667085; text-align: center; }
+            @media print { body { background: #fff; } .page { margin: 0; } }
           </style>
         </head>
         <body>
-          <header><h1>${current.exame || 'Relatório Médico'}</h1></header>
-          <section class="patient">
-            <strong>${pac?.nome || 'Paciente não selecionado'}</strong>
-            ${pac ? ` · CPF: ${pac.cpf || ''} · Idade: ${calcIdade(pac.dataNasc)} · Convênio: ${pac.convenio || ''}` : ''}
-            ${current.cid ? ` · CID: ${current.cid}` : ''}
+          <section class="page">
+            <div class="topline"></div>
+            <div class="watermark">MC</div>
+            <header>
+              <div class="logo">Modelo<br>Ficticio</div>
+              <div class="clinic">
+                <strong>MediConnect Diagnosticos</strong>
+                Rua Exemplo, 123 - Centro - Cidade/UF<br>
+                Telefones: (00) 0000-0000 / (00) 90000-0000<br>
+                Documento demonstrativo, sem validade oficial
+              </div>
+              <div class="qr"><div class="qrbox"></div>Codigo validador:<br>${validationToken}</div>
+            </header>
+            <div class="titlebar"><h1>${current.exame || 'Relatorio Medico'}</h1><span class="control">Controle: ${controlCode}</span></div>
+            <section class="patient">
+              <div class="field"><span>Nome</span>${pac?.nome || 'Paciente nao selecionado'}</div>
+              <div class="field"><span>Data de nascimento</span>${patientBirth}</div>
+              <div class="field"><span>Sexo</span>${pac?.sexo || '-'}</div>
+              <div class="field"><span>Indicacao</span>${current.solicitante || 'Avaliacao medica'}</div>
+              <div class="field"><span>Data do exame</span>${formatDateBR(current.data || today)}</div>
+              <div class="field"><span>Convenio</span>${pac?.convenio || '-'}</div>
+            </section>
+            <main>${content}</main>
+            <section class="signature">
+              <p>${pac?.cidade || 'Local'}, ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              <div class="line">${doctorName}</div>
+              <div>${doctorInfo}</div>
+            </section>
+            <footer>Para validar este documento acesse: app.exemplo.com.br/valideseulaudo e informe o token: ${validationToken}</footer>
           </section>
-          <main>${content}</main>
-          <p>${formatDateBR(current.data || today)}</p>
-          <section class="signature"><strong>${user?.full_name || ''}</strong>${user?.crm ? `<br>${user.crm}` : ''}</section>
           <script>window.onload = () => { window.print(); };</script>
         </body>
       </html>`);
@@ -605,13 +838,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
 
       {/* Abas */}
       <div style={{ display: 'flex', borderBottom: '2px solid var(--gray-100)', marginBottom: 16 }}>
-        {([
-          { id: 'rascunho', label: 'A descrever', count: countRascunho },
-          { id: 'liberado', label: 'Liberado',    count: countLiberado },
-          // FIX #3: Label "Todos" em vez de "Entregues" para refletir o filtro real
-          { id: 'todos',    label: 'Todos',        count: laudos.length },
-        ] as { id: AbaLista; label: string; count: number }[]).map(tab => (
-          <button key={tab.id} onClick={() => setAbaLista(tab.id)}
+        {tabsLista.map(tab => (
+          <button key={tab.id} onClick={() => { setAbaLista(tab.id); if (tab.id !== 'rascunho') setPeriodoFiltro('todos'); }}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', border: 'none', borderBottom: `2px solid ${abaLista === tab.id ? 'var(--primary)' : 'transparent'}`, marginBottom: -2, background: 'none', fontSize: 13, fontWeight: 600, color: abaLista === tab.id ? 'var(--primary)' : 'var(--gray-500)', cursor: 'pointer', transition: 'all .15s' }}>
             {tab.label}
             <span style={{ background: abaLista === tab.id ? 'var(--primary)' : 'var(--gray-100)', color: abaLista === tab.id ? '#fff' : 'var(--gray-500)', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 10 }}>{tab.count}</span>
@@ -626,7 +854,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente/pedido..."
             style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: '#fff' }} />
         </div>
-        {periodoOptions.map(periodo => {
+        {usesPeriodoFilter && periodoOptions.map(periodo => {
           const active = periodoFiltro === periodo;
           return (
             <button key={periodo} onClick={() => setPeriodoFiltro(periodo)}
@@ -635,6 +863,16 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             </button>
           );
         })}
+        {abaLista === 'liberado' && (
+          <span style={{ padding: '9px 12px', borderRadius: 8, background: '#f5f3ff', color: '#6d28d9', fontSize: 12, fontWeight: 700 }}>
+            Disponiveis ao paciente nas ultimas 24h
+          </span>
+        )}
+        {abaLista === 'todos' && (
+          <span style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--gray-50)', color: 'var(--gray-500)', fontSize: 12, fontWeight: 700 }}>
+            Historico completo, sem filtro por dia
+          </span>
+        )}
         <button onClick={clearFilters}
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: `1px solid ${hasActiveFilters ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 8, background: hasActiveFilters ? 'var(--mint)' : '#fff', fontSize: 12, fontWeight: 600, color: hasActiveFilters ? 'var(--primary)' : 'var(--gray-600)', cursor: 'pointer' }}>
           <AlignLeft size={13} /> Limpar filtros
@@ -646,6 +884,11 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           </button>
         </div>
       </div>
+      {saveError && (
+        <div role="alert" style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid var(--red-100)', borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', fontSize: 12, fontWeight: 700 }}>
+          {saveError}
+        </div>
+      )}
 
       {/* Tabela */}
       <div style={{ background: '#fff', borderRadius: 14, border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
@@ -744,15 +987,11 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             <Send size={20} color="#7c3aed" />
           </div>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: 'var(--gray-800)' }}>Liberar Laudo?</h3>
-          <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 20 }}>Ao liberar, o laudo ficará disponível para impressão e envio ao paciente. Esta ação não pode ser desfeita.</p>
+          <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 20 }}>Ao liberar, o laudo ficará disponível para o paciente visualizar e ficará destacado na aba Liberado por até 24h. Depois disso, continuará acessível em Todos.</p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <button onClick={() => setConfirmLiberar(null)} style={btnSecStyle}>Cancelar</button>
-            <button onClick={() => {
-              const l = laudos.find(x => x.id === confirmLiberar);
-              if (l) onUpdate({ ...l, status: 'liberado' });
-              setConfirmLiberar(null);
-            }} style={{ ...btnPrimStyle, background: '#7c3aed' }}>
-              <Send size={14} /> Liberar
+            <button onClick={() => { void handleReleaseFromList(); }} disabled={saving} style={{ ...btnPrimStyle, background: saving ? 'var(--gray-300)' : '#7c3aed', cursor: saving ? 'not-allowed' : 'pointer' }}>
+              <Send size={14} /> {saving ? 'Liberando...' : 'Liberar'}
             </button>
           </div>
         </Modal>
@@ -862,7 +1101,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
 
       {/* ── Cabeçalho do editor ── */}
       <div style={{ background: '#fff', borderBottom: '1px solid var(--gray-100)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: showEditorPanel ? '14px 20px' : '8px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button onClick={closeEditor} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <X size={15} />
@@ -871,13 +1110,13 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
               <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>{isNew ? 'Novo Laudo' : 'Editar Laudo'}</h2>
               <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>
                 Status: <span style={{ fontWeight: 700, color: editingLaudo.status === 'liberado' ? '#7c3aed' : 'var(--amber-600)' }}>
-                  {editingLaudo.status === 'liberado' ? 'Liberado' : 'Rascunho'}
+                  {editingLaudo.status === 'liberado' ? 'Liberado' : 'A descrever'}
                 </span>
               </div>
             </div>
           </div>
 
-          {pac && (
+          {pac && showEditorPanel && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'var(--gray-50)', borderRadius: 10, border: '1px solid var(--gray-100)' }}>
               <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: 'var(--dark)', flexShrink: 0 }}>
                 {initials(pac.nome)}
@@ -895,6 +1134,10 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           )}
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={() => setShowEditorPanel(value => !value)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: showEditorPanel ? 'var(--gray-50)' : 'var(--mint)', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: showEditorPanel ? 'var(--gray-700)' : 'var(--primary)' }}>
+              <Maximize2 size={13} /> {showEditorPanel ? 'Foco no laudo' : 'Mostrar painel'}
+            </button>
             {/* FIX #5: Usa handleGoPreview para salvar HTML antes de desmontar o editor */}
             <button onClick={handleGoPreview}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>
@@ -917,7 +1160,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                 placeholder="Buscar paciente..."
                 style={{ width: '100%', padding: '9px 12px 9px 32px', border: `1px solid ${errors.paciente ? 'var(--red-500)' : 'var(--gray-200)'}`, borderRadius: 8, fontSize: 13, outline: 'none', background: '#fff' }} />
               {errors.paciente && <span style={{ fontSize: 11, color: 'var(--red-500)', marginTop: 2, display: 'block' }}>{errors.paciente}</span>}
-              {showPacList && searchPac && (
+              {showPacList && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 8, zIndex: 10, maxHeight: 160, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', marginTop: 2 }}>
                   {filteredPacs.slice(0, 6).map(p => (
                     <button key={p.id} onClick={() => { setField('pacienteId', p.id); setSearchPac(''); setShowPacList(false); }}
@@ -931,6 +1174,11 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                       </div>
                     </button>
                   ))}
+                  {filteredPacs.length === 0 && (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--gray-500)' }}>
+                      Nenhum paciente encontrado.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -997,7 +1245,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         </div>
 
         {/* ── Barra de inserção ── */}
-        <div style={{ padding: '6px 16px', borderTop: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 8, background: '#fff', position: 'relative' }}>
+        {showEditorPanel && <div style={{ padding: '6px 16px', borderTop: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 8, background: '#fff', position: 'relative' }}>
           <DropBtn label="Modelos" icon={<LayoutTemplate size={13} />} active={showModelos}
             onClick={() => { setShowModelos(!showModelos); setShowFrases(false); setShowCampos(false); }}>
             {showModelos && (
@@ -1036,7 +1284,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             <FileText size={13} /> Importar PDF
           </button>
           <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleImportPDF} />
-        </div>
+        </div>}
       </div>
 
       {/* ── Área principal ── */}
@@ -1046,7 +1294,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         <div style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '32px 24px',
+          padding: showEditorPanel ? '28px 24px' : '18px 18px',
           background: '#c8cdd4',          /* cinza escuro tipo "mesa" */
           display: 'flex',
           flexDirection: 'column',
@@ -1054,24 +1302,47 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         }}>
           {/* Folha A4: 794px largura, proporção A4 ≈ 1:1.414, margens Word (2.5cm ≈ 96px) */}
           <div style={{
-            width: 794,
+            width: showEditorPanel ? 794 : 'min(980px, calc(100vw - 64px))',
             minHeight: 1123,              /* altura mínima A4 a 96dpi */
             background: '#ffffff',
             boxShadow: '0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.2)',
-            padding: '96px 96px 96px 96px', /* margens A4 padrão Word ~2.5cm */
+            padding: '44px 48px 52px',
             boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
             position: 'relative',
             marginBottom: 32,
+            border: '1px solid #23352b',
+            overflow: 'hidden',
           }}>
 
-            {/* ── Cabeçalho interno da folha (título editável) ── */}
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 14, background: '#155e36' }} />
+            <div style={{ position: 'absolute', inset: '350px 0 auto', textAlign: 'center', fontSize: 92, color: 'rgba(16,24,40,0.045)', fontWeight: 900, transform: 'rotate(-18deg)', pointerEvents: 'none' }}>MC</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 112px', gap: 22, alignItems: 'center', borderBottom: '1px solid #d0d5dd', padding: '16px 0 18px', position: 'relative', zIndex: 1 }}>
+              <div style={{ height: 86, border: '1px solid #98a2b3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#155e36', fontSize: 11, fontWeight: 900, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1 }}>
+                Modelo<br />Ficticio
+              </div>
+              <div style={{ textAlign: 'center', fontSize: 11, lineHeight: 1.55, color: '#475467' }}>
+                <strong style={{ display: 'block', fontSize: 16, color: '#101828', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>MediConnect Diagnosticos</strong>
+                Rua Exemplo, 123 - Centro - Cidade/UF<br />
+                Telefones: (00) 0000-0000 / (00) 90000-0000<br />
+                Documento demonstrativo, sem validade oficial
+              </div>
+              <div style={{ textAlign: 'center', fontSize: 9, color: '#475467' }}>
+                <div style={{ width: 78, height: 78, margin: '0 auto 4px', border: '1px solid #667085', background: 'repeating-linear-gradient(45deg,#111 0 2px,#fff 2px 4px)', opacity: 0.8 }} />
+                Codigo validador:<br />MC-000000
+              </div>
+            </div>
+
             <div style={{
-              borderBottom: '2px solid #111',
-              paddingBottom: 12,
-              marginBottom: 24,
+              border: '1px solid #d0d5dd',
+              background: '#f8fafc',
+              padding: '9px 12px',
+              margin: '22px 0 18px',
               textAlign: 'center',
+              position: 'relative',
+              zIndex: 1,
             }}>
               <input
                 value={editingLaudo.exame || 'RELATÓRIO MÉDICO'}
@@ -1080,11 +1351,11 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                   width: '100%',
                   border: 'none',
                   outline: 'none',
-                  fontSize: 16,
-                  fontWeight: 700,
+                  fontSize: 15,
+                  fontWeight: 850,
                   textAlign: 'center',
                   textTransform: 'uppercase',
-                  letterSpacing: 2,
+                  letterSpacing: 1.8,
                   color: '#111',
                   background: 'transparent',
                   fontFamily: fonte,
@@ -1096,19 +1367,21 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             {/* ── Dados do paciente (linha de identificação) ── */}
             {pac && (
               <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                border: '1px solid #d0d5dd',
+                marginBottom: 24,
                 fontSize: 11,
-                color: '#555',
-                borderBottom: '1px dashed #ccc',
-                paddingBottom: 10,
-                marginBottom: 20,
-                lineHeight: 1.6,
+                color: '#101828',
+                position: 'relative',
+                zIndex: 1,
               }}>
-                <strong>{pac.nome}</strong>
-                {' · '}Idade: {calcIdade(pac.dataNasc)}
-                {' · '}CPF: {pac.cpf}
-                {pac.convenio ? ` · Convênio: ${pac.convenio}` : ''}
-                {editingLaudo.cid ? ` · CID: ${editingLaudo.cid}` : ''}
-                {editingLaudo.data ? ` · Data: ${formatDateBR(editingLaudo.data)}` : ''}
+                <DocField label="Nome" value={pac.nome} />
+                <DocField label="Data de nascimento" value={`${formatDateBR(pac.dataNasc)} (${calcIdade(pac.dataNasc)})`} />
+                <DocField label="Sexo" value={pac.sexo || '-'} />
+                <DocField label="Indicacao" value={editingLaudo.solicitante || 'Avaliacao medica'} />
+                <DocField label="Data do exame" value={editingLaudo.data ? formatDateBR(editingLaudo.data) : formatDateBR(today)} />
+                <DocField label="Convenio" value={pac.convenio || '-'} />
               </div>
             )}
 
@@ -1121,10 +1394,10 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
               ref={editorRef}
               contentEditable={isMedico}
               suppressContentEditableWarning
-              onInput={() => setEditorContent(editorRef.current?.innerHTML || '')}
+              onInput={() => { setEditorContent(editorRef.current?.innerHTML || ''); }}
               style={{
                 flex: 1,
-                minHeight: 700,
+                minHeight: showEditorPanel ? 520 : 650,
                 outline: 'none',
                 fontFamily: fonte,
                 fontSize: `${tamanho}pt`,
@@ -1133,11 +1406,13 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                 cursor: isMedico ? 'text' : 'default',
                 wordBreak: 'break-word',
                 whiteSpace: 'pre-wrap',
+                position: 'relative',
+                zIndex: 1,
               }}
             />
 
             {/* ── Rodapé da folha: data e assinatura ── */}
-            <div style={{ marginTop: 48, paddingTop: 16 }}>
+            <div style={{ marginTop: 48, paddingTop: 16, marginLeft: 'auto', width: 300, textAlign: 'center', position: 'relative', zIndex: 1 }}>
               {!editingLaudo.ocultarData && (
                 <div style={{ fontSize: 11, color: '#555', marginBottom: 40 }}>
                   {pac?.cidade || 'Local'},{' '}
@@ -1145,7 +1420,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                 </div>
               )}
               {!editingLaudo.ocultarAssinatura && (
-                <div style={{ display: 'inline-block', minWidth: 220, borderTop: '1px solid #111', paddingTop: 6 }}>
+                <div style={{ borderTop: '1px solid #111', paddingTop: 6 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#111' }}>{user?.full_name || 'Dr. Médico'}</div>
                   {user?.crm && (
                     <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>{user.crm}{user.specialty ? ` · ${user.specialty}` : ''}</div>
@@ -1157,19 +1432,46 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         </div>
 
         {/* Painel lateral */}
-        <div style={{ width: 260, flexShrink: 0, background: '#fff', borderLeft: '1px solid var(--gray-100)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {showEditorPanel && <div style={{ width: 260, flexShrink: 0, background: '#fff', borderLeft: '1px solid var(--gray-100)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
 
-          <div style={{ padding: 16, borderBottom: '1px solid var(--gray-100)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Campos Clínicos</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ padding: 14, borderBottom: '1px solid var(--gray-100)' }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Campos clinicos</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <SideField label="CID"           value={editingLaudo.cid || ''}         onChange={v => setField('cid', v)}         placeholder="Ex: M54.5" />
               <SideField label="Data do Exame" value={editingLaudo.data || today}      onChange={v => setField('data', v)}        type="date" />
               <SideField label="Solicitante"   value={editingLaudo.solicitante || ''} onChange={v => setField('solicitante', v)} placeholder="Nome do solicitante" />
               <SideField label="Técnica/Exame" value={editingLaudo.tecnica || ''}     onChange={v => setField('tecnica', v)}     placeholder="Ex: Ecocardiograma" />
+              <div style={{ gridColumn: '1 / -1' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowTemplatePicker(value => !value)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '9px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, background: showTemplatePicker ? 'var(--mint)' : '#fff', color: showTemplatePicker ? 'var(--primary)' : 'var(--gray-700)', fontSize: 12, fontWeight: 850, cursor: 'pointer' }}
+                  aria-expanded={showTemplatePicker}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <LayoutTemplate size={14} />
+                    Laudos pre-selecionados
+                  </span>
+                  <span style={{ fontSize: 10, color: showTemplatePicker ? 'var(--primary)' : 'var(--gray-400)', fontWeight: 800 }}>
+                    {editingLaudo.templateId ? 'selecionado' : showTemplatePicker ? 'fechar' : 'abrir'}
+                  </span>
+                </button>
+                {showTemplatePicker && (
+                  <div style={{ marginTop: 10 }}>
+                    <LaudoTemplatePicker
+                      onUseTemplate={(template) => {
+                        handleUseTemplate(template);
+                        setShowTemplatePicker(false);
+                      }}
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div style={{ padding: 16, borderBottom: '1px solid var(--gray-100)' }}>
+          <div style={{ padding: 14, borderBottom: '1px solid var(--gray-100)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Imagens</div>
               <button onClick={() => imgInputRef.current?.click()}
@@ -1184,7 +1486,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             </div>
           </div>
 
-          <div style={{ padding: 16, borderBottom: '1px solid var(--gray-100)' }}>
+          <div style={{ padding: 14, borderBottom: '1px solid var(--gray-100)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Auditoria</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {[
@@ -1199,15 +1501,15 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
               ))}
             </div>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* ── Rodapé ── */}
-      <div style={{ background: '#fff', borderTop: '1px solid var(--gray-100)', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+      <div style={{ background: '#fff', borderTop: '1px solid var(--gray-100)', padding: showEditorPanel ? '12px 20px' : '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12, flexWrap: 'wrap' }}>
+        {showEditorPanel && <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           <Toggle label="Ocultar data"       value={editingLaudo.ocultarData || false}       onChange={v => setField('ocultarData', v)} />
           <Toggle label="Ocultar assinatura" value={editingLaudo.ocultarAssinatura || false} onChange={v => setField('ocultarAssinatura', v)} />
-        </div>
+        </div>}
         {saveError && (
           <div style={{ color: 'var(--red-600)', fontSize: 12, fontWeight: 700, flex: 1, minWidth: 220 }}>
             {saveError}
@@ -1225,6 +1527,15 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
 }
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
+function DocField({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ padding: '8px 10px', borderRight: '1px solid #e4e7ec', borderBottom: '1px solid #e4e7ec', minHeight: 43 }}>
+      <span style={{ display: 'block', color: '#667085', fontSize: 8, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 3, fontWeight: 800 }}>{label}</span>
+      <strong style={{ fontSize: 11, color: '#101828', fontWeight: 700 }}>{value}</strong>
+    </div>
+  );
+}
+
 function TblBtn({ icon: Icon, color, title, onClick }: { icon: React.ElementType; color: string; title: string; onClick: () => void }) {
   return (
     <button title={title} onClick={onClick}
@@ -1335,3 +1646,5 @@ const previewBtnStyle: React.CSSProperties = {
   color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
   width: 28, height: 28,
 };
+
+

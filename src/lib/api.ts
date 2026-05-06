@@ -316,6 +316,27 @@ export interface ApiDoctorException {
   created_by?: string;
 }
 
+const WEEKDAY_VALUES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+
+function toApiWeekday(weekday: number | string | undefined) {
+  if (weekday === undefined) return undefined;
+  if (typeof weekday === 'number') return WEEKDAY_VALUES[weekday] ?? String(weekday);
+  return weekday;
+}
+
+function fromApiWeekday(weekday: number | string): number {
+  if (typeof weekday === 'number') return weekday;
+  const normalized = weekday.toLowerCase().trim();
+  const numeric = Number(normalized);
+  if (Number.isInteger(numeric)) return numeric;
+  const index = WEEKDAY_VALUES.findIndex(value => value === normalized);
+  return index >= 0 ? index : 0;
+}
+
+function apiAvailabilityToUi(row: ApiDoctorAvailability): ApiDoctorAvailability {
+  return { ...row, weekday: fromApiWeekday(row.weekday) };
+}
+
 export interface AvailableSlotsPayload {
   doctor_id: string;
   date: string;
@@ -337,6 +358,18 @@ export interface SendSmsResponse {
   success?: boolean;
   message?: string;
   sid?: string;
+}
+
+export interface ApiSmsLog {
+  id: string;
+  patient_id?: string | null;
+  phone_number: string;
+  message: string;
+  status?: string | null;
+  sid?: string | null;
+  twilio_sid?: string | null;
+  error_message?: string | null;
+  created_at?: string;
 }
 
 export interface ApiPatient {
@@ -400,7 +433,7 @@ export interface ApiReport {
   id: string;
   order_number?: string;
   patient_id: string;
-  status: 'draft' | 'completed';
+  status: string;
   exam?: string;
   requested_by?: string;
   cid_code?: string;
@@ -414,6 +447,31 @@ export interface ApiReport {
   created_by?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+const RELEASED_REPORT_STATUS_CANDIDATES = ['liberado', 'finalizado', 'released', 'signed'];
+
+function shouldRetryReleasedReportStatus(err: unknown, status: unknown) {
+  if (!status || status === 'draft') return false;
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('report_status') || message.includes('invalid input value for enum');
+}
+
+async function writeReportWithStatusFallback<T>(operation: (data: Partial<ApiReport>) => Promise<T>, data: Partial<ApiReport>) {
+  try {
+    return await operation(data);
+  } catch (err) {
+    if (!shouldRetryReleasedReportStatus(err, data.status)) throw err;
+    let lastError = err;
+    for (const status of RELEASED_REPORT_STATUS_CANDIDATES) {
+      try {
+        return await operation({ ...data, status });
+      } catch (retryErr) {
+        lastError = retryErr;
+      }
+    }
+    throw lastError;
+  }
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -763,25 +821,26 @@ export const availabilityApi = {
   list: (params: { doctor_id?: string; weekday?: number; active?: boolean; appointment_type?: string } = {}) => {
     const q = new URLSearchParams({ select: '*' });
     if (params.doctor_id) q.set('doctor_id', `eq.${params.doctor_id}`);
-    if (params.weekday !== undefined) q.set('weekday', `eq.${params.weekday}`);
+    if (params.weekday !== undefined) q.set('weekday', `eq.${toApiWeekday(params.weekday)}`);
     if (params.active !== undefined) q.set('active', `eq.${params.active}`);
     if (params.appointment_type) q.set('appointment_type', `eq.${params.appointment_type}`);
-    return request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?${q.toString()}`);
+    return request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?${q.toString()}`)
+      .then(rows => rows.map(apiAvailabilityToUi));
   },
 
   create: (data: CreateDoctorAvailabilityPayload) =>
     request<ApiDoctorAvailability[] | ApiDoctorAvailability>('/rest/v1/doctor_availability', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, weekday: toApiWeekday(data.weekday) }),
     }, { Prefer: 'return=representation' }).then(response =>
-      Array.isArray(response) ? expectOne(response, 'disponibilidade criada') : response
+      apiAvailabilityToUi(Array.isArray(response) ? expectOne(response, 'disponibilidade criada') : response)
     ),
 
   update: (id: string, data: Partial<ApiDoctorAvailability>) =>
     request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?id=eq.${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'disponibilidade atualizada')),
+      body: JSON.stringify({ ...data, weekday: toApiWeekday(data.weekday) }),
+    }, { Prefer: 'return=representation' }).then(rows => apiAvailabilityToUi(expectOne(rows, 'disponibilidade atualizada'))),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/doctor_availability?id=eq.${id}`, { method: 'DELETE' }),
@@ -816,8 +875,8 @@ export const reportsApi = {
     return request<ApiReport[]>(`/rest/v1/reports?${q.toString()}`);
   },
 
-  listForPatient: (patientId: string) =>
-    reportsApi.list({ patient_id: patientId }),
+  listForPatient: (patientId: string, status?: ApiReport['status']) =>
+    reportsApi.list({ patient_id: patientId, status }),
 
   listByCreators: (creatorIds: string[]) => {
     const uniqueIds = Array.from(new Set(creatorIds.filter(Boolean)));
@@ -828,16 +887,22 @@ export const reportsApi = {
   },
 
   create: (data: Omit<ApiReport, 'id' | 'order_number' | 'created_at' | 'updated_at'>) =>
-    request<ApiReport[]>('/rest/v1/reports', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'laudo criado')),
+    writeReportWithStatusFallback(
+      payload => request<ApiReport[]>('/rest/v1/reports', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'laudo criado')),
+      data
+    ),
 
   update: (id: string, data: Partial<ApiReport>) =>
-    request<ApiReport[]>(`/rest/v1/reports?id=eq.${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'laudo atualizado')),
+    writeReportWithStatusFallback(
+      payload => request<ApiReport[]>(`/rest/v1/reports?id=eq.${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'laudo atualizado')),
+      data
+    ),
 
   delete: (id: string) =>
     request<void>(`/rest/v1/reports?id=eq.${id}`, { method: 'DELETE' }),
@@ -850,4 +915,13 @@ export const smsApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  logs: (limit = 100) => {
+    const q = new URLSearchParams({
+      select: '*',
+      order: 'created_at.desc',
+      limit: String(limit),
+    });
+    return request<ApiSmsLog[]>(`/rest/v1/sms_logs?${q.toString()}`);
+  },
 };

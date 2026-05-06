@@ -221,7 +221,7 @@ export default function Usuarios() {
     const d = modal.data;
     if (!d.nome.trim()) return 'Informe o nome completo.';
     if (!d.email.trim()) return 'Informe o e-mail.';
-    if (!isValidEmail(d.email)) return 'Informe um e-mail valido. Ex: usuario@clinica.com';
+    if (!isValidEmail(d.email)) return 'Informe um e-mail válido. Ex: usuario@clinica.com';
     if (!EMAIL_RE.test(d.email.trim())) return 'Informe um e-mail válido. Ex: usuario@clinica.com';
     if (!d.telefone?.trim()) return 'Informe o telefone.';
     if (!isValidPhoneBR(d.telefone)) return 'Informe um telefone com DDD.';
@@ -510,12 +510,17 @@ export default function Usuarios() {
                   </td>
                   <td style={{ ...cellBaseStyle, fontSize: 13, color: 'var(--gray-500)' }}>
                     {(() => {
-                      const documentText = u.role === 'medico' ? `${u.crm || '-'}${u.crmUf ? `/${u.crmUf}` : ''}` : u.cpf || '—';
+                      const documentText = u.role === 'medico'
+                        ? `${u.crm || '-'}${u.crmUf ? `/${u.crmUf}` : ''}`
+                        : formatCpf(u.cpf || '') || '—';
                       return <span title={documentText} style={ellipsisStyle}>{documentText}</span>;
                     })()}
                   </td>
                   <td style={{ ...cellBaseStyle, fontSize: 13, color: 'var(--gray-500)' }}>
-                    <span title={u.telefone || '—'} style={ellipsisStyle}>{u.telefone || '—'}</span>
+                    {(() => {
+                      const phoneText = formatPhoneBR(u.telefone || '') || '—';
+                      return <span title={phoneText} style={ellipsisStyle}>{phoneText}</span>;
+                    })()}
                   </td>
                   <td style={cellBaseStyle}>
                     <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: u.status === 'ativo' ? 'var(--mint)' : 'var(--gray-100)', color: u.status === 'ativo' ? 'var(--dark)' : 'var(--gray-400)' }}>
@@ -562,11 +567,11 @@ export default function Usuarios() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '20px 32px', overflow: 'auto', minHeight: 0 }}>
               <FormInput label="Nome completo" value={modal.data.nome} onChange={value => set('nome', value)} placeholder="Ex: Dr. João Silva" />
               <FormInput label="E-mail" value={modal.data.email} onChange={value => set('email', value)} placeholder="usuario@clinica.com" type="email" autoComplete="email" />
-              <FormInput label="Telefone" value={modal.data.telefone || ''} onChange={value => set('telefone', formatPhoneBR(value))} placeholder="(11) 99999-9999" inputMode="tel" autoComplete="tel" />
+              <FormInput label="Telefone" value={modal.data.telefone || ''} onChange={value => set('telefone', formatPhoneBR(value))} placeholder="(11) 99999-9999" inputMode="tel" autoComplete="tel" maxLength={15} />
 
               <div>
-                <label style={labelStyle}>Perfil de acesso</label>
-                <select value={modal.data.role} onChange={e => set('role', e.target.value)} style={fieldStyle}>
+                <label htmlFor="usuario-perfil-acesso" style={labelStyle}>Perfil de acesso</label>
+                <select id="usuario-perfil-acesso" value={modal.data.role} onChange={e => set('role', e.target.value)} style={fieldStyle}>
                   <option value="medico">Médico</option>
                   <option value="gestao">Gestão / Coordenação</option>
                   <option value="secretaria">Secretaria</option>
@@ -581,10 +586,10 @@ export default function Usuarios() {
                 <>
                   <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', formatCpf(value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(96px, 120px)', gap: 12 }}>
-                    <FormInput label="CRM" value={modal.data.crm || ''} onChange={value => set('crm', value)} placeholder="123456" />
+                    <FormInput label="CRM" value={modal.data.crm || ''} onChange={value => set('crm', digitsOnly(value).slice(0, 8))} placeholder="123456" inputMode="numeric" maxLength={8} />
                     <div>
-                      <label style={labelStyle}>UF do CRM</label>
-                      <select value={modal.data.crmUf || 'SP'} onChange={e => set('crmUf', e.target.value)} style={fieldStyle}>
+                      <label htmlFor="usuario-crm-uf" style={labelStyle}>UF do CRM</label>
+                      <select id="usuario-crm-uf" value={modal.data.crmUf || 'SP'} onChange={e => set('crmUf', e.target.value)} style={fieldStyle}>
                         {UF_OPTIONS.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                       </select>
                     </div>
@@ -599,8 +604,8 @@ export default function Usuarios() {
 
               {modal.mode === 'edit' && (
                 <div>
-                  <label style={labelStyle}>Status</label>
-                  <select value={modal.data.status} onChange={e => set('status', e.target.value)} style={fieldStyle}>
+                  <label htmlFor="usuario-status" style={labelStyle}>Status</label>
+                  <select id="usuario-status" value={modal.data.status} onChange={e => set('status', e.target.value)} style={fieldStyle}>
                     <option value="ativo">Ativo</option>
                     <option value="inativo">Inativo</option>
                   </select>

@@ -187,3 +187,49 @@ Endpoints disponíveis:
 | Médicos | `GET /rest/v1/doctors` |
 
 ---
+
+## Assistente IA
+
+O MVP de IA foi adicionado usando Supabase Edge Functions, tabelas dedicadas e uma area administrativa no menu `Assistente IA` para usuarios de gestao.
+
+Arquivos principais:
+
+- `src/lib/aiApi.ts`: cliente dos endpoints de IA.
+- `src/pages/AssistenteIA.tsx`: dashboard, chat admin, conhecimento, instrucoes, FAQs e correcoes.
+- `supabase/migrations/202605060001_ai_mvp.sql`: schema, indices e RLS.
+- `supabase/functions/ai/index.ts`: endpoints de usuario.
+- `supabase/functions/admin-ai/index.ts`: endpoints administrativos.
+- `supabase/functions/_shared/ai/*`: agentes, provider, prompts, seguranca e repositorio.
+
+Variaveis das Edge Functions:
+
+```env
+AI_API_KEY=
+AI_MODEL=gpt-4o-mini
+AI_EMBEDDING_MODEL=text-embedding-3-small
+AI_PROVIDER=openai
+AI_TEMPERATURE=0.2
+AI_MAX_TOKENS=700
+```
+
+Endpoints:
+
+- `POST /functions/v1/ai/generate-description`
+- `POST /functions/v1/ai/generate-user-message`
+- `POST /functions/v1/ai/support`
+- `POST /functions/v1/ai/feedback`
+- `GET|POST /functions/v1/admin-ai/instructions`
+- `GET|POST /functions/v1/admin-ai/knowledge`
+- `GET|POST /functions/v1/admin-ai/faqs`
+- `POST /functions/v1/admin-ai/chat`
+- `POST /functions/v1/admin-ai/corrections`
+- `GET /functions/v1/admin-ai/conversations`
+- `GET /functions/v1/admin-ai/logs`
+
+Guia completo: [`docs/ai-mvp.md`](docs/ai-mvp.md).
+
+Testes das Edge Functions:
+
+```bash
+npm run test:edge
+```

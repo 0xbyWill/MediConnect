@@ -1,0 +1,7 @@
+project_id = "yuanqfswhberkoevtmfr"
+
+[functions.ai]
+verify_jwt = true
+
+[functions.admin-ai]
+verify_jwt = true

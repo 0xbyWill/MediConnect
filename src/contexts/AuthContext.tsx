@@ -33,13 +33,14 @@ const MOCK_PATIENT_USER: AuthUser = {
 };
 
 // ─── Normaliza role da API para role interna ──────────────────────────────────
-function normalizeRole(role?: string): UserRole {
+function normalizeRole(role?: string): UserRole | undefined {
   const r = role?.toLowerCase().trim();
   if (r === 'medico' || r === 'doctor' || r === 'physician') return 'medico';
   if (r === 'secretaria' || r === 'secretary' || r === 'receptionist') return 'secretaria';
   if (r === 'paciente' || r === 'patient') return 'paciente';
   // gestor, admin, gestao, manager → gestao
-  return 'gestao';
+  if (r === 'gestor' || r === 'admin' || r === 'gestao' || r === 'manager') return 'gestao';
+  return undefined;
 }
 
 function readString(value: unknown): string | undefined {
@@ -71,7 +72,7 @@ function readApiRole(apiUser: ApiUser, info?: ApiUserInfo | null): UserRole | un
 // ─── Busca doctor_id cruzando e-mail com tabela doctors ──────────────────────
 async function findDoctorByEmail(email: string) {
   try {
-    const doctors = await doctorsApi.list({ active: true });
+    const doctors = await doctorsApi.list();
     const emailLower = email.toLowerCase().trim();
     return doctors.find(d => d.email?.toLowerCase().trim() === emailLower) ?? null;
   } catch {
@@ -114,6 +115,19 @@ async function resolveUserProfile(apiUser: ApiUser): Promise<AuthUser> {
   }
 
   // ── CASO 1: role explícita e NÃO é médico → retorna sem buscar doctors ──
+  const doctorByEmail = await findDoctorByEmail(apiUser.email);
+  if (doctorByEmail) {
+    return {
+      id:        apiUser.id,
+      email:     apiUser.email,
+      role:      'medico',
+      full_name: doctorByEmail.full_name,
+      specialty: doctorByEmail.specialty,
+      crm:       `${doctorByEmail.crm}/${doctorByEmail.crm_uf}`,
+      doctor_id: doctorByEmail.id,
+    };
+  }
+
   if (explicitRole && explicitRole !== 'medico') {
     return {
       id:        apiUser.id,

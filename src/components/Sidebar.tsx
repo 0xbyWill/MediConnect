@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, FileText, Settings, Heart, MessageSquare, BarChart2, UserCog, Activity, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, FileText, Settings, Heart, MessageSquare, BarChart2, UserCog, Activity, LogOut, Headset, Bot } from 'lucide-react';
 import type { PageType, UserRole } from '../types';
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,10 +15,12 @@ const ALL_NAV: { id: PageType; label: string; icon: React.ElementType; group: 'p
   { id: 'pacientes',     label: 'Pacientes',         icon: Users,           group: 'clinico' },
   { id: 'agenda',        label: 'Agenda',            icon: Calendar,        group: 'clinico' },
   { id: 'laudos',        label: 'Laudos',            icon: FileText,        group: 'clinico' },
-  { id: 'comunicacao',   label: 'Comunicação',       icon: MessageSquare,   group: 'clinico' },
+  { id: 'comunicacao',   label: 'Comunicação',       icon: Headset,         group: 'clinico' },
+  { id: 'mensagens',     label: 'Mensagens',         icon: MessageSquare,   group: 'clinico' },
   { id: 'relatorios',    label: 'Relatórios',        icon: BarChart2,       group: 'clinico' },
   { id: 'usuarios',      label: 'Usuários',          icon: UserCog,         group: 'gestao' },
   { id: 'metricas',      label: 'Métricas',          icon: Activity,        group: 'gestao' },
+  { id: 'ia',            label: 'Assistente IA',     icon: Bot,             group: 'gestao' },
   { id: 'configuracoes', label: 'Configurações',     icon: Settings,        group: 'sistema' },
 ];
 

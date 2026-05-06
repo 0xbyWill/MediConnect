@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, Plus, Eye, Pencil, Trash2, X, Camera, User,
-  Filter, Calendar, ChevronDown, Phone, MapPin,
+  Filter, Calendar, ChevronDown, Phone, MapPin, Gauge,
   AlertCircle, Clock, CheckCircle2,
 } from 'lucide-react';
 import type { Paciente, ConvenioType, StatusPaciente } from '../types';
@@ -34,9 +34,75 @@ const FORM_TABS = [
   { id: 'dados',     label: 'Dados Pessoais' },
   { id: 'endereco',  label: 'Endereço' },
   { id: 'medico',    label: 'Inf. Médicas' },
+  { id: 'prioridade', label: 'Prioridade' },
   { id: 'convenio',  label: 'Convênio' },
   { id: 'obs',       label: 'Observações' },
 ];
+
+const HEALTH_CONDITION_OPTIONS = [
+  'Sem doença relevante ou condição controlada',
+  'Condição leve/controlada',
+  'Doença crônica com impacto moderado',
+  'Múltiplas doenças, pós-operatório, imunossupressão ou risco de piora',
+  'Condição instável, piora recente ou necessidade de acompanhamento frequente',
+];
+
+const PHYSICAL_INTEGRITY_OPTIONS = [
+  'Sem limitação física relevante',
+  'Dor leve ou desconforto leve',
+  'Dor moderada, lesão simples ou limitação parcial',
+  'Dor intensa, limitação severa, risco de queda ou lesão importante',
+  'Lesão grave, imobilidade, sangramento relevante ou risco físico imediato',
+];
+
+const MOBILITY_OPTIONS = [
+  'Independente',
+  'Independente com pequena dificuldade',
+  'Precisa de apoio ocasional',
+  'Precisa de ajuda frequente',
+  'Acamado ou dependente total/quase total',
+];
+
+const THERAPEUTIC_URGENCY_OPTIONS = [
+  'Atendimento eletivo, sem prejuízo relevante se esperar',
+  'Acompanhamento preventivo',
+  'Atraso pode gerar piora leve/moderada',
+  'Atraso pode causar piora funcional, dor persistente ou risco aumentado',
+  'Atraso representa alto risco de agravamento ou perda funcional importante',
+];
+
+const WAITING_TIME_OPTIONS = [
+  'Entrou recentemente na fila',
+  'Espera curta',
+  'Espera moderada',
+  'Espera longa',
+  'Espera muito longa ou acima do prazo máximo da clínica',
+];
+
+const FIT_AVAILABILITY_OPTIONS = [
+  'Não consegue comparecer em encaixes',
+  'Baixa chance de comparecer',
+  'Chance incerta',
+  'Boa chance de comparecer',
+  'Confirmou disponibilidade imediata ou alta disponibilidade',
+];
+
+const NPS_PRIORITY_LABEL: Record<number, string> = {
+  1: 'baixa prioridade',
+  2: 'prioridade leve',
+  3: 'prioridade intermediária',
+  4: 'alta prioridade',
+  5: 'prioridade máxima',
+};
+
+const priorityCellStyle: React.CSSProperties = {
+  padding: '9px 10px',
+  borderTop: '1px solid var(--gray-50)',
+  fontSize: 12,
+  color: 'var(--gray-700)',
+  verticalAlign: 'top',
+  overflowWrap: 'anywhere',
+};
 
 // ─── Tipos auxiliares ─────────────────────────────────────────────────────────
 interface PacienteExtended extends Paciente {
@@ -66,6 +132,25 @@ interface PacienteExtended extends Paciente {
   cidade?: string;
   estado?: string;
   referencia?: string;
+  condicaoSaudePrincipal?: string;
+  condicaoSaudePontuacao?: string;
+  comorbidades?: string;
+  nivelDor?: string;
+  mobilidade?: string;
+  dependenciaFuncional?: string;
+  integridadeFisica?: string;
+  urgenciaTerapeutica?: string;
+  tempoNaFila?: string;
+  faltasAnteriores?: string;
+  disponibilidadeEncaixe?: string;
+  tempoMinimoChegar?: string;
+  tempoDeslocamento?: string;
+  tipoAtendimentoNecessario?: string;
+  profissionalEspecialidadeNecessaria?: string;
+  observacoesClinicas?: string;
+  alertasCriticos?: string;
+  compatibilidadeVaga?: string;
+  viabilidadeComparecimento?: string;
 }
 
 interface PacientesProps {
@@ -114,6 +199,180 @@ function hasResponsibleData(p: PacienteExtended) {
   return Boolean(p.nomeResponsavel || p.cpfResponsavel);
 }
 
+function ageFromBirthDate(value?: string) {
+  if (!value) return null;
+  const birth = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age -= 1;
+  return age;
+}
+
+function optionScore(value: string | undefined, options: string[]) {
+  if (!value) return null;
+  const index = options.indexOf(value);
+  return index >= 0 ? index : null;
+}
+
+function numericValue(value?: string) {
+  const number = Number(String(value ?? '').replace(/\D/g, ''));
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function painScore(value?: string) {
+  const pain = numericValue(value);
+  if (pain === null) return null;
+  if (pain <= 1) return 0;
+  if (pain <= 3) return 1;
+  if (pain <= 6) return 2;
+  if (pain <= 8) return 3;
+  return 4;
+}
+
+function viabilityScore(d: PacienteExtended) {
+  const availability = optionScore(d.disponibilidadeEncaixe, FIT_AVAILABILITY_OPTIONS);
+  if (availability === null) return null;
+
+  const minArrival = numericValue(d.tempoMinimoChegar);
+  const travel = numericValue(d.tempoDeslocamento);
+  let score = availability;
+  if ((minArrival !== null && minArrival > 120) || (travel !== null && travel > 90)) score -= 1;
+  if ((minArrival !== null && minArrival <= 30) || (travel !== null && travel <= 30)) score += 1;
+  return Math.min(Math.max(score, 0), 4);
+}
+
+function compatibilityScore(d: PacienteExtended) {
+  const hasType = Boolean(d.tipoAtendimentoNecessario?.trim());
+  const hasProfessional = Boolean(d.profissionalEspecialidadeNecessaria?.trim());
+  if (!hasType) return null;
+  return hasProfessional ? 4 : 3;
+}
+
+function hasPriorityInput(d: PacienteExtended) {
+  return Boolean(
+    d.condicaoSaudePrincipal?.trim() ||
+    d.condicaoSaudePontuacao ||
+    d.comorbidades?.trim() ||
+    d.nivelDor ||
+    d.mobilidade ||
+    d.dependenciaFuncional ||
+    d.integridadeFisica ||
+    d.urgenciaTerapeutica ||
+    d.tempoNaFila ||
+    d.faltasAnteriores?.trim() ||
+    d.disponibilidadeEncaixe ||
+    d.tempoMinimoChegar?.trim() ||
+    d.tempoDeslocamento?.trim() ||
+    d.tipoAtendimentoNecessario?.trim() ||
+    d.profissionalEspecialidadeNecessaria?.trim() ||
+    d.observacoesClinicas?.trim() ||
+    d.alertasCriticos?.trim()
+  );
+}
+
+function ageReserveScore(age: number | null, d: PacienteExtended) {
+  if (age === null) return null;
+  const hasClinicalRisk = Boolean(
+    d.condicaoSaudePrincipal?.trim() ||
+    d.comorbidades?.trim() ||
+    optionScore(d.mobilidade, MOBILITY_OPTIONS) ||
+    optionScore(d.dependenciaFuncional, MOBILITY_OPTIONS) ||
+    optionScore(d.integridadeFisica, PHYSICAL_INTEGRITY_OPTIONS)
+  );
+  if (!hasClinicalRisk && age >= 18 && age < 60) return 0;
+  if (age >= 85 || age < 1) return hasClinicalRisk ? 3 : 1;
+  if (age >= 75 || age < 6) return hasClinicalRisk ? 2 : 1;
+  if (age >= 60 || age < 18) return 1;
+  return hasClinicalRisk ? 1 : 0;
+}
+
+function npsLevel(total: number) {
+  if (total <= 7) return 1;
+  if (total <= 13) return 2;
+  if (total <= 20) return 3;
+  if (total <= 26) return 4;
+  return 5;
+}
+
+function calculatePatientPriority(d: PacienteExtended) {
+  const hasPriorityData = hasPriorityInput(d);
+  if (!hasPriorityData) {
+    const age = ageFromBirthDate(d.dataNasc);
+    return {
+      age,
+      total: 0,
+      level: 1,
+      priority: `NPS 1 = ${NPS_PRIORITY_LABEL[1]}`,
+      canAttend: true,
+      cannotAttendReason: '',
+      missing: [],
+      professionalAlert: '',
+      shortJustification: 'Paciente sem critérios especiais informados; tratado como consulta ou retorno eletivo.',
+    };
+  }
+
+  const age = ageFromBirthDate(d.dataNasc);
+  const idadeReserva = ageReserveScore(age, d);
+  const condicaoSaude = optionScore(d.condicaoSaudePontuacao, HEALTH_CONDITION_OPTIONS);
+  const integridadeBase = optionScore(d.integridadeFisica, PHYSICAL_INTEGRITY_OPTIONS);
+  const integridadeFisica = Math.max(integridadeBase ?? 0, painScore(d.nivelDor) ?? 0);
+  const mobilidadeAutonomia = Math.max(
+    optionScore(d.mobilidade, MOBILITY_OPTIONS) ?? 0,
+    optionScore(d.dependenciaFuncional, MOBILITY_OPTIONS) ?? 0
+  );
+  const urgenciaTerapeutica = optionScore(d.urgenciaTerapeutica, THERAPEUTIC_URGENCY_OPTIONS);
+  const tempoEspera = optionScore(d.tempoNaFila, WAITING_TIME_OPTIONS);
+  const viabilidadeComparecimento = viabilityScore(d);
+  const compatibilidadeVaga = compatibilityScore(d);
+  const missing: string[] = [];
+
+  if (age === null) missing.push('idade');
+  if (!d.condicaoSaudePrincipal?.trim()) missing.push('condição de saúde principal');
+  if (condicaoSaude === null) missing.push('estado da condição de saúde');
+  if (integridadeBase === null && !d.nivelDor) missing.push('integridade física ou nível de dor');
+  if (urgenciaTerapeutica === null) missing.push('urgência terapêutica');
+  if (tempoEspera === null) missing.push('tempo na fila');
+  if (viabilidadeComparecimento === null) missing.push('viabilidade de comparecimento');
+  if (compatibilidadeVaga === null && (d.tipoAtendimentoNecessario?.trim() || d.profissionalEspecialidadeNecessaria?.trim())) {
+    missing.push('compatibilidade com a vaga');
+  }
+
+  const total =
+    (idadeReserva ?? 0) +
+    (condicaoSaude ?? 0) +
+    (integridadeFisica ?? 0) +
+    mobilidadeAutonomia +
+    (urgenciaTerapeutica ?? 0) +
+    (tempoEspera ?? 0) +
+    (viabilidadeComparecimento ?? 0) +
+    (compatibilidadeVaga ?? 0);
+
+  const hasCriticalAlert = Boolean(d.alertasCriticos?.trim());
+  const level = hasCriticalAlert ? 5 : npsLevel(total);
+  const cannotAttendReason =
+    viabilidadeComparecimento === 0
+        ? 'Paciente não consegue comparecer à vaga liberada.'
+        : '';
+
+  return {
+    age,
+    total,
+    level,
+    priority: `NPS ${level} = ${NPS_PRIORITY_LABEL[level]}`,
+    canAttend: !cannotAttendReason && missing.length === 0,
+    cannotAttendReason,
+    missing,
+    professionalAlert: hasCriticalAlert
+      ? 'Alerta crítico informado. Pode exigir contato com profissional responsável.'
+      : '',
+    shortJustification: missing.length
+      ? 'Classificação incompleta por dados essenciais ausentes.'
+      : `NPS ${level} por urgência, integridade física, fila e viabilidade operacional.`,
+  };
+}
+
 const emptyForm: PacienteExtended = {
   id: '', nome: '', nomeSocial: '', cpf: '', rg: '', sexo: '',
   dataNasc: '', raca: '', naturalidade: '', nacionalidade: '',
@@ -123,6 +382,11 @@ const emptyForm: PacienteExtended = {
   email: '', telefone: '', telefone2: '', telefone3: '',
   cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '', referencia: '',
   tipoSanguineo: '', peso: '', altura: '', alergias: '',
+  condicaoSaudePrincipal: '', condicaoSaudePontuacao: '', comorbidades: '', nivelDor: '',
+  mobilidade: '', dependenciaFuncional: '', integridadeFisica: '', urgenciaTerapeutica: '',
+  tempoNaFila: '', faltasAnteriores: '', disponibilidadeEncaixe: '', tempoMinimoChegar: '',
+  tempoDeslocamento: '', tipoAtendimentoNecessario: '', profissionalEspecialidadeNecessaria: '',
+  observacoesClinicas: '', alertasCriticos: '', compatibilidadeVaga: '', viabilidadeComparecimento: '',
   convenio: 'Particular', planoConvenio: '', matriculaConvenio: '', validadeCarteira: '',
   status: 'Ativo',
   observacoes: '', foto: '',
@@ -183,12 +447,66 @@ function FieldSelect({ label, value, onChange, options, required = false, disabl
   );
 }
 
+function PriorityTextArea({ label, value, onChange, placeholder = '', disabled = false }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const textareaId = React.useId();
+  return (
+    <div>
+      <label htmlFor={textareaId} style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>{label}</label>
+      <textarea
+        id={textareaId}
+        value={value}
+        onChange={e => onChange(e.target.value.slice(0, 1200))}
+        disabled={disabled}
+        rows={4}
+        maxLength={1200}
+        placeholder={placeholder}
+        style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: disabled ? 'var(--gray-50)' : '#fff', resize: 'vertical', fontFamily: 'Montserrat, sans-serif' }}
+      />
+      <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'right', marginTop: 4 }}>{value.length}/1200</div>
+    </div>
+  );
+}
+
 function SectionHeader({ label, icon: Icon }: { label: string; icon?: React.ElementType }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, paddingBottom: 10, borderBottom: '2px solid var(--mint)' }}>
       {Icon && <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon size={14} color="var(--primary)" /></div>}
       <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark)', textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</span>
     </div>
+  );
+}
+
+function PriorityBadge({ level, incomplete }: { level: number; incomplete: boolean }) {
+  const colors: Record<number, { bg: string; color: string }> = {
+    1: { bg: 'var(--gray-100)', color: 'var(--gray-600)' },
+    2: { bg: '#ecfdf5', color: '#047857' },
+    3: { bg: 'var(--amber-100)', color: 'var(--amber-600)' },
+    4: { bg: '#ffedd5', color: '#c2410c' },
+    5: { bg: 'var(--red-50)', color: 'var(--red-600)' },
+  };
+  const tone = colors[level] ?? colors[1];
+  return (
+    <span title={incomplete ? 'Classificação incompleta' : NPS_PRIORITY_LABEL[level]} style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      padding: '4px 9px',
+      borderRadius: 999,
+      background: tone.bg,
+      color: tone.color,
+      fontSize: 12,
+      fontWeight: 800,
+      whiteSpace: 'nowrap',
+    }}>
+      <Gauge size={13} />
+      NPS {level}{incomplete ? ' incompleto' : ''}
+    </span>
   );
 }
 
@@ -201,8 +519,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const [search, setSearch]               = useState('');
   const [filterConvenio, setFilterConvenio] = useState('');
   const [showFiltroAvancado, setShowFiltroAvancado] = useState(false);
-  const [filtroEstado, setFiltroEstado]   = useState('');
-  const [filtroCidade, setFiltroCidade]   = useState('');
+  const [filtroPrioridade, setFiltroPrioridade] = useState('');
   const [visibleCount, setVisibleCount]   = useState(20);
   const loaderRef = useRef<HTMLDivElement>(null);
 
@@ -243,9 +560,9 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
       || (p.telefone || '').toLowerCase().includes(q)
       || (qDigits && digitsOnly(p.telefone).includes(qDigits));
     const matchConvenio = !filterConvenio || p.convenio === filterConvenio;
-    const matchEstado = !filtroEstado || (ext.estado || '').toLowerCase().includes(filtroEstado.toLowerCase());
-    const matchCidade = !filtroCidade || (ext.cidade || '').toLowerCase().includes(filtroCidade.toLowerCase());
-    return matchSearch && matchConvenio && matchEstado && matchCidade;
+    const priority = calculatePatientPriority(ext);
+    const matchPrioridade = !filtroPrioridade || String(priority.level) === filtroPrioridade;
+    return matchSearch && matchConvenio && matchPrioridade;
   });
 
   const visible = filtered.slice(0, visibleCount);
@@ -308,7 +625,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     if (d.telefone2 && !isValidPhoneBR(d.telefone2, false)) e.telefone2 = 'Informe um telefone com DDD.';
     if (d.telefone3 && !isValidPhoneBR(d.telefone3, false)) e.telefone3 = 'Informe um telefone com DDD.';
     if (d.cep && !isValidCep(d.cep)) e.cep = 'Informe um CEP com 8 digitos.';
-    if (d.estado && d.estado.trim().length !== 2) e.estado = 'Informe a UF com 2 letras.';
     if (d.urlRedirecionamento && !/^https?:\/\/\S+$/i.test(d.urlRedirecionamento.trim())) e.urlRedirecionamento = 'Informe uma URL iniciada por http:// ou https://.';
     if (!d.nome.trim()) e.nome = 'Nome obrigatório';
     if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
@@ -371,6 +687,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
   // ─── IMC calculado ───
   const imc = calcIMC(d.peso || '', d.altura || '');
+  const priority = calculatePatientPriority(d);
 
   // ─── Renderização ────────────────────────────────────────────────────────────
   return (
@@ -425,16 +742,14 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
           {showFiltroAvancado && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--gray-100)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 140 }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Cidade</label>
-                <input value={filtroCidade} onChange={e => setFiltroCidade(e.target.value)} placeholder="Ex: Aracaju"
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
+                <label htmlFor="patient-priority-filter" style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Prioridade</label>
+                <select id="patient-priority-filter" value={filtroPrioridade} onChange={e => setFiltroPrioridade(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }}>
+                  <option value="">Todas</option>
+                  {[1, 2, 3, 4, 5].map(level => <option key={level} value={level}>NPS {level}</option>)}
+                </select>
               </div>
-              <div style={{ flex: 1, minWidth: 140 }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Estado</label>
-                <input value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} placeholder="Ex: Sergipe"
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
-              </div>
-              <button onClick={() => { setFiltroCidade(''); setFiltroEstado(''); setFilterConvenio(''); setSearch(''); }}
+              <button onClick={() => { setFiltroPrioridade(''); setFilterConvenio(''); setSearch(''); }}
                 style={{ alignSelf: 'flex-end', padding: '8px 14px', border: '1px solid var(--gray-200)', borderRadius: 8, background: 'none', fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', cursor: 'pointer' }}>
                 Limpar filtros
               </button>
@@ -447,7 +762,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
           <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
-                {['Nome', 'Telefone', 'Cidade', 'Estado', 'Último atendimento', 'Próximo atendimento', 'Ações'].map(h => (
+                {['Nome', 'Telefone', 'Prioridade', 'Último atendimento', 'Próximo atendimento', 'Ações'].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -455,6 +770,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
             <tbody>
               {visible.map(p => {
                 const ext = p as PacienteExtended;
+                const priority = calculatePatientPriority(ext);
                 return (
                   <tr key={p.id}
                     style={{ borderBottom: '1px solid var(--gray-50)', transition: 'background .1s', background: highlightId === p.id ? 'var(--mint)' : undefined }}
@@ -490,16 +806,10 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                       </div>
                     </td>
 
-                    {/* Cidade */}
+                    {/* Prioridade */}
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <MapPin size={12} color="var(--gray-400)" />
-                        {ext.cidade || '—'}
-                      </div>
+                      <PriorityBadge level={priority.level} incomplete={priority.missing.length > 0} />
                     </td>
-
-                    {/* Estado */}
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)' }}>{ext.estado || '—'}</td>
 
                     {/* Último atendimento */}
                     <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>
@@ -536,7 +846,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)' }}>
+                  <td colSpan={6} style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)' }}>
                     <Search size={28} style={{ marginBottom: 8, display: 'block', margin: '0 auto 8px' }} />
                     <div style={{ fontSize: 14, fontWeight: 600 }}>Nenhum paciente encontrado</div>
                     <div style={{ fontSize: 12, marginTop: 4 }}>Tente ajustar os filtros ou adicione um novo paciente.</div>
@@ -726,8 +1036,6 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     <FieldInput label="Bairro" value={d.bairro || ''} onChange={v => setField('bairro', v)} disabled={isView} />
                   </div>
                   <div style={responsiveGrid(180)}>
-                    <FieldInput label="Cidade" value={d.cidade || ''} onChange={v => setField('cidade', v)} disabled={isView} />
-                    <FieldInput label="Estado (UF)" value={d.estado || ''} onChange={v => setField('estado', v.toUpperCase().slice(0, 2))} disabled={isView} error={errors.estado} placeholder="Ex: SP" maxLength={2} />
                     <FieldInput label="Ponto de referência" value={d.referencia || ''} onChange={v => setField('referencia', v)} disabled={isView} placeholder="Ex: Próximo ao metrô" />
                   </div>
                 </div>
@@ -753,6 +1061,98 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     <textarea value={d.alergias || ''} onChange={e => !isView && setField('alergias', e.target.value)} disabled={isView} rows={3}
                       placeholder="Ex: AAS, Dipirona, látex..."
                       style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff', resize: 'vertical', fontFamily: 'Montserrat, sans-serif' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── ABA: Prioridade ── */}
+              {activeTab === 'prioridade' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <SectionHeader label="NPS-Paciente para substituição de agenda" icon={Gauge} />
+
+                  <div style={{ padding: 12, borderRadius: 8, border: '1px solid var(--gray-100)', background: 'var(--gray-50)', fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.6 }}>
+                    Classificação de apoio operacional para encaixes. Não substitui avaliação médica, enfermagem, fisioterapia ou decisão profissional.
+                  </div>
+
+                  <div style={responsiveGrid(220)}>
+                    <FieldInput label="Condição de saúde principal" value={d.condicaoSaudePrincipal || ''} onChange={v => setField('condicaoSaudePrincipal', v)} disabled={isView} placeholder="Resumo operacional, sem excesso de dados sensíveis" />
+                    <FieldSelect label="Estado da condição de saúde" value={d.condicaoSaudePontuacao || ''} onChange={v => setField('condicaoSaudePontuacao', v)} options={HEALTH_CONDITION_OPTIONS} disabled={isView} />
+                    <FieldInput label="Comorbidades" value={d.comorbidades || ''} onChange={v => setField('comorbidades', v)} disabled={isView} placeholder="Ex: condição crônica controlada" />
+                    <FieldInput label="Nível de dor" value={d.nivelDor || ''} onChange={v => setField('nivelDor', String(Math.min(Number(v.replace(/\D/g, '').slice(0, 2) || 0), 10)))} disabled={isView} placeholder="0 a 10" inputMode="numeric" maxLength={2} />
+                  </div>
+
+                  <div style={responsiveGrid(220)}>
+                    <FieldSelect label="Integridade física" value={d.integridadeFisica || ''} onChange={v => setField('integridadeFisica', v)} options={PHYSICAL_INTEGRITY_OPTIONS} disabled={isView} />
+                    <FieldSelect label="Mobilidade" value={d.mobilidade || ''} onChange={v => setField('mobilidade', v)} options={MOBILITY_OPTIONS} disabled={isView} />
+                    <FieldSelect label="Dependência funcional" value={d.dependenciaFuncional || ''} onChange={v => setField('dependenciaFuncional', v)} options={MOBILITY_OPTIONS} disabled={isView} />
+                    <FieldSelect label="Urgência terapêutica" value={d.urgenciaTerapeutica || ''} onChange={v => setField('urgenciaTerapeutica', v)} options={THERAPEUTIC_URGENCY_OPTIONS} disabled={isView} />
+                  </div>
+
+                  <div style={responsiveGrid(220)}>
+                    <FieldSelect label="Tempo na fila" value={d.tempoNaFila || ''} onChange={v => setField('tempoNaFila', v)} options={WAITING_TIME_OPTIONS} disabled={isView} />
+                    <FieldSelect label="Disponibilidade para encaixe" value={d.disponibilidadeEncaixe || ''} onChange={v => setField('disponibilidadeEncaixe', v)} options={FIT_AVAILABILITY_OPTIONS} disabled={isView} />
+                    <FieldInput label="Faltas anteriores" value={d.faltasAnteriores || ''} onChange={v => setField('faltasAnteriores', v)} disabled={isView} placeholder="Ex: 1 falta justificada" />
+                    <FieldInput label="Tempo mínimo para chegar" value={d.tempoMinimoChegar || ''} onChange={v => setField('tempoMinimoChegar', v.replace(/\D/g, '').slice(0, 3))} disabled={isView} placeholder="Ex: 40 min" inputMode="numeric" maxLength={3} />
+                  </div>
+
+                  <div style={responsiveGrid(220)}>
+                    <FieldInput label="Tempo de deslocamento" value={d.tempoDeslocamento || ''} onChange={v => setField('tempoDeslocamento', v.replace(/\D/g, '').slice(0, 3))} disabled={isView} placeholder="Ex: 25 min" inputMode="numeric" maxLength={3} />
+                    <FieldInput label="Tipo de atendimento necessário" value={d.tipoAtendimentoNecessario || ''} onChange={v => setField('tipoAtendimentoNecessario', v)} disabled={isView} placeholder="Ex: consulta, retorno, procedimento" />
+                    <FieldInput label="Profissional ou especialidade necessária" value={d.profissionalEspecialidadeNecessaria || ''} onChange={v => setField('profissionalEspecialidadeNecessaria', v)} disabled={isView} placeholder="Ex: cardiologia, fisioterapia, Dr(a). responsável" />
+                  </div>
+
+                  <div style={responsiveGrid(260)}>
+                    <PriorityTextArea label="Observações clínicas" value={d.observacoesClinicas || ''} onChange={v => setField('observacoesClinicas', v)} disabled={isView} placeholder="Use linguagem objetiva e evite diagnósticos sensíveis desnecessários." />
+                    <PriorityTextArea label="Alertas críticos" value={d.alertasCriticos || ''} onChange={v => setField('alertasCriticos', v)} disabled={isView} placeholder="Ex: risco de queda, piora recente, alerta para profissional." />
+                  </div>
+
+                  <SectionHeader label="Resultado calculado" icon={Gauge} />
+                  <div style={responsiveGrid(180)}>
+                    <div style={{ padding: 14, borderRadius: 8, background: '#fff', border: '1px solid var(--gray-100)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase' }}>Nível calculado</div>
+                      <div style={{ marginTop: 8 }}><PriorityBadge level={priority.level} incomplete={priority.missing.length > 0} /></div>
+                    </div>
+                    <div style={{ padding: 14, borderRadius: 8, background: '#fff', border: '1px solid var(--gray-100)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase' }}>Pontuação calculada</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--dark)', marginTop: 4 }}>{priority.total}/32</div>
+                    </div>
+                    <div style={{ padding: 14, borderRadius: 8, background: '#fff', border: '1px solid var(--gray-100)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase' }}>Pode ocupar vaga?</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: priority.canAttend ? 'var(--primary)' : 'var(--red-600)', marginTop: 8 }}>{priority.canAttend ? 'Sim' : 'Não'}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ padding: 12, borderRadius: 8, border: '1px solid var(--gray-100)', background: priority.canAttend ? 'var(--mint)' : 'var(--red-50)', fontSize: 12, color: priority.canAttend ? 'var(--dark)' : 'var(--red-600)', lineHeight: 1.6 }}>
+                    <strong>Justificativa curta:</strong> {priority.shortJustification}<br />
+                    {!priority.canAttend && <><strong>Motivo:</strong> {priority.cannotAttendReason || 'Dados essenciais ausentes.'}<br /></>}
+                    {priority.missing.length > 0 && <><strong>Dados faltantes:</strong> {priority.missing.join(', ')}<br /></>}
+                    {priority.professionalAlert && <><strong>Alerta:</strong> {priority.professionalAlert}</>}
+                  </div>
+
+                  <div style={{ overflow: 'auto', border: '1px solid var(--gray-100)', borderRadius: 8 }}>
+                    <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', background: '#fff' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
+                          {['posição_na_fila', 'paciente_id', 'idade', 'nps_nivel', 'pontuação_total', 'prioridade', 'pode_ocupar_vaga', 'motivo_se_não_puder', 'dados_faltantes', 'alerta_para_profissional'].map(header => (
+                            <th key={header} style={{ padding: '9px 10px', textAlign: 'left', fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{header}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={priorityCellStyle}>—</td>
+                          <td style={priorityCellStyle}>{d.id || 'novo'}</td>
+                          <td style={priorityCellStyle}>{priority.age ?? '—'}</td>
+                          <td style={priorityCellStyle}>NPS {priority.level}</td>
+                          <td style={priorityCellStyle}>{priority.total}</td>
+                          <td style={priorityCellStyle}>{priority.priority}</td>
+                          <td style={priorityCellStyle}>{priority.canAttend ? 'sim' : 'não'}</td>
+                          <td style={priorityCellStyle}>{priority.cannotAttendReason || '—'}</td>
+                          <td style={priorityCellStyle}>{priority.missing.join(', ') || '—'}</td>
+                          <td style={priorityCellStyle}>{priority.professionalAlert || '—'}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
