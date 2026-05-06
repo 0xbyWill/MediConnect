@@ -61,6 +61,22 @@ export default function App() {
   const [page, setPage]                             = useState<PageType>('dashboard');
   const [authView, setAuthView]                     = useState<'login' | 'cadastro-paciente'>('login');
   const createdPatientsRef = useRef<ApiPatient[]>([]);
+  const previousUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const nextUserId = user?.id ?? null;
+    if (previousUserIdRef.current === nextUserId) return;
+
+    previousUserIdRef.current = nextUserId;
+    setPage('dashboard');
+    setOpenAgendaModal(false);
+    setOpenPacienteModal(false);
+    setApiError(null);
+
+    if (!nextUserId) {
+      setAuthView('login');
+    }
+  }, [user?.id]);
 
   // ─── Carrega dados da API ─────────────────────────────────────────────────
   const refresh = useCallback(async () => {
