@@ -137,6 +137,17 @@ async function resolveUserProfile(apiUser: ApiUser): Promise<AuthUser> {
     };
   }
 
+  const patientByEmail = explicitRole ? null : await findPatientByEmail(apiUser.email);
+  if (patientByEmail) {
+    return {
+      id:         apiUser.id,
+      email:      apiUser.email,
+      role:       'paciente',
+      full_name:  patientByEmail.full_name,
+      patient_id: patientByEmail.id,
+    };
+  }
+
   // ── CASO 2: role é médico (explícita ou possível) → busca sempre doctor_id ──
   // Isso corrige o problema principal: o médico fica sem doctor_id
   const doctor = await findDoctorByEmail(apiUser.email);
