@@ -74,6 +74,25 @@ export interface Paciente {
   peso?: string;
   altura?: string;
   alergias?: string;
+  condicaoSaudePrincipal?: string;
+  condicaoSaudePontuacao?: string;
+  comorbidades?: string;
+  nivelDor?: string;
+  mobilidade?: string;
+  dependenciaFuncional?: string;
+  integridadeFisica?: string;
+  urgenciaTerapeutica?: string;
+  tempoNaFila?: string;
+  faltasAnteriores?: string;
+  disponibilidadeEncaixe?: string;
+  tempoMinimoChegar?: string;
+  tempoDeslocamento?: string;
+  tipoAtendimentoNecessario?: string;
+  profissionalEspecialidadeNecessaria?: string;
+  observacoesClinicas?: string;
+  alertasCriticos?: string;
+  compatibilidadeVaga?: string;
+  viabilidadeComparecimento?: string;
   // Convênio
   convenio: ConvenioType;
   planoConvenio?: string;
@@ -134,6 +153,25 @@ function buildPatientNotes(p: Omit<Paciente, 'id'>): string | undefined {
     peso: p.peso ? normalizeDecimalText(p.peso) : undefined,
     altura: p.altura ? normalizeDecimalText(p.altura) : undefined,
     alergias: p.alergias?.trim(),
+    condicaoSaudePrincipal: p.condicaoSaudePrincipal?.trim(),
+    condicaoSaudePontuacao: p.condicaoSaudePontuacao,
+    comorbidades: p.comorbidades?.trim(),
+    nivelDor: p.nivelDor,
+    mobilidade: p.mobilidade,
+    dependenciaFuncional: p.dependenciaFuncional,
+    integridadeFisica: p.integridadeFisica,
+    urgenciaTerapeutica: p.urgenciaTerapeutica,
+    tempoNaFila: p.tempoNaFila,
+    faltasAnteriores: p.faltasAnteriores?.trim(),
+    disponibilidadeEncaixe: p.disponibilidadeEncaixe?.trim(),
+    tempoMinimoChegar: p.tempoMinimoChegar?.trim(),
+    tempoDeslocamento: p.tempoDeslocamento?.trim(),
+    tipoAtendimentoNecessario: p.tipoAtendimentoNecessario?.trim(),
+    profissionalEspecialidadeNecessaria: p.profissionalEspecialidadeNecessaria?.trim(),
+    observacoesClinicas: p.observacoesClinicas?.trim(),
+    alertasCriticos: p.alertasCriticos?.trim(),
+    compatibilidadeVaga: p.compatibilidadeVaga,
+    viabilidadeComparecimento: p.viabilidadeComparecimento,
     convenio: p.convenio,
     planoConvenio: p.planoConvenio?.trim(),
     matriculaConvenio: p.matriculaConvenio?.trim(),
@@ -186,6 +224,9 @@ export interface Laudo {
   ocultarData?: boolean;
   ocultarAssinatura?: boolean;
   orderNumber?: string;
+  templateId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // ─── Helpers de mapeamento API ↔ modelo interno ───────────────────────────────
@@ -271,7 +312,10 @@ export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 
     height_m:         Number.isFinite(height) ? height : undefined,
     bmi,
     vip:              p.vip,
-    notes:            [p.alergias?.trim(), p.observacoes?.trim()].filter(Boolean).join('\n\n') || buildPatientNotes(p),
+    notes:            buildPatientNotes({
+      ...p,
+      observacoes: [p.alergias?.trim(), p.observacoes?.trim()].filter(Boolean).join('\n\n'),
+    }),
     redirect_url:     p.urlRedirecionamento?.trim(),
   };
 }
@@ -323,6 +367,7 @@ export function agendamentoToApiAppointment(
 }
 
 export function apiReportToLaudo(r: ApiReport): Laudo {
+  const releasedStatuses = new Set(['completed', 'released', 'liberado', 'finalized', 'signed']);
   return {
     id:                r.id,
     pacienteId:        r.patient_id,
@@ -332,13 +377,16 @@ export function apiReportToLaudo(r: ApiReport): Laudo {
     diagnostico:       r.diagnosis ?? '',
     tecnica:           r.exam,
     impressao:         r.conclusion,
-    status:            r.status === 'completed' ? 'liberado' : 'rascunho',
+    status:            releasedStatuses.has(r.status) ? 'liberado' : 'rascunho',
     exame:             r.exam,
     solicitante:       r.requested_by,
     conteudoHtml:      r.content_html,
     ocultarData:       r.hide_date,
     ocultarAssinatura: r.hide_signature,
     orderNumber:       r.order_number,
+    templateId:         typeof r.content_json?.templateId === 'string' ? r.content_json.templateId : undefined,
+    createdAt:          r.created_at,
+    updatedAt:          r.updated_at,
   };
 }
 
@@ -348,7 +396,7 @@ export function laudoToApiReport(
 ): Omit<ApiReport, 'id' | 'order_number' | 'created_at' | 'updated_at'> {
   return {
     patient_id:     l.pacienteId,
-    status:         l.status === 'liberado' ? 'completed' : 'draft',
+    status:         l.status === 'liberado' ? 'released' : 'draft',
     cid_code:       l.cid,
     diagnosis:      l.diagnostico,
     conclusion:     l.impressao,
@@ -357,6 +405,7 @@ export function laudoToApiReport(
     content_html:   l.conteudoHtml,
     hide_date:      l.ocultarData,
     hide_signature: l.ocultarAssinatura,
+    content_json:   l.templateId ? { templateId: l.templateId } : undefined,
     created_by:     createdBy,
   };
 }

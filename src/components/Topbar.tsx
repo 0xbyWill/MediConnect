@@ -22,9 +22,11 @@ const pageLabels: Record<PageType, string> = {
   agenda: 'Agenda',
   laudos: 'Laudos',
   comunicacao: 'Comunicação',
+  mensagens: 'Mensagens',
   relatorios: 'Relatórios',
   usuarios: 'Usuários',
   metricas: 'Métricas',
+  ia: 'Assistente IA',
   configuracoes: 'Configurações',
 };
 

@@ -147,9 +147,10 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const today = dateToISO(new Date());
 
   const [selectedDate, setSelectedDate] = useState(today);
-  const [period, setPeriod] = useState<'dia' | 'semana' | 'mes' | 'todos'>('dia');
+  const [period, setPeriod] = useState<'dia' | 'semana' | 'mes' | 'todos'>('semana');
   const [filterDoctorId, setFilterDoctorId] = useState('');
   const [filterPatient, setFilterPatient] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Agendamento['status'] | ''>('');
   const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit'; data: FormData }>({
     open: false,
     mode: 'add',
@@ -252,12 +253,13 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       const q = filterPatient.toLowerCase().trim();
       const matchDoctor = !activeDoctorId || a.medicoId === activeDoctorId;
       const matchPatient = !q || patient?.nome.toLowerCase().includes(q) || patient?.cpf.includes(q);
+      const matchStatus = !statusFilter || a.status === statusFilter;
       const matchPeriod =
         period === 'todos' ||
         (period === 'dia' && a.data === selectedDate) ||
         (period === 'semana' && a.data >= periodStart && a.data <= dateToISO(new Date(new Date(`${periodStart}T00:00:00`).getTime() + 6 * 86400000))) ||
         (period === 'mes' && a.data.slice(0, 7) === selectedDate.slice(0, 7));
-      return matchDoctor && matchPatient && matchPeriod;
+      return matchDoctor && matchPatient && matchPeriod && matchStatus;
     })
     .sort(byChronology);
 
@@ -270,6 +272,34 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       return acc;
     }, {})
   ).sort((a, b) => b[1] - a[1])[0];
+
+  const selectedDateObject = new Date(`${selectedDate}T00:00:00`);
+  const calendarWeekStart = startOfWeek(selectedDateObject);
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(`${calendarWeekStart}T00:00:00`);
+    date.setDate(date.getDate() + index);
+    const iso = dateToISO(date);
+    const shortLabels = ['Dom.', 'Seg.', 'Ter.', 'Qua.', 'Qui.', 'Sex.', 'Sab.'];
+    return {
+      iso,
+      label: shortLabels[date.getDay()],
+      dayMonth: `${iso.slice(8, 10)}/${iso.slice(5, 7)}`,
+      isToday: iso === today,
+    };
+  });
+  const calendarDays = period === 'dia' ? weekDays.filter(day => day.iso === selectedDate) : weekDays;
+  const calendarStartMinutes = 7 * 60;
+  const calendarEndMinutes = 19 * 60;
+  const calendarSlots = Array.from(
+    { length: Math.floor((calendarEndMinutes - calendarStartMinutes) / SLOT_STEP_MINUTES) + 1 },
+    (_, index) => minutesToTime(calendarStartMinutes + index * SLOT_STEP_MINUTES)
+  );
+  const calendarAppointments = filteredAppointments.filter(a => calendarDays.some(day => day.iso === a.data));
+  const activeDoctors = doctors.filter(doctor => !activeDoctorId || doctor.id === activeDoctorId);
+  const doctorSidebarItems = isMedico
+    ? doctors.filter(doctor => doctor.id === user?.doctor_id)
+    : doctors;
+  const weekRangeLabel = `${formatDateBR(weekDays[0].iso)} - ${formatDateBR(weekDays[6].iso)}`;
 
   const modalDoctorId = isMedico ? user?.doctor_id || '' : modal.data.medicoId || '';
   const modalWeekday = modal.data.data ? new Date(`${modal.data.data}T00:00:00`).getDay() : undefined;
@@ -467,26 +497,47 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           <Metric label="Horário de pico" value={busiestHour ? `${busiestHour[0]}h` : '—'} icon={Calendar} />
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           {!isMedico && (
-            <select value={filterDoctorId} onChange={e => setFilterDoctorId(e.target.value)}
+            <div>
+              <label htmlFor="agenda-doctor-filter" style={labelStyle}>Agenda</label>
+              <select id="agenda-doctor-filter" value={filterDoctorId} onChange={e => setFilterDoctorId(e.target.value)}
               style={{ minWidth: 220, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
               <option value="">Todos os médicos</option>
               {doctors.map(d => <option key={d.id} value={d.id}>{d.full_name}{d.specialty ? ` - ${d.specialty}` : ''}</option>)}
-            </select>
+              </select>
+            </div>
           )}
-          <input type="date" value={selectedDate} min={today} onChange={e => setSelectedDate(e.target.value)}
-            style={{ padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }} />
-          <select value={period} onChange={e => setPeriod(e.target.value as typeof period)}
+          <div>
+            <label htmlFor="agenda-date-filter" style={labelStyle}>Data base</label>
+            <input id="agenda-date-filter" type="date" value={selectedDate} min={today} onChange={e => setSelectedDate(e.target.value)}
+              style={{ padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }} />
+          </div>
+          <div>
+            <label htmlFor="agenda-period-filter" style={labelStyle}>Visualizacao</label>
+            <select id="agenda-period-filter" value={period} onChange={e => setPeriod(e.target.value as typeof period)}
             style={{ padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
             <option value="dia">Dia</option>
             <option value="semana">Semana</option>
             <option value="mes">Mês</option>
             <option value="todos">Todos</option>
-          </select>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="agenda-status-filter" style={labelStyle}>Status</label>
+            <select id="agenda-status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value as Agendamento['status'] | '')}
+              style={{ minWidth: 160, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
+              <option value="">Todos os status</option>
+              <option value="pendente">Pendente</option>
+              <option value="confirmado">Confirmada</option>
+              <option value="realizado">Realizada</option>
+              <option value="cancelado">Cancelada</option>
+            </select>
+          </div>
           <div style={{ position: 'relative', flex: '1 1 240px' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
-            <input value={filterPatient} onChange={e => setFilterPatient(e.target.value)} placeholder="Filtrar por paciente ou CPF..."
+            <label htmlFor="agenda-patient-filter" style={labelStyle}>Paciente</label>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: 32, color: 'var(--gray-400)' }} />
+            <input id="agenda-patient-filter" value={filterPatient} onChange={e => setFilterPatient(e.target.value)} placeholder="Filtrar por paciente ou CPF..."
               style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }} />
           </div>
         </div>
@@ -499,7 +550,122 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           </div>
         )}
 
-        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 260px) minmax(720px, 1fr)', gap: 14, alignItems: 'start' }}>
+          <aside style={{ background: '#fff', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', padding: 14, position: 'sticky', top: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div>
+                <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', margin: 0 }}>Agendas</h2>
+                <p style={{ fontSize: 11, color: 'var(--gray-400)', margin: '2px 0 0' }}>{activeDoctors.length || doctors.length} medico(s)</p>
+              </div>
+              {!isMedico && (
+                <button type="button" onClick={() => setFilterDoctorId('')} style={{ border: 'none', background: 'transparent', color: 'var(--primary)', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
+                  Todas
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100dvh - 310px)', overflow: 'auto' }}>
+              {doctorSidebarItems.map(doctor => {
+                const selected = !filterDoctorId || filterDoctorId === doctor.id || isMedico;
+                const count = filteredAppointments.filter(appt => appt.medicoId === doctor.id).length;
+                return (
+                  <button key={doctor.id} type="button" onClick={() => !isMedico && setFilterDoctorId(filterDoctorId === doctor.id ? '' : doctor.id)}
+                    style={{ width: '100%', textAlign: 'left', border: `1px solid ${selected ? 'var(--light)' : 'var(--gray-100)'}`, background: selected ? '#f8f7ff' : '#fff', borderRadius: 12, padding: 10, display: 'flex', gap: 9, alignItems: 'center', cursor: isMedico ? 'default' : 'pointer' }}>
+                    <span style={{ width: 18, height: 18, borderRadius: 6, background: selected ? 'var(--primary)' : 'var(--gray-100)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>
+                      {selected ? 'x' : ''}
+                    </span>
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span title={doctor.full_name} style={{ display: 'block', fontSize: 12, fontWeight: 800, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doctor.full_name}</span>
+                      <span style={{ display: 'block', fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{doctor.specialty || 'Clinica geral'}</span>
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--primary)' }}>{count}</span>
+                  </button>
+                );
+              })}
+              {doctorSidebarItems.length === 0 && (
+                <div style={{ border: '1px dashed var(--gray-200)', borderRadius: 12, padding: 14, color: 'var(--gray-500)', fontSize: 12, lineHeight: 1.5 }}>
+                  Nenhum medico disponivel para listar.
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <section style={{ background: '#fff', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>{period === 'dia' ? formatDateBR(selectedDate) : weekRangeLabel}</div>
+                <h2 style={{ fontSize: 16, color: 'var(--gray-800)', fontWeight: 850, margin: '2px 0 0' }}>Calendario de atendimentos</h2>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => setSelectedDate(today)} style={{ border: '1px solid var(--gray-200)', background: '#fff', borderRadius: 9, padding: '8px 12px', fontSize: 12, fontWeight: 800, color: 'var(--gray-700)', cursor: 'pointer' }}>
+                  Hoje
+                </button>
+                {!isPaciente && (
+                  <button type="button" onClick={() => openModal(undefined, selectedDate)} style={{ border: 'none', background: 'var(--primary)', color: '#fff', borderRadius: 9, padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Plus size={14} /> Agendar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ overflow: 'auto' }}>
+              <div style={{ minWidth: period === 'dia' ? 420 : 980, display: 'grid', gridTemplateColumns: `58px repeat(${calendarDays.length}, minmax(${period === 'dia' ? 300 : 126}px, 1fr))` }}>
+                <div style={{ position: 'sticky', left: 0, zIndex: 3, background: '#f8fafc', borderRight: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)' }} />
+                {calendarDays.map(day => (
+                  <div key={day.iso} style={{ minHeight: 50, padding: '8px 10px', textAlign: 'center', background: day.isToday ? '#f0fdf4' : '#f8fafc', borderRight: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)' }}>{day.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: day.isToday ? 'var(--primary)' : 'var(--gray-800)', marginTop: 2 }}>{day.dayMonth}</div>
+                  </div>
+                ))}
+
+                {calendarSlots.map(slot => (
+                  <React.Fragment key={slot}>
+                    <div style={{ position: 'sticky', left: 0, zIndex: 2, minHeight: 74, padding: '8px 6px', textAlign: 'right', background: '#fbfdff', color: 'var(--gray-500)', fontSize: 11, fontWeight: 800, borderRight: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)' }}>
+                      {slot}
+                    </div>
+                    {calendarDays.map(day => {
+                      const slotItems = calendarAppointments.filter(appt => appt.data === day.iso && normalizeTime(appt.hora) === slot);
+                      return (
+                        <div key={`${day.iso}-${slot}`} onDoubleClick={() => !isPaciente && openModal(undefined, day.iso, slot)}
+                          style={{ minHeight: 74, padding: 5, borderRight: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)', background: day.isToday ? '#fcfffd' : '#fff', cursor: isPaciente ? 'default' : 'cell' }}>
+                          {slotItems.map(appt => {
+                            const patient = pacientes.find(p => p.id === appt.pacienteId);
+                            const doctor = doctors.find(d => d.id === appt.medicoId);
+                            return (
+                              <button key={appt.id} type="button" onClick={() => !isPaciente && openModal(appt)}
+                                style={{ width: '100%', border: '1px solid #fbbf24', background: '#fffbeb', borderRadius: 10, padding: 8, marginBottom: 5, textAlign: 'left', boxShadow: '0 6px 14px rgba(245, 158, 11, 0.12)', cursor: isPaciente ? 'default' : 'pointer' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                  <span style={{ width: 7, height: 7, borderRadius: 999, background: '#f59e0b', flexShrink: 0 }} />
+                                  <span title={patient?.nome || ''} style={{ fontSize: 12, fontWeight: 900, color: 'var(--gray-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{patient?.nome || 'Paciente nao encontrado'}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--gray-600)', fontWeight: 700, marginTop: 5 }}>{appt.hora} - {appt.duracao || '30 min'}</div>
+                                <div title={doctor?.full_name || ''} style={{ fontSize: 10, color: 'var(--gray-500)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doctor?.full_name || user?.full_name || 'Medico nao informado'}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 7 }}>
+                                  <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--gray-600)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.tipo}</span>
+                                  <StatusBadge status={appt.status} />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+
+            {calendarAppointments.length === 0 && (
+              <div style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--gray-400)', borderTop: '1px solid var(--gray-100)' }}>
+                <Calendar size={30} style={{ display: 'block', margin: '0 auto 8px' }} />
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-600)' }}>Nenhuma consulta neste recorte</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>{isPaciente ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerao aqui.' : 'Use os filtros, escolha outra data ou crie um novo agendamento.'}</div>
+              </div>
+            )}
+          </section>
+        </div>
+
+        <div style={{ display: 'none', background: '#fff', borderRadius: 14, border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'auto' }}>
           <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: '12%' }} />

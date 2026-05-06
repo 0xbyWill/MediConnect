@@ -28,9 +28,11 @@ import Agenda        from './pages/Agenda';
 import Laudos        from './pages/Laudos';
 import Configuracoes from './pages/Configuracoes';
 import Comunicacao   from './pages/Comunicacao';
+import Mensagens     from './pages/Mensagens';
 import Relatorios    from './pages/Relatorios';
 import Usuarios      from './pages/Usuarios';
 import Metricas      from './pages/Metricas';
+import AssistenteIA  from './pages/AssistenteIA';
 
 const onlyActiveAppointments = (appointments: ApiAppointment[]) =>
   appointments.filter(appointment => appointment.status !== 'cancelled');
@@ -109,13 +111,16 @@ export default function App() {
         // Busca agendamentos do médico:
         // Se tiver doctor_id → filtra por ele
         // Se não tiver → busca todos (RLS do Supabase deve limitar ao usuário)
-        const [apiAgendamentos, apiLaudos, pacientesCriadosPorUsuario, pacientesCriadosPorDoctor] = await Promise.all([
+        const [apiAgendamentos, apiLaudos, apiPacientesGerais, pacientesCriadosPorUsuario, pacientesCriadosPorDoctor, apiDoctors] = await Promise.all([
           appointmentsApi
             .list(doctorId ? { doctor_id: doctorId } : {})
             .catch(err => { capture('agendamentos', err); return [] as ApiAppointment[]; }),
           reportsApi
             .listByCreators(creatorIds)
             .catch(err => { capture('laudos', err); return [] as ApiReport[]; }),
+          patientsApi
+            .list({ limit: 500 })
+            .catch(err => { capture('pacientes', err); return [] as ApiPatient[]; }),
           patientsApi
             .list({ created_by: user.id, limit: 500 })
             .catch(err => { capture('pacientes criados pelo usuário', err); return [] as ApiPatient[]; }),
@@ -124,6 +129,9 @@ export default function App() {
                 .list({ created_by: doctorId, limit: 500 })
                 .catch(err => { capture('pacientes criados pelo médico', err); return [] as ApiPatient[]; })
             : Promise.resolve([] as ApiPatient[]),
+          doctorsApi
+            .list()
+            .catch(err => { capture('médicos', err); return [] as ApiDoctor[]; }),
         ]);
 
         const apiAgendamentosAtivos = onlyActiveAppointments(apiAgendamentos);
@@ -147,6 +155,7 @@ export default function App() {
         }
 
         const apiPacientes = mergeById(
+          apiPacientesGerais,
           pacientesVinculados,
           pacientesCriadosPorUsuario,
           pacientesCriadosPorDoctor
@@ -155,7 +164,7 @@ export default function App() {
         setPacientes(withCreatedPatients(apiPacientes).map(apiPatientToPaciente));
         setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
         setLaudos(apiLaudos.map(apiReportToLaudo));
-        setDoctors([]);
+        setDoctors(apiDoctors);
 
       // ── Perfil Secretaria ──
       } else if (user.role === 'secretaria') {
@@ -181,7 +190,7 @@ export default function App() {
         ]) : [[] as ApiAppointment[], [] as ApiReport[], [] as ApiDoctor[]];
         setPacientes(ownPatients.map(apiPatientToPaciente));
         setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
-        setLaudos(apiLaudos.map(apiReportToLaudo));
+        setLaudos(apiLaudos.map(apiReportToLaudo).filter(laudo => laudo.status === 'liberado'));
         setDoctors(apiDoctors);
 
       // ── Perfil Gestão / Admin ──
@@ -484,6 +493,9 @@ export default function App() {
           {currentPage === 'comunicacao' && allowedPages.includes('comunicacao') && (
             <Comunicacao pacientes={pacientes}/>
           )}
+          {currentPage === 'mensagens' && allowedPages.includes('mensagens') && (
+            <Mensagens pacientes={pacientes}/>
+          )}
           {currentPage === 'relatorios' && allowedPages.includes('relatorios') && (
             <Relatorios pacientes={pacientes} agendamentos={agendamentos} laudos={laudos}/>
           )}
@@ -491,6 +503,7 @@ export default function App() {
           {currentPage === 'metricas' && allowedPages.includes('metricas') && (
             <Metricas pacientes={pacientes} agendamentos={agendamentos} laudos={laudos}/>
           )}
+          {currentPage === 'ia' && allowedPages.includes('ia') && <AssistenteIA/>}
           {currentPage === 'configuracoes' && allowedPages.includes('configuracoes') && <Configuracoes/>}
             </>
           )}

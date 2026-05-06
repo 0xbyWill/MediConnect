@@ -16,6 +16,13 @@ export function normalizePhoneBR(value = '') {
   return digitsOnly(value).slice(0, 11);
 }
 
+export function normalizePhoneBRForSms(value = '') {
+  const digits = digitsOnly(value).slice(0, 13);
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return `+${digits}`;
+  if (digits.length === 10 || digits.length === 11) return `+55${digits}`;
+  return digits ? `+${digits}` : '';
+}
+
 export function isValidPhoneBR(value: string, required = true) {
   const digits = normalizePhoneBR(value);
   if (!digits) return !required;
