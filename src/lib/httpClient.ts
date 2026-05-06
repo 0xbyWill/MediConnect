@@ -21,7 +21,8 @@ export async function request<T>(
   options: RequestInit = {},
   extraHeaders: Record<string, string> = {}
 ): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const url = /^https?:\/\//i.test(path) ? path : `${BASE_URL}${path}`;
+  const res = await fetch(url, {
     ...options,
     headers: {
       ...buildHeaders(extraHeaders),

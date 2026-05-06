@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Paciente, Agendamento, Laudo, PageType } from './types';
 import {
   ROLE_PAGES,
@@ -60,10 +60,12 @@ export default function App() {
   const [openPacienteModal,  setOpenPacienteModal]  = useState(false);
   const [page, setPage]                             = useState<PageType>('dashboard');
   const [authView, setAuthView]                     = useState<'login' | 'cadastro-paciente'>('login');
+  const createdPatientsRef = useRef<ApiPatient[]>([]);
 
   // ─── Carrega dados da API ─────────────────────────────────────────────────
   const refresh = useCallback(async () => {
     if (!user) {
+      createdPatientsRef.current = [];
       setPacientes([]);
       setAgendamentos([]);
       setLaudos([]);
@@ -74,6 +76,7 @@ export default function App() {
     }
     setApiLoading(true);
     setApiError(null);
+    const withCreatedPatients = (apiPatients: ApiPatient[]) => mergeById(apiPatients, createdPatientsRef.current);
 
     const errors: string[] = [];
     const capture = (label: string, err: unknown) => {
@@ -133,7 +136,7 @@ export default function App() {
           pacientesCriadosPorDoctor
         );
 
-        setPacientes(apiPacientes.map(apiPatientToPaciente));
+        setPacientes(withCreatedPatients(apiPacientes).map(apiPatientToPaciente));
         setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
         setLaudos(apiLaudos.map(apiReportToLaudo));
         setDoctors([]);
@@ -145,7 +148,7 @@ export default function App() {
           appointmentsApi.list({}).catch(err => { capture('agendamentos', err); return []; }),
           doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return []; }),
         ]);
-        setPacientes(apiPacientes.map(apiPatientToPaciente));
+        setPacientes(withCreatedPatients(apiPacientes).map(apiPatientToPaciente));
         setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
         setLaudos([]);
         setDoctors(apiDoctors);
@@ -173,7 +176,7 @@ export default function App() {
           reportsApi.list({}).catch(err => { capture('laudos', err); return []; }),
           doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return []; }),
         ]);
-        setPacientes(apiPacientes.map(apiPatientToPaciente));
+        setPacientes(withCreatedPatients(apiPacientes).map(apiPatientToPaciente));
         setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento));
         setLaudos(apiLaudos.map(apiReportToLaudo));
         setDoctors(apiDoctors);
@@ -206,10 +209,11 @@ export default function App() {
   // ─── CRUD Pacientes ───────────────────────────────────────────────────────
   const addPaciente = useCallback(async (p: Omit<Paciente, 'id'>) => {
     try {
-      await patientsApi.create({
+      const created = await patientsApi.create({
         ...pacienteToApiPatient(p),
         created_by: user?.id,
       });
+      createdPatientsRef.current = mergeById(createdPatientsRef.current, [created]);
       await refresh();
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : 'Erro ao cadastrar paciente.';

@@ -7,11 +7,13 @@ import type { UserRole } from '../types';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
 import { formatPhoneBR, isValidEmail, isValidPhoneBR, normalizeEmail } from '../shared/utils/validation';
 
+type StaffRole = Exclude<UserRole, 'paciente'>;
+
 interface UsuarioItem {
   id: string;
   nome: string;
   email: string;
-  role: UserRole;
+  role: StaffRole;
   status: 'ativo' | 'inativo';
   cpf?: string;
   telefone?: string;
@@ -23,25 +25,24 @@ interface UsuarioItem {
 
 type UsuarioForm = Omit<UsuarioItem, 'id'>;
 
-const ROLE_LABEL: Record<UserRole, string> = {
+const STAFF_ROLES: StaffRole[] = ['medico', 'gestao', 'secretaria'];
+
+const ROLE_LABEL: Record<StaffRole, string> = {
   medico:     'Médico',
   gestao:     'Gestão',
   secretaria: 'Secretaria',
-  paciente:   'Paciente',
 };
 
-const ROLE_COLOR: Record<UserRole, { bg: string; color: string }> = {
+const ROLE_COLOR: Record<StaffRole, { bg: string; color: string }> = {
   medico:     { bg: 'var(--mint)',      color: 'var(--dark)' },
   gestao:     { bg: '#ede9fe',          color: '#7c3aed' },
   secretaria: { bg: 'var(--amber-100)', color: 'var(--amber-600)' },
-  paciente:   { bg: '#dbeafe',          color: '#2563eb' },
 };
 
-const ROLE_API: Record<UserRole, ApiRole> = {
+const ROLE_API: Record<StaffRole, ApiRole> = {
   medico:     'medico',
   gestao:     'gestor',
   secretaria: 'secretaria',
-  paciente:   'paciente',
 };
 
 const UF_OPTIONS = [
@@ -97,11 +98,11 @@ function responseId(response: ApiDoctor | CreateUserResponse): string {
   return Date.now().toString();
 }
 
-function normalizeUserRole(role?: string): UserRole {
+function normalizeStaffRole(role?: string): StaffRole | null {
   const r = role?.toLowerCase().trim();
   if (r === 'medico' || r === 'doctor' || r === 'physician') return 'medico';
   if (r === 'secretaria' || r === 'secretary' || r === 'receptionist') return 'secretaria';
-  if (r === 'paciente' || r === 'patient') return 'paciente';
+  if (r === 'paciente' || r === 'patient') return null;
   return 'gestao';
 }
 
@@ -120,12 +121,14 @@ function doctorToUsuario(doctor: ApiDoctor): UsuarioItem {
   };
 }
 
-function managedUserToUsuario(user: ApiManagedUser): UsuarioItem {
+function managedUserToUsuario(user: ApiManagedUser): UsuarioItem | null {
+  const role = normalizeStaffRole(user.role);
+  if (!role) return null;
   return {
     id: user.id,
     nome: user.full_name,
     email: user.email,
-    role: normalizeUserRole(user.role),
+    role,
     status: user.active === false ? 'inativo' : 'ativo',
     cpf: user.cpf,
     telefone: user.phone,
@@ -146,7 +149,7 @@ export default function Usuarios() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
+  const [roleFilter, setRoleFilter] = useState<StaffRole | ''>('');
   const [search, setSearch] = useState('');
 
   const loadUsuarios = useCallback(async () => {
@@ -158,7 +161,7 @@ export default function Usuarios() {
       ]);
       setUsuarios(mergeUsuarios([
         ...doctors.map(doctorToUsuario),
-        ...managedUsers.map(managedUserToUsuario),
+        ...managedUsers.map(managedUserToUsuario).filter((user): user is UsuarioItem => Boolean(user)),
       ]));
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao listar usuários.';
@@ -377,7 +380,7 @@ export default function Usuarios() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
-        {(['medico', 'gestao', 'secretaria', 'paciente'] as UserRole[]).map(role => {
+        {STAFF_ROLES.map(role => {
           const count = usuarios.filter(u => u.role === role).length;
           const st = ROLE_COLOR[role];
           return (
@@ -413,14 +416,13 @@ export default function Usuarios() {
 
         <select
           value={roleFilter}
-          onChange={e => setRoleFilter(e.target.value as UserRole | '')}
+          onChange={e => setRoleFilter(e.target.value as StaffRole | '')}
           style={{ minWidth: 220, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, outline: 'none', background: '#fff', color: 'var(--gray-700)', cursor: 'pointer' }}
         >
           <option value="">Todos os perfis</option>
           <option value="medico">Médico</option>
           <option value="gestao">Gestão</option>
           <option value="secretaria">Secretaria</option>
-          <option value="paciente">Paciente</option>
         </select>
 
         <button
@@ -539,7 +541,6 @@ export default function Usuarios() {
                   <option value="medico">Médico</option>
                   <option value="gestao">Gestão / Coordenação</option>
                   <option value="secretaria">Secretaria</option>
-                  <option value="paciente">Paciente</option>
                 </select>
               </div>
 

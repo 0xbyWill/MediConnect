@@ -171,6 +171,16 @@ interface ApiUserRoleRecord {
   role?: string;
 }
 
+type CreatePatientResponse =
+  | ApiPatient[]
+  | (Partial<ApiPatient> & {
+      success?: boolean;
+      patient_id?: string;
+      user_id?: string;
+      patient?: Partial<ApiPatient>;
+      data?: Partial<ApiPatient>;
+    });
+
 type ApiUserListResponse =
   | ApiProfileRecord[]
   | {
@@ -186,15 +196,113 @@ function expectOne<T>(rows: T[], entity: string): T {
   return row;
 }
 
-export interface ApiDoctorAvailability {
-  id: string;
+function normalizeCreatedPatient(response: CreatePatientResponse, fallback: Omit<ApiPatient, 'id'>): ApiPatient {
+  if (Array.isArray(response)) return expectOne(response, 'paciente criado');
+
+  const source = response.patient ?? response.data ?? response;
+  const id = source.id ?? response.patient_id ?? '';
+  if (!id) throw new Error('A API criou o paciente, mas nao retornou o identificador.');
+
+  return {
+    ...fallback,
+    ...source,
+    id,
+  };
+}
+
+function cleanPayload<T extends Record<string, unknown>>(payload: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined && value !== '')
+  ) as Partial<T>;
+}
+
+function shouldFallbackPatientCreate(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : '';
+  return (
+    msg.includes('bad gateway') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network') ||
+    msg.includes('not found') ||
+    msg.includes('404') ||
+    msg.includes('502')
+  );
+}
+
+function toCreatePatientBody(data: Omit<ApiPatient, 'id'>): Partial<Omit<ApiPatient, 'id'>> {
+  return cleanPayload({
+    full_name: data.full_name,
+    social_name: data.social_name,
+    email: data.email,
+    cpf: data.cpf,
+    rg: data.rg,
+    document_type: data.document_type,
+    document_number: data.document_number,
+    birth_date: data.birth_date,
+    phone_mobile: data.phone_mobile,
+    phone1: data.phone1,
+    phone2: data.phone2,
+    sex: data.sex,
+    race: data.race,
+    ethnicity: data.ethnicity,
+    nationality: data.nationality,
+    naturality: data.naturality,
+    profession: data.profession,
+    marital_status: data.marital_status,
+    guardian_name: data.guardian_name,
+    guardian_cpf: data.guardian_cpf,
+    cep: data.cep,
+    street: data.street,
+    number: data.number,
+    complement: data.complement,
+    neighborhood: data.neighborhood,
+    city: data.city,
+    state: data.state,
+    reference: data.reference,
+    blood_type: data.blood_type,
+    weight_kg: data.weight_kg,
+    height_m: data.height_m,
+    bmi: data.bmi,
+    vip: data.vip,
+    notes: data.notes,
+    redirect_url: data.redirect_url,
+  });
+}
+
+function toRestPatientBody(data: Omit<ApiPatient, 'id'>): Partial<Omit<ApiPatient, 'id'>> {
+  return cleanPayload({
+    full_name: data.full_name,
+    cpf: data.cpf,
+    email: data.email,
+    phone_mobile: data.phone_mobile,
+    birth_date: data.birth_date,
+    created_by: data.created_by,
+    race: data.race,
+    sex: data.sex,
+    city: data.city,
+    state: data.state,
+    notes: data.notes,
+  });
+}
+
+export type DoctorAppointmentType = 'presencial' | 'telemedicina';
+
+export interface CreateDoctorAvailabilityPayload {
   doctor_id: string;
   weekday: number;
   start_time: string;
   end_time: string;
-  slot_minutes: number;
-  appointment_type?: string;
+  slot_minutes?: number;
+  appointment_type?: DoctorAppointmentType;
   active?: boolean;
+}
+
+export interface ApiDoctorAvailability extends CreateDoctorAvailabilityPayload {
+  id: string;
+  slot_minutes: number;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string;
+  updated_by?: string;
 }
 
 export interface ApiDoctorException {
@@ -234,16 +342,47 @@ export interface SendSmsResponse {
 export interface ApiPatient {
   id: string;
   full_name: string;
+  social_name?: string;
   cpf: string;
   email: string;
+  rg?: string;
+  document_type?: string;
+  document_number?: string;
   phone_mobile: string;
+  phone1?: string;
+  phone2?: string;
   birth_date?: string;
   created_by?: string;
   race?: string;
   sex?: string;
+  ethnicity?: string;
+  nationality?: string;
+  naturality?: string;
+  profession?: string;
+  marital_status?: string;
+  mother_name?: string;
+  mother_profession?: string;
+  father_name?: string;
+  father_profession?: string;
+  guardian_name?: string;
+  guardian_cpf?: string;
+  spouse_name?: string;
+  cep?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
   city?: string;
   state?: string;
+  reference?: string;
+  blood_type?: string;
+  weight_kg?: number;
+  height_m?: number;
+  bmi?: number;
+  rn_in_insurance?: boolean;
+  vip?: boolean;
   notes?: string;
+  redirect_url?: string;
 }
 
 export interface ApiAppointment {
@@ -475,6 +614,8 @@ export const doctorsApi = {
 };
 
 // ─── Pacientes ────────────────────────────────────────────────────────────────
+const CREATE_PATIENT_URLS = ['/functions/v1/create-patient', '/create-patient'];
+
 export const patientsApi = {
   list: (params: { search?: string; cpf?: string; email?: string; limit?: number; offset?: number; created_by?: string } = {}) => {
     const q = new URLSearchParams({ select: '*', order: 'full_name.asc' });
@@ -495,11 +636,26 @@ export const patientsApi = {
     return request<ApiPatient[]>(`/rest/v1/patients?${q.toString()}`);
   },
 
-  create: (data: Omit<ApiPatient, 'id'>) =>
-    request<ApiPatient[]>('/rest/v1/patients', {
+  create: async (data: Omit<ApiPatient, 'id'>) => {
+    let lastError: unknown;
+    for (const path of CREATE_PATIENT_URLS) {
+      try {
+        const response = await request<CreatePatientResponse>(path, {
+          method: 'POST',
+          body: JSON.stringify(toCreatePatientBody(data)),
+        });
+        return normalizeCreatedPatient(response, data);
+      } catch (err) {
+        lastError = err;
+        if (!shouldFallbackPatientCreate(err)) throw err;
+      }
+    }
+    if (!shouldFallbackPatientCreate(lastError)) throw lastError;
+    return request<ApiPatient[]>('/rest/v1/patients', {
       method: 'POST',
-      body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'paciente criado')),
+      body: JSON.stringify(toRestPatientBody(data)),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'paciente criado'));
+  },
 
   update: (id: string, data: Partial<ApiPatient>) =>
     request<ApiPatient[]>(`/rest/v1/patients?id=eq.${id}`, {
@@ -595,11 +751,13 @@ export const availabilityApi = {
     return request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?${q.toString()}`);
   },
 
-  create: (data: Omit<ApiDoctorAvailability, 'id'>) =>
-    request<ApiDoctorAvailability[]>('/rest/v1/doctor_availability', {
+  create: (data: CreateDoctorAvailabilityPayload) =>
+    request<ApiDoctorAvailability[] | ApiDoctorAvailability>('/rest/v1/doctor_availability', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'disponibilidade criada')),
+    }, { Prefer: 'return=representation' }).then(response =>
+      Array.isArray(response) ? expectOne(response, 'disponibilidade criada') : response
+    ),
 
   update: (id: string, data: Partial<ApiDoctorAvailability>) =>
     request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?id=eq.${id}`, {
