@@ -265,8 +265,8 @@ export default function Login({ onCreateAccount }: LoginProps) {
           <p style={{ fontSize: 10, color: 'var(--gray-500)', marginTop: 2 }}>Atalhos de teste</p>
         </div>
 
-        <QuickAccessButton icon={Stethoscope} title="Médico" subtitle="Agenda, pacientes, laudos e relatórios" color="var(--primary)" disabled={loading} onClick={() => void quickLogin({ email: 'joao.francisco777@gmail.com', password: 'Teste@123' })} />
-        <QuickAccessButton icon={ClipboardList} title="Secretaria" subtitle="Agenda, pacientes e comunicação" color="var(--amber-600)" disabled={loading} onClick={() => void quickLogin({ email: 'isabely.santiny777@gmail.com', password: 'Teste@123' })} />
+        <QuickAccessButton icon={Stethoscope} title="Médico" subtitle="Agenda, pacientes, laudos e relatórios" color="var(--primary)" disabled={loading} onClick={() => void quickLogin({ email: 'francisco.squad04@gmail.com', password: 'Teste@123' })} />
+        <QuickAccessButton icon={ClipboardList} title="Secretaria" subtitle="Agenda, pacientes e comunicação" color="var(--amber-600)" disabled={loading} onClick={() => void quickLogin({ email: 'secretaria.squad04@gmail.com', password: 'Teste@123' })} />
         <QuickAccessButton icon={Shield} title="Gestor" subtitle="Acesso administrativo completo" color="#7c3aed" disabled={loading} onClick={() => void quickLogin({ email: 'hugo@popcode.com.br', password: 'hdoria' })} />
 
         <div style={{ height: 1, background: 'var(--gray-100)', margin: '2px 0' }} />
