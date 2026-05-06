@@ -51,19 +51,15 @@ export interface Paciente {
   profissao?: string;
   estadoCivil?: string;
   // Filiação
-  nomeMae?: string;
-  profissaoMae?: string;
-  nomePai?: string;
-  profissaoPai?: string;
   nomeResponsavel?: string;
   cpfResponsavel?: string;
-  nomeEsposo?: string;
-  rnGuiaConvenio?: boolean;
-  codigoLegado?: string;
+  vip?: boolean;
+  urlRedirecionamento?: string;
   // Contato
   email: string;
   telefone: string;
   telefone2?: string;
+  telefone3?: string;
   // Endereço
   cep?: string;
   logradouro?: string;
@@ -72,6 +68,7 @@ export interface Paciente {
   bairro?: string;
   cidade?: string;
   estado?: string;
+  referencia?: string;
   // Informações médicas
   tipoSanguineo?: string;
   peso?: string;
@@ -121,21 +118,18 @@ function buildPatientNotes(p: Omit<Paciente, 'id'>): string | undefined {
     nacionalidade: p.nacionalidade,
     profissao: p.profissao?.trim(),
     estadoCivil: p.estadoCivil,
-    nomeMae: p.nomeMae?.trim(),
-    profissaoMae: p.profissaoMae?.trim(),
-    nomePai: p.nomePai?.trim(),
-    profissaoPai: p.profissaoPai?.trim(),
     nomeResponsavel: p.nomeResponsavel?.trim(),
     cpfResponsavel: p.cpfResponsavel ? digitsOnly(p.cpfResponsavel) : undefined,
-    nomeEsposo: p.nomeEsposo?.trim(),
-    rnGuiaConvenio: p.rnGuiaConvenio,
-    codigoLegado: p.codigoLegado?.trim(),
+    vip: p.vip,
+    urlRedirecionamento: p.urlRedirecionamento?.trim(),
     telefone2: p.telefone2 ? normalizePhoneBR(p.telefone2) : undefined,
+    telefone3: p.telefone3 ? normalizePhoneBR(p.telefone3) : undefined,
     cep: p.cep ? normalizeCep(p.cep) : undefined,
     logradouro: p.logradouro?.trim(),
     numero: p.numero?.trim(),
     complemento: p.complemento?.trim(),
     bairro: p.bairro?.trim(),
+    referencia: p.referencia?.trim(),
     tipoSanguineo: p.tipoSanguineo,
     peso: p.peso ? normalizeDecimalText(p.peso) : undefined,
     altura: p.altura ? normalizeDecimalText(p.altura) : undefined,
@@ -197,6 +191,7 @@ export interface Laudo {
 // ─── Helpers de mapeamento API ↔ modelo interno ───────────────────────────────
 export function apiPatientToPaciente(p: ApiPatient): Paciente {
   const { observacoes, extra } = splitPatientNotes(p.notes);
+  const notes = observacoes && !p.notes?.includes(PATIENT_EXTRA_MARKER) ? undefined : observacoes;
   return {
     id:          p.id,
     nome:        p.full_name,
@@ -208,25 +203,76 @@ export function apiPatientToPaciente(p: ApiPatient): Paciente {
     status:      extra.status ?? 'Ativo',
     raca:        p.race,
     sexo:        p.sex,
+    observacoes: notes,
+    ...extra,
+    nomeSocial:  p.social_name ?? extra.nomeSocial,
+    rg:          p.rg ?? extra.rg,
+    outroDocTipo: p.document_type ?? extra.outroDocTipo,
+    outroDocNumero: p.document_number ?? extra.outroDocNumero,
+    telefone2:   p.phone1 ?? extra.telefone2,
+    telefone3:   p.phone2 ?? extra.telefone3,
+    naturalidade: p.naturality ?? extra.naturalidade,
+    nacionalidade: p.nationality ?? extra.nacionalidade,
+    profissao:   p.profession ?? extra.profissao,
+    estadoCivil: p.marital_status ?? extra.estadoCivil,
+    nomeResponsavel: p.guardian_name ?? extra.nomeResponsavel,
+    cpfResponsavel: p.guardian_cpf ?? extra.cpfResponsavel,
+    cep:         p.cep ?? extra.cep,
+    logradouro:  p.street ?? extra.logradouro,
+    numero:      p.number ?? extra.numero,
+    complemento: p.complement ?? extra.complemento,
+    bairro:      p.neighborhood ?? extra.bairro,
     cidade:      p.city,
     estado:      p.state,
-    observacoes,
-    ...extra,
+    referencia:  p.reference ?? extra.referencia,
+    tipoSanguineo: p.blood_type ?? extra.tipoSanguineo,
+    peso:        p.weight_kg === undefined ? extra.peso : String(p.weight_kg),
+    altura:      p.height_m === undefined ? extra.altura : String(p.height_m),
+    vip:         p.vip ?? extra.vip,
+    urlRedirecionamento: p.redirect_url ?? extra.urlRedirecionamento,
+    alergias:    p.notes?.includes(PATIENT_EXTRA_MARKER) ? extra.alergias : p.notes ?? extra.alergias,
   };
 }
 
 export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 'id'> {
+  const weight = p.peso ? Number(normalizeDecimalText(p.peso)) : undefined;
+  const height = p.altura ? Number(normalizeDecimalText(p.altura)) : undefined;
+  const bmi = weight && height ? Number((weight / (height * height)).toFixed(2)) : undefined;
   return {
     full_name:        p.nome.trim(),
+    social_name:      p.nomeSocial?.trim(),
     cpf:              digitsOnly(p.cpf),
+    rg:               p.rg?.trim(),
+    document_type:    p.outroDocTipo,
+    document_number:  p.outroDocNumero?.trim(),
     birth_date:       p.dataNasc,
     email:            normalizeEmail(p.email),
     phone_mobile:     normalizePhoneBR(p.telefone),
+    phone1:           p.telefone2 ? normalizePhoneBR(p.telefone2) : undefined,
+    phone2:           p.telefone3 ? normalizePhoneBR(p.telefone3) : undefined,
     race:             p.raca,
     sex:              p.sexo,
+    nationality:      p.nacionalidade,
+    naturality:       p.naturalidade?.trim(),
+    profession:       p.profissao?.trim(),
+    marital_status:   p.estadoCivil,
+    guardian_name:    p.nomeResponsavel?.trim(),
+    guardian_cpf:     p.cpfResponsavel ? digitsOnly(p.cpfResponsavel) : undefined,
+    cep:              p.cep ? normalizeCep(p.cep) : undefined,
+    street:           p.logradouro?.trim(),
+    number:           p.numero?.trim(),
+    complement:       p.complemento?.trim(),
+    neighborhood:     p.bairro?.trim(),
     city:             p.cidade?.trim(),
-    state:            p.estado?.trim(),
-    notes:            buildPatientNotes(p),
+    state:            p.estado?.trim().toUpperCase(),
+    reference:        p.referencia?.trim(),
+    blood_type:       p.tipoSanguineo,
+    weight_kg:        Number.isFinite(weight) ? weight : undefined,
+    height_m:         Number.isFinite(height) ? height : undefined,
+    bmi,
+    vip:              p.vip,
+    notes:            [p.alergias?.trim(), p.observacoes?.trim()].filter(Boolean).join('\n\n') || buildPatientNotes(p),
+    redirect_url:     p.urlRedirecionamento?.trim(),
   };
 }
 

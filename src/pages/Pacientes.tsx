@@ -17,8 +17,8 @@ const CONVENIOS: ConvenioType[] = [
   'Amil S450', 'SulAmérica', 'Porto Seguro', 'Notre Dame',
 ];
 
-const RACAS  = ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena'];
-const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável', 'Separado(a)'];
+const RACAS  = ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena', 'Não declarada'];
+const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União Estável', 'Outro'];
 const NACIONALIDADES = [
   'Brasileira', 'Afegã', 'Alemã', 'Angolana', 'Argentina', 'Australiana', 'Belga',
   'Boliviana', 'Canadense', 'Chilena', 'Chinesa', 'Colombiana', 'Coreana',
@@ -26,7 +26,7 @@ const NACIONALIDADES = [
   'Italiana', 'Japonesa', 'Mexicana', 'Moçambicana', 'Paraguaia', 'Peruana',
   'Portuguesa', 'Reino-unidense', 'Uruguaia', 'Venezuelana', 'Outra',
 ];
-const TIPOS_DOC = ['CNH', 'Passaporte', 'Certidão de Nascimento', 'Carteira de Trabalho', 'Outro'];
+const TIPOS_DOC = ['CNH', 'Passaporte', 'RNE', 'CTPS', 'Outro'];
 const TIPOS_SANGUINEOS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 // Abas do formulário
@@ -46,18 +46,14 @@ interface PacienteExtended extends Paciente {
   nacionalidade?: string;
   profissao?: string;
   estadoCivil?: string;
-  nomeMae?: string;
-  profissaoMae?: string;
-  nomePai?: string;
-  profissaoPai?: string;
   nomeResponsavel?: string;
   cpfResponsavel?: string;
-  nomeEsposo?: string;
-  rnGuiaConvenio?: boolean;
-  codigoLegado?: string;
+  vip?: boolean;
+  urlRedirecionamento?: string;
   outroDocTipo?: string;
   outroDocNumero?: string;
   telefone2?: string;
+  telefone3?: string;
   tipoSanguineo?: string;
   peso?: string;
   altura?: string;
@@ -69,6 +65,7 @@ interface PacienteExtended extends Paciente {
   proximoAtendimento?: string;
   cidade?: string;
   estado?: string;
+  referencia?: string;
 }
 
 interface PacientesProps {
@@ -88,6 +85,14 @@ function formatDateTime(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+function displayCpf(value?: string) {
+  const formatted = formatCpf(value || '');
+  return formatted || '—';
+}
+function displayPhone(value?: string) {
+  const formatted = formatPhoneBR(value || '');
+  return formatted || '—';
+}
 function formatDateISO(d: Date) {
   return dateToISO(d);
 }
@@ -106,21 +111,17 @@ function calcIMC(peso: string, altura: string) {
   return (p / (a * a)).toFixed(1);
 }
 function hasResponsibleData(p: PacienteExtended) {
-  return Boolean(
-    p.nomeMae || p.profissaoMae || p.nomePai || p.profissaoPai ||
-    p.nomeResponsavel || p.cpfResponsavel || p.nomeEsposo || p.rnGuiaConvenio
-  );
+  return Boolean(p.nomeResponsavel || p.cpfResponsavel);
 }
 
 const emptyForm: PacienteExtended = {
   id: '', nome: '', nomeSocial: '', cpf: '', rg: '', sexo: '',
   dataNasc: '', raca: '', naturalidade: '', nacionalidade: '',
-  profissao: '', estadoCivil: '', nomeMae: '', profissaoMae: '',
-  nomePai: '', profissaoPai: '', nomeResponsavel: '', cpfResponsavel: '',
-  nomeEsposo: '', rnGuiaConvenio: false, codigoLegado: '',
+  profissao: '', estadoCivil: '', nomeResponsavel: '', cpfResponsavel: '',
+  vip: false, urlRedirecionamento: '',
   outroDocTipo: '', outroDocNumero: '',
-  email: '', telefone: '', telefone2: '',
-  cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '',
+  email: '', telefone: '', telefone2: '', telefone3: '',
+  cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '', referencia: '',
   tipoSanguineo: '', peso: '', altura: '', alergias: '',
   convenio: 'Particular', planoConvenio: '', matriculaConvenio: '', validadeCarteira: '',
   status: 'Ativo',
@@ -128,24 +129,29 @@ const emptyForm: PacienteExtended = {
 };
 
 // ─── Sub-componentes de campo ─────────────────────────────────────────────────
-function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '', max, inputMode, maxLength }: {
+function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '', min, max, step, inputMode, maxLength }: {
   label: string; value: string; onChange: (v: string) => void;
   placeholder?: string; type?: string; required?: boolean; disabled?: boolean; error?: string;
-  max?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']; maxLength?: number;
+  min?: string; max?: string; step?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']; maxLength?: number;
 }) {
+  const inputId = React.useId();
+  const errorId = `${inputId}-error`;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+      <label htmlFor={inputId} style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
         {label} {required && <span style={{ color: 'var(--red-500)' }}>*</span>}
       </label>
       <input
+        id={inputId}
         type={type} value={value} placeholder={placeholder}
+        min={min}
         max={max}
+        step={step}
         inputMode={inputMode}
         maxLength={maxLength}
         onChange={e => onChange(e.target.value)} disabled={disabled}
         aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${label.replace(/\s+/g, '-').toLowerCase()}-error` : undefined}
+        aria-describedby={error ? errorId : undefined}
         style={{
           padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none',
           border: `1px solid ${error ? 'var(--red-500)' : 'var(--gray-200)'}`,
@@ -153,7 +159,7 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
           width: '100%', boxSizing: 'border-box',
         }}
       />
-      {error && <span id={`${label.replace(/\s+/g, '-').toLowerCase()}-error`} role="alert" style={{ fontSize: 11, color: 'var(--red-500)' }}>{error}</span>}
+      {error && <span id={errorId} role="alert" style={{ fontSize: 11, color: 'var(--red-500)' }}>{error}</span>}
     </div>
   );
 }
@@ -162,12 +168,13 @@ function FieldSelect({ label, value, onChange, options, required = false, disabl
   label: string; value: string; onChange: (v: string) => void;
   options: string[]; required?: boolean; disabled?: boolean;
 }) {
+  const selectId = React.useId();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+      <label htmlFor={selectId} style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
         {label} {required && <span style={{ color: 'var(--red-500)' }}>*</span>}
       </label>
-      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+      <select id={selectId} value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
         style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none', border: '1px solid var(--gray-200)', background: disabled ? 'var(--gray-50)' : '#fff', color: 'var(--gray-800)', cursor: disabled ? 'default' : 'pointer', width: '100%', boxSizing: 'border-box' }}>
         <option value="">Selecione</option>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
@@ -293,11 +300,16 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   // ── Validação ──
   const validate = (d: PacienteExtended) => {
     const e: Record<string, string> = {};
-    if (d.cpfResponsavel && !isValidCpf(d.cpfResponsavel)) e.cpfResponsavel = 'CPF do responsavel invalido';
+    if (showResponsavel && !d.nomeResponsavel?.trim()) e.nomeResponsavel = 'Nome do responsável obrigatório.';
+    if (showResponsavel && !d.cpfResponsavel?.trim()) e.cpfResponsavel = 'CPF do responsável obrigatório.';
+    if (d.cpfResponsavel && !isValidCpf(d.cpfResponsavel)) e.cpfResponsavel = 'CPF do responsável inválido.';
     if (d.email.trim() && !isValidEmail(d.email)) e.email = 'Informe um e-mail valido.';
     if (d.telefone.trim() && !isValidPhoneBR(d.telefone)) e.telefone = 'Informe um telefone com DDD.';
     if (d.telefone2 && !isValidPhoneBR(d.telefone2, false)) e.telefone2 = 'Informe um telefone com DDD.';
+    if (d.telefone3 && !isValidPhoneBR(d.telefone3, false)) e.telefone3 = 'Informe um telefone com DDD.';
     if (d.cep && !isValidCep(d.cep)) e.cep = 'Informe um CEP com 8 digitos.';
+    if (d.estado && d.estado.trim().length !== 2) e.estado = 'Informe a UF com 2 letras.';
+    if (d.urlRedirecionamento && !/^https?:\/\/\S+$/i.test(d.urlRedirecionamento.trim())) e.urlRedirecionamento = 'Informe uma URL iniciada por http:// ou https://.';
     if (!d.nome.trim()) e.nome = 'Nome obrigatório';
     if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
     if (d.cpf && !isValidCpf(d.cpf)) e.cpf = 'CPF inválido';
@@ -315,7 +327,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     if (Object.keys(e).length) {
       setErrors(e);
       // Vai para a aba que tem o erro
-      if (e.nome || e.cpf || e.dataNasc || e.email || e.telefone) setActiveTab('dados');
+      if (e.nome || e.cpf || e.dataNasc || e.email || e.telefone || e.nomeResponsavel || e.cpfResponsavel) setActiveTab('dados');
       return;
     }
     // Verifica duplicidade por CPF
@@ -460,7 +472,12 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                             style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
                             {p.nome}
                           </button>
-                          <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{p.cpf || '—'}</div>
+                          <div
+                            title={`CPF: ${displayCpf(p.cpf)}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--gray-500)', marginTop: 4, padding: '2px 7px', borderRadius: 999, background: 'var(--gray-50)', border: '1px solid var(--gray-100)', fontVariantNumeric: 'tabular-nums' }}>
+                            <span style={{ fontWeight: 700, color: 'var(--gray-400)' }}>CPF</span>
+                            <span>{displayCpf(p.cpf)}</span>
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -469,7 +486,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <Phone size={12} color="var(--gray-400)" />
-                        {p.telefone || '—'}
+                        {displayPhone(p.telefone)}
                       </div>
                     </td>
 
@@ -629,18 +646,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                   <div style={responsiveGrid(220)}>
                     <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', formatCpf(v))} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                     <FieldInput label="RG" value={d.rg || ''} onChange={v => setField('rg', v)} disabled={isView} placeholder="00.000.000-0" />
-                    <div>
-                      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Outros documentos</label>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <select value={d.outroDocTipo || ''} onChange={e => setField('outroDocTipo', e.target.value)} disabled={isView}
-                          style={{ flex: 1, padding: '9px 8px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff', cursor: isView ? 'default' : 'pointer' }}>
-                          <option value="">Selecione</option>
-                          {TIPOS_DOC.map(t => <option key={t}>{t}</option>)}
-                        </select>
-                        <input value={d.outroDocNumero || ''} onChange={e => setField('outroDocNumero', e.target.value)} disabled={isView}
-                          placeholder="Número" style={{ flex: 1, padding: '9px 8px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff' }} />
-                      </div>
-                    </div>
+                    <FieldSelect label="Tipo de documento" value={d.outroDocTipo || ''} onChange={v => setField('outroDocTipo', v)} options={TIPOS_DOC} disabled={isView} />
+                    <FieldInput label="Número do documento" value={d.outroDocNumero || ''} onChange={v => setField('outroDocNumero', v)} disabled={isView} placeholder="Número" />
                   </div>
 
                   <div style={responsiveGrid(220)}>
@@ -648,7 +655,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 8 }}>Sexo</label>
                       <div style={{ display: 'flex', gap: 16 }}>
-                        {['Masculino', 'Feminino', 'Outro'].map(s => (
+                        {['Masculino', 'Feminino', 'Outro', 'Não informar'].map(s => (
                           <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--gray-700)', cursor: isView ? 'default' : 'pointer' }}>
                             <input type="radio" name="sexo" value={s} checked={d.sexo === s}
                               onChange={() => !isView && setField('sexo', s)} disabled={isView}
@@ -677,7 +684,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                   <div style={responsiveGrid(240)}>
                     <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" required disabled={isView} error={errors.email} placeholder="paciente@exemplo.com" />
                     <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', formatPhoneBR(v))} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" inputMode="tel" maxLength={15} />
-                    <FieldInput label="Telefone 2" value={d.telefone2 || ''} onChange={v => setField('telefone2', formatPhoneBR(v))} disabled={isView} error={errors.telefone2} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
+                    <FieldInput label="Telefone fixo 1" value={d.telefone2 || ''} onChange={v => setField('telefone2', formatPhoneBR(v))} disabled={isView} error={errors.telefone2} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
+                    <FieldInput label="Telefone fixo 2" value={d.telefone3 || ''} onChange={v => setField('telefone3', formatPhoneBR(v))} disabled={isView} error={errors.telefone3} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
                   </div>
 
                   {/* Toggles */}
@@ -687,18 +695,11 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
                   {showResponsavel && (
                     <>
-                      <SectionHeader label="Filiação e Responsável" />
+                      <SectionHeader label="Responsável" />
                       <div style={responsiveGrid(240)}>
-                        <FieldInput label="Nome da mãe" value={d.nomeMae || ''} onChange={v => setField('nomeMae', v)} disabled={isView} />
-                        <FieldInput label="Profissão da mãe" value={d.profissaoMae || ''} onChange={v => setField('profissaoMae', v)} disabled={isView} />
-                        <FieldInput label="Nome do pai" value={d.nomePai || ''} onChange={v => setField('nomePai', v)} disabled={isView} />
-                        <FieldInput label="Profissão do pai" value={d.profissaoPai || ''} onChange={v => setField('profissaoPai', v)} disabled={isView} />
-                        <FieldInput label="Nome do responsável" value={d.nomeResponsavel || ''} onChange={v => setField('nomeResponsavel', v)} disabled={isView} />
-                        <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', formatCpf(v))} disabled={isView} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
-                        <FieldInput label="Nome do esposo(a)" value={d.nomeEsposo || ''} onChange={v => setField('nomeEsposo', v)} disabled={isView} />
-                        <FieldInput label="Código legado" value={d.codigoLegado || ''} onChange={v => setField('codigoLegado', v)} disabled={isView} placeholder="ID de outro sistema" />
+                        <FieldInput label="Nome do responsável" value={d.nomeResponsavel || ''} onChange={v => setField('nomeResponsavel', v)} required disabled={isView} error={errors.nomeResponsavel} />
+                        <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', formatCpf(v))} required disabled={isView} error={errors.cpfResponsavel} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                       </div>
-                      <Toggle label="RN na Guia do convênio" value={d.rnGuiaConvenio || false} onChange={v => !isView && setField('rnGuiaConvenio', v)} disabled={isView} />
                     </>
                   )}
 
@@ -726,7 +727,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                   </div>
                   <div style={responsiveGrid(180)}>
                     <FieldInput label="Cidade" value={d.cidade || ''} onChange={v => setField('cidade', v)} disabled={isView} />
-                    <FieldInput label="Estado" value={d.estado || ''} onChange={v => setField('estado', v)} disabled={isView} placeholder="Ex: Sergipe" />
+                    <FieldInput label="Estado (UF)" value={d.estado || ''} onChange={v => setField('estado', v.toUpperCase().slice(0, 2))} disabled={isView} error={errors.estado} placeholder="Ex: SP" maxLength={2} />
+                    <FieldInput label="Ponto de referência" value={d.referencia || ''} onChange={v => setField('referencia', v)} disabled={isView} placeholder="Ex: Próximo ao metrô" />
                   </div>
                 </div>
               )}
@@ -737,8 +739,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                   <SectionHeader label="Informações Médicas" />
                   <div style={{ ...responsiveGrid(140), alignItems: 'end' }}>
                     <FieldSelect label="Tipo Sanguíneo" value={d.tipoSanguineo || ''} onChange={v => setField('tipoSanguineo', v)} options={TIPOS_SANGUINEOS} disabled={isView} />
-                    <FieldInput label="Peso (kg)" value={d.peso || ''} onChange={v => setField('peso', v)} type="number" disabled={isView} placeholder="Ex: 70" />
-                    <FieldInput label="Altura (m)" value={d.altura || ''} onChange={v => setField('altura', v)} type="number" disabled={isView} placeholder="Ex: 1.75" />
+                    <FieldInput label="Peso (kg)" value={d.peso || ''} onChange={v => setField('peso', v)} type="number" disabled={isView} placeholder="Ex: 70" min="0" step="0.1" inputMode="decimal" />
+                    <FieldInput label="Altura (m)" value={d.altura || ''} onChange={v => setField('altura', v)} type="number" disabled={isView} placeholder="Ex: 1.75" min="0" step="0.01" inputMode="decimal" />
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>IMC</label>
                       <div style={{ padding: '9px 12px', background: imc ? 'var(--mint)' : 'var(--gray-50)', borderRadius: 8, fontSize: 13, fontWeight: 700, color: imc ? 'var(--dark)' : 'var(--gray-400)', border: '1px solid var(--gray-200)' }}>
@@ -778,6 +780,12 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                       placeholder="Alergias, restrições, notas relevantes sobre o paciente..."
                       style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: isView ? 'var(--gray-50)' : '#fff', resize: 'vertical', fontFamily: 'Montserrat, sans-serif' }} />
                     <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'right', marginTop: 4 }}>{(d.observacoes || '').length} caracteres</div>
+                  </div>
+                  <div style={responsiveGrid(220)}>
+                    <FieldInput label="URL de redirecionamento" value={d.urlRedirecionamento || ''} onChange={v => setField('urlRedirecionamento', v)} type="url" disabled={isView} error={errors.urlRedirecionamento} placeholder="https://exemplo.com/retorno" />
+                    <div style={{ display: 'flex', alignItems: 'end', paddingBottom: 8 }}>
+                      <Toggle label="Paciente VIP" value={d.vip || false} onChange={v => !isView && setField('vip', v)} disabled={isView} />
+                    </div>
                   </div>
 
                   {/* Histórico de alterações — informativo */}
@@ -853,12 +861,30 @@ function ActionBtn({ icon: Icon, color, title, onClick }: { icon: React.ElementT
 
 function Toggle({ label, value, onChange, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: disabled ? 'default' : 'pointer', userSelect: 'none' }}>
-      <div onClick={() => !disabled && onChange(!value)}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      disabled={disabled}
+      onClick={() => onChange(!value)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        cursor: disabled ? 'default' : 'pointer',
+        userSelect: 'none',
+        border: 'none',
+        background: 'transparent',
+        padding: 0,
+        fontFamily: 'inherit',
+        opacity: disabled ? 0.7 : 1,
+      }}>
+      <span
+        aria-hidden="true"
         style={{ width: 36, height: 20, borderRadius: 10, background: value ? 'var(--primary)' : 'var(--gray-300)', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
-        <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: value ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-      </div>
+        <span style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: value ? 18 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+      </span>
       <span style={{ fontSize: 13, color: 'var(--gray-600)' }}>{label}</span>
-    </label>
+    </button>
   );
 }
