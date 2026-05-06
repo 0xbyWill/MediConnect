@@ -143,7 +143,9 @@ const STATUS_LABEL: Record<Agendamento['status'], { label: string; bg: string; c
 export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, readOnly = false }: AgendaProps) {
   const { user } = useAuth();
   const isMedico = user?.role === 'medico';
+  const isSecretaria = user?.role === 'secretaria';
   const isPaciente = user?.role === 'paciente' || readOnly;
+  const canManageAvailability = !isPaciente && !isSecretaria;
   const today = dateToISO(new Date());
 
   const [selectedDate, setSelectedDate] = useState(today);
@@ -212,7 +214,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   };
 
   const openAvailabilityModal = () => {
-    if (isPaciente) return;
+    if (!canManageAvailability) return;
     const doctorId = isMedico ? user?.doctor_id || '' : filterDoctorId;
     setAvailabilityModal({ open: true, data: emptyAvailabilityForm(doctorId) });
     setAvailabilityFormErrors({});
@@ -383,7 +385,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   };
 
   const handleSaveAvailability = async () => {
-    if (isPaciente) return;
+    if (!canManageAvailability) return;
     const nextErrors = validateAvailability();
     if (Object.keys(nextErrors).length) {
       setAvailabilityFormErrors(nextErrors);
@@ -478,9 +480,11 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           </div>
           {!isPaciente && (
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={openAvailabilityModal} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', background: '#fff', color: 'var(--primary)', border: '1px solid var(--light)', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                <Clock size={16} /> Disponibilidade
-              </button>
+              {canManageAvailability && (
+                <button onClick={openAvailabilityModal} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', background: '#fff', color: 'var(--primary)', border: '1px solid var(--light)', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  <Clock size={16} /> Disponibilidade
+                </button>
+              )}
               {!isMedico && (
                 <button onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   <Plus size={16} /> Agendar
@@ -870,7 +874,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         </div>
       )}
 
-      {availabilityModal.open && (
+      {availabilityModal.open && canManageAvailability && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>
           <div style={{ background: '#fff', borderRadius: 18, width: 'min(620px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
