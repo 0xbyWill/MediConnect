@@ -4,7 +4,6 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
-  CheckCircle2,
   ClipboardList,
   Eye,
   EyeOff,
@@ -173,26 +172,11 @@ export default function Login({ onCreateAccount }: LoginProps) {
             )}
           </div>
 
-          <div className="login-trust-strip" aria-label="Garantias de seguranca">
-            <span>
-              <ShieldCheck size={16} aria-hidden="true" />
-              SSL Seguro
-            </span>
-            <span aria-hidden="true" className="login-trust-divider" />
-            <span>
-              <CheckCircle2 size={16} aria-hidden="true" />
-              Conforme LGPD
-            </span>
-          </div>
         </div>
 
         <div className="login-hero" aria-label="Resumo da plataforma">
-          <div className="login-hero-icon" aria-hidden="true">
-            <Activity size={82} strokeWidth={2.1} />
-          </div>
-
           <div className="login-hero-copy">
-            <h2>Gestao completa para sua clinica</h2>
+            <h2>MediConnect</h2>
             <p>Prontuarios digitais, agendamento inteligente e muito mais em uma unica plataforma</p>
           </div>
 
@@ -280,7 +264,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
           border-radius: 50%;
           pointer-events: none;
           filter: blur(1px);
-          animation: login-heart-glow 4.8s ease-in-out infinite;
+          opacity: 0.78;
           transform-origin: center;
         }
 
@@ -476,9 +460,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
         .login-password-toggle svg,
         .login-logo-mark svg,
-        .login-hero-icon svg,
-        .login-feature-icon svg,
-        .login-trust-strip svg {
+        .login-feature-icon svg {
           display: block;
           flex-shrink: 0;
         }
@@ -575,63 +557,18 @@ export default function Login({ onCreateAccount }: LoginProps) {
           font-size: 13px;
         }
 
-        .login-trust-strip {
-          width: 100%;
-          min-height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 22px;
-          margin-top: 36px;
-          border-radius: 12px;
-          background: rgba(255, 255, 255, 0.72);
-          color: #475569;
-          font-size: 12px;
-          font-weight: 600;
-        }
-
-        .login-trust-strip span {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-        }
-
-        .login-trust-divider {
-          width: 1px;
-          height: 18px;
-          background: #cbd5e1;
-          gap: 0;
-        }
-
         .login-hero {
           min-width: 0;
           min-height: 620px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: flex-start;
-          text-align: center;
-          padding-top: 26px;
-        }
-
-        .login-hero-icon {
-          width: 128px;
-          height: 128px;
-          display: flex;
-          align-items: center;
           justify-content: center;
-          line-height: 0;
-          border-radius: 22px;
-          border: 1.5px solid #9cf5bd;
-          background: rgba(255, 255, 255, 0.72);
-          color: #00a84f;
-          box-shadow: 0 25px 52px rgba(15, 118, 75, 0.16);
+          text-align: center;
         }
 
         .login-hero-copy {
           max-width: 530px;
-          margin-top: 50px;
         }
 
         .login-hero-copy h2 {
@@ -813,35 +750,6 @@ export default function Login({ onCreateAccount }: LoginProps) {
           to { transform: rotate(360deg); }
         }
 
-        @keyframes login-heart-glow {
-          0%, 100% {
-            opacity: 0.86;
-            transform: translate(-50%, -50%) scale(1);
-          }
-          18% {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1.05);
-          }
-          27% {
-            opacity: 0.88;
-            transform: translate(-50%, -50%) scale(1.015);
-          }
-          39% {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1.075);
-          }
-          54% {
-            opacity: 0.84;
-            transform: translate(-50%, -50%) scale(1);
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .login-page::before {
-            animation: none;
-          }
-        }
-
         @media (max-width: 1160px) {
           .login-page {
             padding: 30px 24px 54px;
@@ -880,13 +788,8 @@ export default function Login({ onCreateAccount }: LoginProps) {
             padding-top: 0;
           }
 
-          .login-hero-icon {
-            width: 104px;
-            height: 104px;
-          }
-
           .login-hero-copy {
-            margin-top: 28px;
+            margin-top: 0;
           }
 
           .login-hero-copy h2 {
@@ -945,16 +848,6 @@ export default function Login({ onCreateAccount }: LoginProps) {
           .login-create-account {
             flex-wrap: wrap;
             text-align: center;
-          }
-
-          .login-trust-strip {
-            flex-wrap: wrap;
-            gap: 12px;
-            padding: 12px;
-          }
-
-          .login-trust-divider {
-            display: none;
           }
 
           .login-hero-copy h2 {

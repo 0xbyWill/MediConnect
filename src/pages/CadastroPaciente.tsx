@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import type { ElementType, FormEvent, ReactNode } from 'react';
 import {
+  Activity,
   AlertCircle,
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
   Eye,
   EyeOff,
-  Heart,
   IdCard,
   Loader2,
   Lock,
@@ -135,39 +135,29 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
   return (
     <main className="patient-signup-page" aria-labelledby="patient-signup-title">
       <section className="patient-signup-shell">
-        <div className="patient-signup-intro">
-          <div className="patient-signup-brand">
-            <div className="patient-signup-logo" aria-hidden="true">
-              <Heart size={24} fill="currentColor" />
-            </div>
-            <div>
-              <p className="patient-signup-brand-name">MediConnect</p>
-              <p className="patient-signup-brand-caption">Saúde pública conectada</p>
-            </div>
-          </div>
+        <div className="patient-signup-left">
+          <header className="patient-signup-brand" aria-label="MediConnect">
+            <span className="patient-signup-logo" aria-hidden="true">
+              <Activity size={29} strokeWidth={2.35} />
+            </span>
+            <span className="patient-signup-brand-copy">
+              <span className="patient-signup-brand-name">MediConnect</span>
+              <span className="patient-signup-brand-caption">Gestao Inteligente de Saude</span>
+            </span>
+          </header>
 
-          <div className="patient-signup-copy">
-            <p className="patient-signup-kicker">Conta de paciente</p>
-            <h1>Crie seu acesso com tranquilidade</h1>
-            <p>
-              Informe seus dados para acompanhar consultas, atendimentos e informações clínicas
-              disponibilizadas pela unidade de saúde.
-            </p>
-          </div>
-        </div>
-
-        <div className="patient-signup-card">
-          <div className="patient-signup-header">
-            <div>
-              <p className="patient-signup-kicker">Novo cadastro</p>
-              <h2 id="patient-signup-title">Criar conta de paciente</h2>
-              <p>Preencha os campos abaixo para solicitar seu acesso.</p>
+          <div className="patient-signup-card">
+            <div className="patient-signup-header">
+              <div>
+                <p className="patient-signup-kicker">Novo cadastro</p>
+                <h1 id="patient-signup-title">Criar conta de paciente</h1>
+                <p>Preencha os campos abaixo para criar sua conta.</p>
+              </div>
+              <button type="button" className="patient-signup-back" onClick={onBackToLogin}>
+                <ArrowLeft size={16} aria-hidden="true" />
+                Voltar
+              </button>
             </div>
-            <button type="button" className="patient-signup-back" onClick={onBackToLogin}>
-              <ArrowLeft size={16} aria-hidden="true" />
-              Voltar
-            </button>
-          </div>
 
           <form className="patient-signup-form" onSubmit={handleSubmit}>
             {error && (
@@ -293,112 +283,114 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
               )}
             </button>
           </form>
+          </div>
+
         </div>
+
+        <aside className="patient-signup-hero" aria-label="Resumo da plataforma">
+          <div className="patient-signup-copy">
+            <h2>Seu cuidado conectado em um so lugar</h2>
+            <p>Acompanhe consultas, atendimentos e informacoes clinicas com seguranca.</p>
+          </div>
+        </aside>
       </section>
+
+      <footer className="patient-signup-footer">© 2026 MediConnect. Todos os direitos reservados.</footer>
 
       <style>{`
         .patient-signup-page {
           width: 100%;
           min-height: 100dvh;
+          position: relative;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 32px;
+          padding: 42px 40px 54px;
           background:
-            radial-gradient(circle at 88% 16%, rgba(222, 245, 223, 0.8), transparent 28%),
-            linear-gradient(135deg, var(--background) 0%, #eef8ef 44%, #f9fafb 100%);
+            radial-gradient(circle at 55% 50%, rgba(175, 244, 213, 0.82) 0, rgba(198, 249, 225, 0.48) 22%, transparent 47%),
+            radial-gradient(circle at 74% 3%, rgba(220, 252, 231, 0.8) 0, transparent 28%),
+            linear-gradient(105deg, #fbfefc 0%, #f2fbf6 46%, #eaf9ef 100%);
           overflow-x: hidden;
           overflow-y: auto;
         }
 
-        .patient-signup-shell {
-          width: min(100%, 1060px);
-          min-height: 620px;
-          display: grid;
-          grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr);
-          overflow: hidden;
-          border: 1px solid rgba(31, 111, 56, 0.12);
-          border-radius: 28px;
-          background: var(--white);
-          box-shadow: 0 28px 70px rgba(16, 24, 40, 0.16);
+        .patient-signup-page::before {
+          content: '';
+          position: absolute;
+          width: min(78vw, 900px);
+          height: min(78vw, 900px);
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%) scale(1);
+          background:
+            radial-gradient(circle at 43% 37%, rgba(0, 166, 63, 0.20), transparent 26%),
+            radial-gradient(circle at 62% 42%, rgba(0, 158, 87, 0.22), transparent 31%);
+          border-radius: 50%;
+          pointer-events: none;
+          filter: blur(1px);
+          opacity: 0.78;
+          transform-origin: center;
         }
 
-        .patient-signup-intro {
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          gap: 44px;
-          padding: 42px;
-          color: var(--white);
-          background:
-            linear-gradient(145deg, rgba(23, 79, 40, 0.96), rgba(31, 111, 56, 0.9)),
-            linear-gradient(135deg, var(--darker), var(--dark));
+        .patient-signup-shell {
+          position: relative;
+          z-index: 1;
+          width: min(100%, 1120px);
+          min-height: 680px;
+          display: grid;
+          grid-template-columns: minmax(440px, 560px) minmax(400px, 1fr);
+          column-gap: 64px;
+          align-items: center;
+        }
+
+        .patient-signup-left {
+          min-width: 0;
         }
 
         .patient-signup-brand {
           display: flex;
           align-items: center;
-          gap: 14px;
+          gap: 13px;
+          margin-bottom: 40px;
         }
 
         .patient-signup-logo {
           width: 48px;
           height: 48px;
-          border-radius: 14px;
-          display: flex;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
-          color: var(--white);
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.2);
+          line-height: 0;
+          border-radius: 12px;
+          color: #ffffff;
+          background: linear-gradient(135deg, #00A63F 0%, #009E57 100%);
+          box-shadow: 0 14px 26px rgba(0, 176, 91, 0.24);
           flex-shrink: 0;
         }
 
+        .patient-signup-brand-copy {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+        }
+
         .patient-signup-brand-name {
-          margin: 0;
-          font-size: 22px;
-          line-height: 1.1;
+          color: #111827;
+          font-size: 30px;
+          line-height: 1.08;
           font-weight: 800;
         }
 
         .patient-signup-brand-caption {
-          margin-top: 4px;
-          color: rgba(255, 255, 255, 0.74);
-          font-size: 12px;
-          font-weight: 600;
-        }
-
-        .patient-signup-copy h1 {
-          margin: 0;
-          color: var(--white);
-          font-size: 36px;
-          line-height: 1.12;
-          font-weight: 800;
-        }
-
-        .patient-signup-copy p:last-child {
-          margin-top: 18px;
-          color: rgba(255, 255, 255, 0.82);
-          font-size: 15px;
-          line-height: 1.7;
-        }
-
-        .patient-signup-kicker {
-          margin: 0 0 10px;
-          color: var(--primary);
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-
-        .patient-signup-intro .patient-signup-kicker {
-          color: var(--mint);
+          margin-top: 12px;
+          color: #475569;
+          font-size: 14px;
+          line-height: 1.25;
+          font-weight: 500;
         }
 
         .patient-signup-card {
-          padding: 38px;
-          background: var(--white);
+          width: 100%;
         }
 
         .patient-signup-header {
@@ -406,22 +398,31 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           align-items: flex-start;
           justify-content: space-between;
           gap: 18px;
-          margin-bottom: 26px;
+          margin-bottom: 24px;
         }
 
-        .patient-signup-header h2 {
+        .patient-signup-header h1 {
           margin: 0;
-          color: var(--gray-800);
-          font-size: 26px;
-          line-height: 1.2;
+          color: #111827;
+          font-size: 30px;
+          line-height: 1.18;
           font-weight: 800;
         }
 
         .patient-signup-header p:last-child {
           margin-top: 8px;
-          color: var(--gray-500);
+          color: #475569;
           font-size: 14px;
-          line-height: 1.55;
+          line-height: 1.6;
+        }
+
+        .patient-signup-kicker {
+          margin: 0 0 10px;
+          color: #00a34f;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0;
+          text-transform: uppercase;
         }
 
         .patient-signup-back {
@@ -430,11 +431,11 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           align-items: center;
           justify-content: center;
           gap: 7px;
-          border: 1px solid var(--gray-200);
+          border: 1px solid rgba(0, 176, 91, 0.24);
           border-radius: 12px;
           padding: 9px 13px;
-          background: var(--white);
-          color: var(--gray-700);
+          background: rgba(255, 255, 255, 0.72);
+          color: #334155;
           font-size: 13px;
           font-weight: 800;
           white-space: nowrap;
@@ -442,21 +443,21 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
         }
 
         .patient-signup-back:hover {
-          border-color: rgba(58, 170, 53, 0.3);
-          background: var(--mint);
-          color: var(--dark);
+          border-color: #54e890;
+          background: #dcfce7;
+          color: #047857;
         }
 
         .patient-signup-form {
           display: flex;
           flex-direction: column;
-          gap: 20px;
+          gap: 18px;
         }
 
         .patient-signup-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 16px;
+          gap: 16px 15px;
         }
 
         .patient-signup-field {
@@ -466,11 +467,10 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
         }
 
         .patient-signup-field label {
-          color: var(--gray-700);
-          font-size: 12px;
+          color: #334155;
+          font-size: 13px;
           font-weight: 800;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
+          letter-spacing: 0;
         }
 
         .patient-signup-input-wrap {
@@ -481,41 +481,42 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
 
         .patient-signup-input-wrap > svg {
           position: absolute;
-          left: 14px;
-          color: var(--gray-400);
+          left: 16px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #9aa4b2;
           pointer-events: none;
           transition: color .18s ease;
         }
 
         .patient-signup-input-wrap input {
           width: 100%;
-          min-height: 48px;
-          border: 1px solid var(--gray-200);
+          min-height: 54px;
+          border: 1.5px solid #9cf5bd;
           border-radius: 12px;
-          padding: 12px 44px;
-          background: var(--gray-50);
-          color: var(--gray-800);
+          padding: 13px 48px 13px 49px;
+          background: rgba(255, 255, 255, 0.92);
+          color: #1f2937;
           font-size: 14px;
+          font-weight: 600;
+          box-shadow: 0 1px 0 rgba(16, 185, 129, 0.04);
           transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
         }
 
         .patient-signup-input-wrap input::placeholder {
-          color: var(--gray-400);
+          color: #98a2b3;
+          font-weight: 600;
         }
 
         .patient-signup-input-wrap:focus-within > svg {
-          color: var(--primary);
+          color: #00a957;
         }
 
-        .patient-signup-input-wrap input:hover {
-          border-color: #c9d6ce;
-          background: var(--white);
-        }
-
+        .patient-signup-input-wrap input:hover,
         .patient-signup-input-wrap input:focus {
-          border-color: var(--primary);
+          border-color: #54e890;
           background: var(--white);
-          box-shadow: var(--focus-ring);
+          box-shadow: 0 0 0 4px rgba(84, 232, 144, 0.15);
         }
 
         .patient-signup-input-wrap input[aria-invalid="true"] {
@@ -526,6 +527,8 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
         .patient-signup-password-toggle {
           position: absolute;
           right: 9px;
+          top: 50%;
+          transform: translateY(-50%);
           width: 36px;
           height: 36px;
           display: inline-flex;
@@ -534,12 +537,12 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           border: 0;
           border-radius: 10px;
           background: transparent;
-          color: var(--gray-500);
+          color: #97a3b3;
         }
 
         .patient-signup-password-toggle:hover {
-          background: var(--mint);
-          color: var(--dark);
+          background: #dcfce7;
+          color: #037a3f;
         }
 
         .patient-signup-field-error {
@@ -585,24 +588,67 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           gap: 10px;
           border: 0;
           border-radius: 12px;
-          background: linear-gradient(135deg, var(--primary), var(--dark));
+          background: linear-gradient(90deg, #05c956 0%, #00a566 100%);
           color: var(--white);
           font-size: 14px;
           font-weight: 800;
-          box-shadow: 0 14px 24px rgba(58, 170, 53, 0.24);
+          box-shadow: 0 16px 28px rgba(0, 176, 91, 0.25);
           transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
         }
 
         .patient-signup-submit:hover:not(:disabled) {
           transform: translateY(-1px);
-          box-shadow: 0 18px 30px rgba(58, 170, 53, 0.3);
+          box-shadow: 0 20px 34px rgba(0, 176, 91, 0.3);
           filter: saturate(1.04);
         }
 
         .patient-signup-submit:disabled {
           cursor: not-allowed;
-          background: var(--gray-300);
+          background: #a7d9b8;
           box-shadow: none;
+        }
+
+        .patient-signup-hero {
+          min-width: 0;
+          min-height: 620px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+        }
+
+        .patient-signup-copy {
+          max-width: 530px;
+        }
+
+        .patient-signup-copy h2 {
+          margin: 0;
+          color: #0f172a;
+          font-size: 50px;
+          line-height: 0.98;
+          font-weight: 800;
+        }
+
+        .patient-signup-copy p {
+          margin: 22px auto 0;
+          max-width: 520px;
+          color: #475569;
+          font-size: 20px;
+          line-height: 1.44;
+          font-weight: 500;
+        }
+
+        .patient-signup-footer {
+          position: absolute;
+          left: 50%;
+          bottom: 14px;
+          z-index: 1;
+          transform: translateX(-50%);
+          color: #475569;
+          font-size: 12px;
+          font-weight: 500;
+          white-space: nowrap;
         }
 
         .patient-signup-spinner {
@@ -613,52 +659,76 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           to { transform: rotate(360deg); }
         }
 
-        @media (max-width: 960px) {
+        @media (max-width: 1160px) {
           .patient-signup-page {
-            padding: 24px;
-            align-items: flex-start;
+            padding: 30px 24px 54px;
           }
 
           .patient-signup-shell {
-            min-height: auto;
-            grid-template-columns: 1fr;
-            width: min(100%, 720px);
-          }
-
-          .patient-signup-intro {
-            min-height: auto;
-            padding: 32px;
-            gap: 28px;
-          }
-
-          .patient-signup-copy h1 {
-            font-size: 30px;
-          }
-
-          .patient-signup-card {
-            padding: 32px;
+            column-gap: 36px;
+            grid-template-columns: minmax(420px, 540px) minmax(360px, 1fr);
           }
         }
 
-        @media (max-width: 680px) {
+        @media (max-width: 940px) {
           .patient-signup-page {
-            padding: 16px;
+            align-items: flex-start;
+            overflow-y: auto;
           }
 
           .patient-signup-shell {
-            border-radius: 20px;
+            width: min(100%, 680px);
+            min-height: auto;
+            grid-template-columns: 1fr;
+            gap: 42px;
           }
 
-          .patient-signup-intro {
-            padding: 26px 20px;
+          .patient-signup-brand {
+            margin-bottom: 36px;
           }
 
-          .patient-signup-copy h1 {
+          .patient-signup-hero {
+            order: -1;
+            min-height: auto;
+            padding-top: 0;
+          }
+
+          .patient-signup-copy {
+            margin-top: 0;
+          }
+
+          .patient-signup-copy h2 {
+            font-size: 38px;
+            line-height: 1.04;
+          }
+
+          .patient-signup-copy p {
+            margin-top: 16px;
+            font-size: 17px;
+          }
+
+          .patient-signup-footer {
+            position: static;
+            transform: none;
+            margin-top: 20px;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .patient-signup-page {
+            padding: 22px 16px 28px;
+          }
+
+          .patient-signup-brand-name {
+            font-size: 25px;
+          }
+
+          .patient-signup-brand-caption {
+            margin-top: 8px;
+          }
+
+          .patient-signup-header h1 {
             font-size: 26px;
-          }
-
-          .patient-signup-card {
-            padding: 26px 20px;
           }
 
           .patient-signup-header {
@@ -672,6 +742,11 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           .patient-signup-grid {
             grid-template-columns: 1fr;
           }
+
+          .patient-signup-copy h2 {
+            font-size: 32px;
+          }
+
         }
       `}</style>
     </main>
