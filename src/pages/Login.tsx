@@ -156,7 +156,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
                   </>
                 ) : (
                   <>
-                    Entrar no Sistema
+                    Fazer Login
                     <ArrowRight size={19} aria-hidden="true" />
                   </>
                 )}
@@ -167,7 +167,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
               <div className="login-create-account">
                 <span>Nao tem uma conta?</span>
                 <button type="button" onClick={onCreateAccount}>
-                  Solicitar acesso
+                  Criar Conta
                 </button>
               </div>
             )}
