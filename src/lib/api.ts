@@ -31,6 +31,9 @@ export interface ApiSession {
 
 export interface ApiDoctor {
   id: string;
+  user_id?: string;
+  auth_user_id?: string;
+  profile_id?: string;
   full_name: string;
   email?: string;
   cpf?: string;
@@ -84,7 +87,7 @@ export interface CreateUserResponse {
 }
 
 export interface DeleteUserResponse {
-  success?: boolean;
+  success: boolean;
   message?: string;
   userId?: string;
 }
@@ -660,7 +663,7 @@ export const usersApi = {
     for (const path of candidates) {
       try {
         const response = await request<DeleteUserResponse>(path, { method: 'POST', body });
-        if (response.success === false) {
+        if (response.success !== true) {
           throw new Error(response.message || 'A API nao confirmou a exclusao do usuario.');
         }
         return response;

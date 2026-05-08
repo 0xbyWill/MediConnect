@@ -3,6 +3,7 @@ import type { HTMLAttributes } from 'react';
 import { UserCog, Plus, Pencil, Trash2, X, Shield, Search, RefreshCw } from 'lucide-react';
 import { doctorsApi, usersApi } from '../lib/api';
 import type { ApiDoctor, ApiManagedUser, ApiRole, CreateUserResponse } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import type { UserRole } from '../types';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
 import { formatPhoneBR, isValidEmail, isValidPhoneBR, normalizeEmail } from '../shared/utils/validation';
@@ -11,6 +12,7 @@ type StaffRole = Exclude<UserRole, 'paciente'>;
 
 interface UsuarioItem {
   id: string;
+  deleteId?: string;
   nome: string;
   email: string;
   role: StaffRole;
@@ -23,7 +25,8 @@ interface UsuarioItem {
   especialidade?: string;
 }
 
-type UsuarioForm = Omit<UsuarioItem, 'id'>;
+type UsuarioForm = Omit<UsuarioItem, 'id' | 'deleteId'>;
+type ToastState = { id: number; message: string };
 
 const STAFF_ROLES: StaffRole[] = ['medico', 'gestao', 'secretaria'];
 
@@ -64,6 +67,8 @@ const emptyForm: UsuarioForm = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DELETED_USER_KEYS_STORAGE = 'mc_deleted_user_keys';
+const DELETE_SUCCESS_MESSAGE = 'Usuário excluído com sucesso!';
 
 const cellBaseStyle: React.CSSProperties = {
   padding: '14px 20px',
@@ -106,6 +111,40 @@ function responseId(response: ApiDoctor | CreateUserResponse): string {
   return Date.now().toString();
 }
 
+function readDeletedUserKeys(): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(DELETED_USER_KEYS_STORAGE) || '[]') as unknown;
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function usuarioIdentityKeys(usuario: UsuarioItem): string[] {
+  return Array.from(new Set([
+    usuario.id ? `id:${usuario.id}` : '',
+    usuario.deleteId ? `id:${usuario.deleteId}` : '',
+    usuario.email ? `email:${normalizeEmail(usuario.email)}` : '',
+    usuario.cpf ? `cpf:${digitsOnly(usuario.cpf)}` : '',
+    usuario.crm ? `crm:${digitsOnly(usuario.crm)}:${usuario.crmUf?.trim().toUpperCase() ?? ''}` : '',
+  ].filter(Boolean)));
+}
+
+function filterDeletedUsuarios(items: UsuarioItem[], deletedKeys: string[]) {
+  const deleted = new Set(deletedKeys);
+  return items.filter(item => !usuarioIdentityKeys(item).some(key => deleted.has(key)));
+}
+
+function isAlreadyDeletedError(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('user not found') ||
+    normalized.includes('usuario alvo') ||
+    normalized.includes('usuário alvo') ||
+    normalized.includes('not found (404)')
+  );
+}
+
 function normalizeStaffRole(role?: string): StaffRole | null {
   const r = role?.toLowerCase().trim();
   if (r === 'medico' || r === 'doctor' || r === 'physician') return 'medico';
@@ -117,6 +156,7 @@ function normalizeStaffRole(role?: string): StaffRole | null {
 function doctorToUsuario(doctor: ApiDoctor): UsuarioItem {
   return {
     id: doctor.id,
+    deleteId: doctor.auth_user_id ?? doctor.user_id ?? doctor.profile_id ?? doctor.id,
     nome: doctor.full_name,
     email: doctor.email ?? '',
     role: 'medico',
@@ -134,6 +174,7 @@ function managedUserToUsuario(user: ApiManagedUser): UsuarioItem | null {
   if (!role) return null;
   return {
     id: user.id,
+    deleteId: user.id,
     nome: user.full_name,
     email: user.email,
     role,
@@ -150,6 +191,7 @@ function mergeUsuarios(items: UsuarioItem[]) {
 }
 
 export default function Usuarios() {
+  const { user: currentUser } = useAuth();
   const [usuarios, setUsuarios] = useState<UsuarioItem[]>([]);
   const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit'; data: UsuarioForm & { id?: string } }>({ open: false, mode: 'add', data: emptyForm });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -159,20 +201,43 @@ export default function Usuarios() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<ToastState | null>(null);
+  const [deletedUserKeys, setDeletedUserKeys] = useState<string[]>(readDeletedUserKeys);
   const [roleFilter, setRoleFilter] = useState<StaffRole | ''>('');
   const [search, setSearch] = useState('');
 
-  const loadUsuarios = useCallback(async () => {
+  const persistDeletedUserKeys = useCallback((keys: string[]) => {
+    setDeletedUserKeys(prev => {
+      const next = Array.from(new Set([...prev, ...keys]));
+      localStorage.setItem(DELETED_USER_KEYS_STORAGE, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const clearDeletedUserKeys = useCallback((keys: string[]) => {
+    if (keys.length === 0) return;
+    setDeletedUserKeys(prev => {
+      const remove = new Set(keys);
+      const next = prev.filter(key => !remove.has(key));
+      localStorage.setItem(DELETED_USER_KEYS_STORAGE, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const loadUsuarios = useCallback(async (extraDeletedKeys: string[] = [], restoredKeys: string[] = []) => {
     setLoadingUsers(true);
     try {
       const [doctors, managedUsers] = await Promise.all([
         doctorsApi.list().catch(() => [] as ApiDoctor[]),
         usersApi.list().catch(() => [] as ApiManagedUser[]),
       ]);
-      setUsuarios(mergeUsuarios([
+      const nextUsuarios = mergeUsuarios([
         ...doctors.map(doctorToUsuario),
         ...managedUsers.map(managedUserToUsuario).filter((user): user is UsuarioItem => Boolean(user)),
-      ]));
+      ]);
+      const restored = new Set(restoredKeys);
+      const blockedKeys = [...deletedUserKeys, ...extraDeletedKeys].filter(key => !restored.has(key));
+      setUsuarios(filterDeletedUsuarios(nextUsuarios, blockedKeys));
       setPageError(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao listar usuários.';
@@ -180,7 +245,7 @@ export default function Usuarios() {
     } finally {
       setLoadingUsers(false);
     }
-  }, []);
+  }, [deletedUserKeys]);
 
   useEffect(() => {
     void loadUsuarios();
@@ -188,11 +253,22 @@ export default function Usuarios() {
     return () => window.clearInterval(intervalId);
   }, [loadUsuarios]);
 
+  useEffect(() => {
+    if (!toastMessage) return undefined;
+    const timeoutId = window.setTimeout(() => setToastMessage(null), 2000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toastMessage]);
+
+  const showDeleteSuccessToast = useCallback(() => {
+    setToastMessage({ id: Date.now(), message: DELETE_SUCCESS_MESSAGE });
+  }, []);
+
   const openAdd = () => {
     setFormError(null);
     setDeleteError(null);
     setPageError(null);
     setSuccessMessage(null);
+    setToastMessage(null);
     setModal({ open: true, mode: 'add', data: { ...emptyForm } });
   };
 
@@ -201,6 +277,7 @@ export default function Usuarios() {
     setDeleteError(null);
     setPageError(null);
     setSuccessMessage(null);
+    setToastMessage(null);
     setModal({ open: true, mode: 'edit', data: { ...emptyForm, ...u } });
   };
 
@@ -317,9 +394,11 @@ export default function Usuarios() {
           especialidade: doctor?.specialty ?? payload.specialty,
         };
 
+        const restoredKeys = usuarioIdentityKeys(novo);
         setUsuarios(prev => [...prev, novo]);
+        clearDeletedUserKeys(restoredKeys);
         setSuccessMessage('Médico criado com sucesso.');
-        await loadUsuarios();
+        await loadUsuarios([], restoredKeys);
       } else {
         const payload = {
           email: normalizeEmail(data.email),
@@ -343,9 +422,11 @@ export default function Usuarios() {
           telefone: payload.phone,
         };
 
+        const restoredKeys = usuarioIdentityKeys(novo);
         setUsuarios(prev => [...prev, novo]);
+        clearDeletedUserKeys(restoredKeys);
         setSuccessMessage(response.message ?? 'Usuário criado com sucesso.');
-        await loadUsuarios();
+        await loadUsuarios([], restoredKeys);
       }
 
       resetModal();
@@ -357,17 +438,33 @@ export default function Usuarios() {
   };
 
   const handleDelete = async (id: string) => {
+    const usuario = usuarios.find(item => item.id === id || item.deleteId === id);
+    const deletedKeys = usuario ? usuarioIdentityKeys(usuario) : [`id:${id}`];
+    const targetId = usuario?.deleteId ?? id;
+
     setSaving(true);
     setDeleteError(null);
     setPageError(null);
     setSuccessMessage(null);
+    setToastMessage(null);
     try {
-      const response = await usersApi.deletePermanent(id);
-      setSuccessMessage(response.message ?? 'Usuário deletado permanentemente.');
+      await usersApi.deletePermanent(targetId);
+      persistDeletedUserKeys(deletedKeys);
+      setUsuarios(prev => filterDeletedUsuarios(prev, deletedKeys));
+      showDeleteSuccessToast();
       setConfirmDelete(null);
-      await loadUsuarios();
+      await loadUsuarios(deletedKeys);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao deletar usuário.';
+      if (isAlreadyDeletedError(msg)) {
+        persistDeletedUserKeys(deletedKeys);
+        setUsuarios(prev => filterDeletedUsuarios(prev, deletedKeys));
+        showDeleteSuccessToast();
+        setConfirmDelete(null);
+        setPageError(null);
+        await loadUsuarios(deletedKeys);
+        return;
+      }
       setDeleteError(msg);
       setPageError(msg);
     } finally {
@@ -386,8 +483,36 @@ export default function Usuarios() {
     return matchRole && matchSearch;
   });
 
+  const isCurrentUser = (usuario: UsuarioItem) =>
+    currentUser?.id === usuario.id ||
+    currentUser?.id === usuario.deleteId ||
+    normalizeEmail(currentUser?.email ?? '') === normalizeEmail(usuario.email);
+
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            top: 18,
+            right: 18,
+            zIndex: 1100,
+            maxWidth: 'min(360px, calc(100vw - 36px))',
+            padding: '12px 16px',
+            borderRadius: 10,
+            background: '#ecfdf5',
+            color: 'var(--primary)',
+            border: '1px solid var(--mint)',
+            boxShadow: '0 12px 30px rgba(0,0,0,0.12)',
+            fontSize: 13,
+            fontWeight: 800,
+          }}
+        >
+          {toastMessage.message}
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Gestão de Usuários</h1>
@@ -486,6 +611,7 @@ export default function Usuarios() {
           <tbody>
             {filteredUsuarios.map(u => {
               const rs = ROLE_COLOR[u.role];
+              const selfUser = isCurrentUser(u);
               return (
                 <tr key={u.id} style={{ borderBottom: '1px solid var(--gray-50)' }}>
                   <td style={cellBaseStyle}>
@@ -530,7 +656,16 @@ export default function Usuarios() {
                   <td style={cellBaseStyle}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                       <button onClick={() => openEdit(u)} style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber-600)' }}><Pencil size={14} /></button>
-                      <button onClick={() => { setDeleteError(null); setConfirmDelete(u.id); }} style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--red-500)' }}><Trash2 size={14} /></button>
+                      <button
+                        onClick={() => {
+                          if (selfUser) return;
+                          setDeleteError(null);
+                          setConfirmDelete(u.id);
+                        }}
+                        disabled={selfUser}
+                        title={selfUser ? 'A API nao permite excluir o proprio usuario' : 'Excluir usuario'}
+                        style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: selfUser ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: selfUser ? 'var(--gray-300)' : 'var(--red-500)' }}
+                      ><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
