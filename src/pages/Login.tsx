@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { ElementType, FormEvent } from 'react';
 import {
-  Activity,
   AlertCircle,
   ArrowRight,
   ClipboardList,
@@ -21,6 +20,8 @@ import { useAuth } from '../contexts/AuthContext';
 interface LoginProps {
   onCreateAccount?: () => void;
 }
+
+const PROJECT_MARK_SRC = '/mediconnect-mark.png';
 
 export default function Login({ onCreateAccount }: LoginProps) {
   const { login, loginMockPatient, loading, error, clearError } = useAuth();
@@ -65,7 +66,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
         <div className="login-left">
           <header className="login-logo-row" aria-label="MediConnect">
             <span className="login-logo-mark" aria-hidden="true">
-              <Activity size={29} strokeWidth={2.35} />
+              <img src={PROJECT_MARK_SRC} alt="" />
             </span>
             <span className="login-brand-copy">
               <span className="login-brand-name">MediConnect</span>
@@ -298,10 +299,19 @@ export default function Login({ onCreateAccount }: LoginProps) {
           justify-content: center;
           line-height: 0;
           border-radius: 12px;
-          color: #ffffff;
-          background: linear-gradient(135deg, #00A63F 0%, #009E57 100%);
-          box-shadow: 0 14px 26px rgba(0, 176, 91, 0.24);
+          background: #ffffff;
+          border: 1px solid rgba(0, 166, 63, 0.16);
+          box-shadow: 0 14px 26px rgba(0, 176, 91, 0.16);
           flex-shrink: 0;
+          overflow: hidden;
+          padding: 5px;
+        }
+
+        .login-logo-mark img {
+          width: 220%;
+          height: 220%;
+          display: block;
+          object-fit: contain;
         }
 
         .login-brand-copy {

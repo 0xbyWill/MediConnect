@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { ElementType, FormEvent, ReactNode } from 'react';
 import {
-  Activity,
   AlertCircle,
   ArrowLeft,
   ArrowRight,
@@ -23,6 +22,8 @@ import { formatPhoneBR, isValidEmail, isValidPhoneBR, normalizeEmail, normalizeP
 interface CadastroPacienteProps {
   onBackToLogin: () => void;
 }
+
+const PROJECT_MARK_SRC = '/mediconnect-mark.png';
 
 type FormState = {
   full_name: string;
@@ -138,7 +139,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
         <div className="patient-signup-left">
           <header className="patient-signup-brand" aria-label="MediConnect">
             <span className="patient-signup-logo" aria-hidden="true">
-              <Activity size={29} strokeWidth={2.35} />
+              <img src={PROJECT_MARK_SRC} alt="" />
             </span>
             <span className="patient-signup-brand-copy">
               <span className="patient-signup-brand-name">MediConnect</span>
@@ -362,10 +363,19 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
           justify-content: center;
           line-height: 0;
           border-radius: 12px;
-          color: #ffffff;
-          background: linear-gradient(135deg, #00A63F 0%, #009E57 100%);
-          box-shadow: 0 14px 26px rgba(0, 176, 91, 0.24);
+          background: #ffffff;
+          border: 1px solid rgba(0, 166, 63, 0.16);
+          box-shadow: 0 14px 26px rgba(0, 176, 91, 0.16);
           flex-shrink: 0;
+          overflow: hidden;
+          padding: 5px;
+        }
+
+        .patient-signup-logo img {
+          width: 220%;
+          height: 220%;
+          display: block;
+          object-fit: contain;
         }
 
         .patient-signup-brand-copy {

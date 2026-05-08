@@ -22,6 +22,8 @@ const ALL_NAV: { id: PageType; label: string; icon: React.ElementType; group: 'p
   { id: 'configuracoes', label: 'Configuracoes',     icon: Settings,        group: 'sistema' },
 ];
 
+const PROJECT_MARK_SRC = '/mediconnect-mark.png';
+
 export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
   const { user, logout } = useAuth();
   const role = user?.role ?? 'secretaria';
@@ -67,7 +69,7 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             style={{
               width: 40,
               height: 40,
-              background: 'rgba(255,255,255,0.12)',
+              background: '#fff',
               border: '1px solid rgba(255,255,255,0.18)',
               borderRadius: 12,
               display: 'flex',
@@ -75,9 +77,16 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
               justifyContent: 'center',
               boxShadow: 'none',
               flexShrink: 0,
+              overflow: 'hidden',
+              padding: 4,
             }}
           >
-            <Activity size={22} color="#fff" />
+            <img
+              src={PROJECT_MARK_SRC}
+              alt=""
+              aria-hidden="true"
+              style={{ width: '220%', height: '220%', display: 'block', objectFit: 'contain' }}
+            />
           </div>
           <div className="app-sidebar-label" style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: 0, lineHeight: 1.1, textAlign: 'center' }}>MediConnect</div>
