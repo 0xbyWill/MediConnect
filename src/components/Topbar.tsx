@@ -1,4 +1,19 @@
-import { Activity, BarChart2, Bell, Check, ChevronRight, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  BarChart2,
+  Bell,
+  Bot,
+  Calendar,
+  Check,
+  FileText,
+  Headset,
+  LayoutDashboard,
+  MessageSquare,
+  Settings,
+  Trash2,
+  UserCog,
+  Users,
+} from 'lucide-react';
 import { useState } from 'react';
 import type { PageType, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -30,6 +45,20 @@ const pageLabels: Record<PageType, string> = {
   configuracoes: 'Configuracoes',
 };
 
+const pageIcons: Record<PageType, React.ElementType> = {
+  dashboard: LayoutDashboard,
+  pacientes: Users,
+  agenda: Calendar,
+  laudos: FileText,
+  comunicacao: Headset,
+  mensagens: MessageSquare,
+  relatorios: BarChart2,
+  usuarios: UserCog,
+  metricas: Activity,
+  ia: Bot,
+  configuracoes: Settings,
+};
+
 const ROLE_LABEL: Record<UserRole, string> = {
   medico: 'Medico',
   gestao: 'Gestao / Coord.',
@@ -42,6 +71,7 @@ export default function Topbar({ currentPage, notifications = [], onMarkNotifica
   const [open, setOpen] = useState(false);
   const role = user?.role ?? 'secretaria';
   const unreadCount = notifications.filter(n => !n.read).length;
+  const PageIcon = pageIcons[currentPage];
 
   return (
     <header
@@ -49,28 +79,39 @@ export default function Topbar({ currentPage, notifications = [], onMarkNotifica
       style={{
         width: '100%',
         minWidth: 0,
-        minHeight: 'var(--topbar-h)',
+        height: 'var(--topbar-h)',
         flexShrink: 0,
-        background: 'rgba(255,255,255,0.88)',
-        borderBottom: '1px solid rgba(15,118,75,0.10)',
+        background: 'rgba(255,255,255,0.94)',
+        borderBottom: '1px solid var(--layout-line)',
         display: 'flex',
         alignItems: 'center',
         gap: 16,
-        padding: '12px clamp(16px, 2.4vw, 28px)',
-        flexWrap: 'wrap',
-        boxShadow: '0 8px 24px rgba(15,118,75,0.05)',
+        padding: '0 var(--app-gutter-x)',
+        flexWrap: 'nowrap',
+        boxShadow: 'none',
         backdropFilter: 'blur(18px)',
         position: 'relative',
         zIndex: 200,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#475569', fontSize: 13, minWidth: 0 }}>
-        <span style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 18px rgba(0,166,63,0.16)' }}>
-          <Activity size={17} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#475569', minWidth: 0 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            background: 'var(--mint)',
+            color: 'var(--primary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <PageIcon size={18} strokeWidth={2.4} />
         </span>
-        <BarChart2 size={14} />
-        <ChevronRight size={12} />
-        <span style={{ color: '#111827', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span style={{ color: '#111827', fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {pageLabels[currentPage]}
         </span>
       </div>
@@ -91,7 +132,7 @@ export default function Topbar({ currentPage, notifications = [], onMarkNotifica
               cursor: 'pointer',
               position: 'relative',
               transition: 'background .16s ease, border-color .16s ease, transform .16s ease',
-              boxShadow: 'var(--shadow-sm)',
+              boxShadow: 'none',
             }}
           >
             <Bell size={16} color="#334155" />
@@ -111,7 +152,7 @@ export default function Topbar({ currentPage, notifications = [], onMarkNotifica
                   fontWeight: 800,
                   display: 'grid',
                   placeItems: 'center',
-                  boxShadow: '0 8px 18px rgba(249,115,22,0.35)',
+                  boxShadow: 'none',
                   zIndex: 2,
                 }}
               >
@@ -121,8 +162,8 @@ export default function Topbar({ currentPage, notifications = [], onMarkNotifica
           </button>
 
           {open && (
-            <div style={{ position: 'absolute', top: 48, right: 0, width: 'min(360px, calc(100vw - 24px))', background: '#fff', border: '1px solid rgba(249,115,22,0.20)', borderRadius: 'var(--radius-md)', boxShadow: '0 22px 52px rgba(15,23,42,0.22)', zIndex: 1000, overflow: 'hidden' }}>
-              <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, background: 'linear-gradient(180deg, #fff 0%, var(--gray-50) 100%)' }}>
+            <div style={{ position: 'absolute', top: 48, right: 0, width: 'min(360px, calc(100vw - 24px))', background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', zIndex: 1000, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, background: '#fff' }}>
                 <strong style={{ fontSize: 13, color: 'var(--gray-800)' }}>Notificacoes</strong>
                 {notifications.length > 0 && (
                   <button onClick={onClearNotifications} title="Limpar notificacoes" style={{ border: 'none', background: 'none', color: 'var(--gray-400)', cursor: 'pointer', display: 'flex' }}>
@@ -161,7 +202,7 @@ export default function Topbar({ currentPage, notifications = [], onMarkNotifica
             borderRadius: 'var(--radius-md)',
             padding: '6px 12px 6px 6px',
             minWidth: 0,
-            boxShadow: 'var(--shadow-sm)',
+            boxShadow: 'none',
           }}
         >
           <div

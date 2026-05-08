@@ -595,7 +595,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 24, alignItems: 'start' }}>
-          <aside style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 14, boxShadow: 'var(--shadow-sm)', padding: 24, position: 'sticky', top: 0 }}>
+          <aside style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, boxShadow: 'none', padding: 22, position: 'sticky', top: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 22 }}>
               <Calendar size={20} color="var(--primary)" />
               <h2 style={{ fontSize: 17, fontWeight: 800, color: '#071327', margin: 0 }}>Calendario</h2>
@@ -655,7 +655,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
             </div>
           </aside>
 
-          <section style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 14, boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <section style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, boxShadow: 'none', overflow: 'hidden' }}>
             <div style={{ padding: '24px 24px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -664,11 +664,6 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                 </div>
                 <p style={{ fontSize: 13, color: '#475569', marginTop: 6, textTransform: 'lowercase' }}>{selectedDateLabel}</p>
               </div>
-              {canCreateAgendamento && (
-                <button type="button" onClick={() => openModal(undefined, selectedDate)} style={{ border: 'none', background: 'var(--primary)', color: '#fff', borderRadius: 10, padding: '12px 18px', fontSize: 14, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 12px 24px rgba(0,166,63,0.18)' }}>
-                  <Plus size={17} /> Novo Agendamento
-                </button>
-              )}
             </div>
 
             <div style={{ padding: '0 24px 14px', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>

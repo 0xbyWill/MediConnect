@@ -1,7 +1,7 @@
-// ─── Configuração Base ────────────────────────────────────────────────────────
+﻿// â”€â”€â”€ ConfiguraÃ§Ã£o Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import { request } from './httpClient';
 
-// ─── Tipos da API ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tipos da API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ApiUser {
   id: string;
   email: string;
@@ -475,7 +475,7 @@ async function writeReportWithStatusFallback<T>(operation: (data: Partial<ApiRep
   }
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const authApi = {
   login: (email: string, password: string) =>
     request<ApiSession>('/auth/v1/token?grant_type=password', {
@@ -490,7 +490,7 @@ export const authApi = {
     request<ApiUser>('/auth/v1/user'),
 };
 
-// ─── Usuários ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ UsuÃ¡rios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const usersApi = {
   currentInfo: () =>
     request<ApiUserInfo>('/functions/v1/user-info', { method: 'POST' }),
@@ -605,7 +605,6 @@ export const usersApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-
   update: async (userId: string, data: UpdateUserPayload) => {
     const body = JSON.stringify({ user_id: userId, userId, id: userId, ...data });
     const candidates = [
@@ -642,7 +641,7 @@ export const usersApi = {
       body: JSON.stringify(profilePayload),
     }, { Prefer: 'return=representation' });
 
-    return { success: true, message: 'Usuário atualizado.' };
+    return { success: true, message: 'UsuÃ¡rio atualizado.' };
   },
 
   requestPasswordReset: (email: string) =>
@@ -652,31 +651,42 @@ export const usersApi = {
     }),
 
   deletePermanent: async (userId: string) => {
-    const body = JSON.stringify({ userId, user_id: userId, id: userId });
+    const body = JSON.stringify({ userId });
     const candidates = [
-      '/delete-user',
       '/functions/v1/delete-user',
+      '/delete-user',
     ];
 
     for (const path of candidates) {
       try {
-        return await request<DeleteUserResponse>(path, { method: 'POST', body });
+        const response = await request<DeleteUserResponse>(path, { method: 'POST', body });
+        if (response.success === false) {
+          throw new Error(response.message || 'A API nao confirmou a exclusao do usuario.');
+        }
+        return response;
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
         const lowerMsg = msg.toLowerCase();
+        const targetUserNotFound =
+          lowerMsg.includes('usuario alvo') ||
+          lowerMsg.includes('usuÃ¡rio alvo');
         const canRetry =
-          msg.includes('404') ||
-          lowerMsg.includes('not found') ||
-          lowerMsg.includes('failed to fetch');
+          !targetUserNotFound && (
+            lowerMsg.includes('function not found') ||
+            lowerMsg.includes('endpoint') ||
+            lowerMsg.includes('failed to fetch') ||
+            lowerMsg === 'not found (404)' ||
+            lowerMsg === 'not found'
+          );
         if (!canRetry) throw err;
       }
     }
 
-    throw new Error('Endpoint de exclusao de usuario nao encontrado.');
+    throw new Error('Endpoint de exclusao de usuario nao encontrado. Faca o deploy da Supabase Edge Function delete-user.');
   },
 };
 
-// ─── Médicos ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ MÃ©dicos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const doctorsApi = {
   list: (params: { active?: boolean; specialty?: string } = {}) => {
     const q = new URLSearchParams({ select: '*' });
@@ -698,7 +708,7 @@ export const doctorsApi = {
     }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'medico atualizado')),
 };
 
-// ─── Pacientes ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Pacientes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const CREATE_PATIENT_URLS = ['/functions/v1/create-patient', '/create-patient'];
 
 export const patientsApi = {
@@ -782,7 +792,7 @@ export const patientsApi = {
   },
 };
 
-// ─── Agendamentos ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Agendamentos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const appointmentsApi = {
   list: (params: { doctor_id?: string; patient_id?: string; status?: string } = {}) => {
     const q = new URLSearchParams({ select: '*', order: 'scheduled_at.asc' });
@@ -824,8 +834,8 @@ export const appointmentsApi = {
   },
 };
 
-// ─── Laudos / Reports ─────────────────────────────────────────────────────────
-// ─── Disponibilidade / Slots ─────────────────────────────────────────────────
+// â”€â”€â”€ Laudos / Reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ Disponibilidade / Slots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const availabilityApi = {
   list: (params: { doctor_id?: string; weekday?: number; active?: boolean; appointment_type?: string } = {}) => {
     const q = new URLSearchParams({ select: '*' });
@@ -917,7 +927,7 @@ export const reportsApi = {
     request<void>(`/rest/v1/reports?id=eq.${id}`, { method: 'DELETE' }),
 };
 
-// ─── SMS ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ SMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const smsApi = {
   send: (data: SendSmsPayload) =>
     request<SendSmsResponse>('/functions/v1/send-sms', {

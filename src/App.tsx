@@ -430,7 +430,7 @@ export default function App() {
   };
 
   return (
-    <div className="mc-app-shell" style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', background: 'linear-gradient(135deg, var(--background) 0%, #eef8ef 100%)' }}>
+    <div className="mc-app-shell" style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', background: 'var(--background)' }}>
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate}/>
 
       <div style={{ flex: 1, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
@@ -476,6 +476,7 @@ export default function App() {
             <Pacientes
               pacientes={pacientes} onAdd={addPaciente} onUpdate={updatePaciente}
               onDelete={deletePaciente}
+              agendamentos={agendamentos} laudos={laudos} doctors={doctors}
               initialOpen={openPacienteModal} readOnly={user.role === 'secretaria'} allowDelete={user.role === 'gestao'}
             />
           )}

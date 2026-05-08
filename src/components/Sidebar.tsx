@@ -1,8 +1,7 @@
 import { LayoutDashboard, Users, Calendar, FileText, Settings, MessageSquare, BarChart2, UserCog, Activity, LogOut, Headset, Bot } from 'lucide-react';
-import type { PageType, UserRole } from '../types';
+import type { PageType } from '../types';
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { initials } from '../shared/utils/text';
 
 interface SidebarProps {
   currentPage: PageType;
@@ -22,13 +21,6 @@ const ALL_NAV: { id: PageType; label: string; icon: React.ElementType; group: 'p
   { id: 'ia',            label: 'Assistente IA',     icon: Bot,             group: 'gestao' },
   { id: 'configuracoes', label: 'Configuracoes',     icon: Settings,        group: 'sistema' },
 ];
-
-const ROLE_LABEL: Record<UserRole, string> = {
-  medico: 'Medico',
-  gestao: 'Gestao',
-  secretaria: 'Secretaria',
-  paciente: 'Paciente',
-};
 
 export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
   const { user, logout } = useAuth();
@@ -51,86 +43,47 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         flexShrink: 0,
         height: '100dvh',
         minHeight: 0,
-        background: 'linear-gradient(180deg, #00A13D 0%, #00945C 100%)',
+        background: '#008f51',
         borderRight: '1px solid rgba(255,255,255,0.18)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 10,
-        boxShadow: '12px 0 34px rgba(0,77,40,0.26)',
-        backdropFilter: 'blur(18px)',
+        boxShadow: 'none',
       }}
     >
-      <div className="app-sidebar-logo" style={{ padding: '20px 18px 18px', borderBottom: '1px solid rgba(255,255,255,0.18)' }}>
-        <div className="app-sidebar-brand-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div
+        className="app-sidebar-logo"
+        style={{
+          height: 'var(--topbar-h)',
+          flexShrink: 0,
+          padding: '0 16px',
+          borderBottom: '1px solid rgba(255,255,255,0.18)',
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
+        <div className="app-sidebar-brand-row" style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
           <div
             style={{
               width: 40,
               height: 40,
-              background: 'rgba(255,255,255,0.14)',
-              border: '1px solid rgba(255,255,255,0.24)',
+              background: 'rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.18)',
               borderRadius: 12,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 14px 24px rgba(0,75,40,0.18)',
+              boxShadow: 'none',
               flexShrink: 0,
             }}
           >
             <Activity size={22} color="#fff" />
           </div>
-          <div className="app-sidebar-label">
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: 0 }}>MediConnect</div>
-            <div className="app-sidebar-subtitle" style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.78)', marginTop: 3 }}>
-              Gestao Inteligente de Saude
-            </div>
+          <div className="app-sidebar-label" style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: 0, lineHeight: 1.1, textAlign: 'center' }}>MediConnect</div>
           </div>
         </div>
       </div>
-
-      {user && (
-        <div className="app-sidebar-profile" style={{ padding: 14, borderBottom: '1px solid rgba(255,255,255,0.18)' }}>
-          <div
-            className="app-sidebar-profile-card"
-            style={{
-              background: 'rgba(255,255,255,0.10)',
-              borderRadius: 'var(--radius-md)',
-              padding: 10,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              border: '1px solid rgba(255,255,255,0.24)',
-            }}
-          >
-            <div
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 'var(--radius-sm)',
-                flexShrink: 0,
-                background: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 11,
-                fontWeight: 800,
-                color: 'var(--primary)',
-              }}
-            >
-              {initials(user.full_name)}
-            </div>
-            <div className="app-sidebar-user-copy" style={{ overflow: 'hidden' }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user.full_name}
-              </div>
-              <div style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#d9ffe8', flexShrink: 0 }} />
-                <span style={{ color: '#d9ffe8', fontWeight: 700 }}>{ROLE_LABEL[role]}</span>
-                {user.specialty && <span style={{ color: 'rgba(255,255,255,0.70)' }}>- {user.specialty}</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <nav className="app-sidebar-nav" style={{ padding: '12px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {groups.map(group => (
@@ -172,8 +125,8 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
                     background: active ? 'rgba(255,255,255,0.18)' : 'transparent',
                     width: '100%',
                     textAlign: 'left',
-                    transition: 'background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease, box-shadow .16s ease',
-                    boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,0.16), 0 12px 24px rgba(0,74,38,0.12)' : 'none',
+                    transition: 'background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease',
+                    boxShadow: 'none',
                   }}
                   onMouseEnter={event => {
                     if (!active) {

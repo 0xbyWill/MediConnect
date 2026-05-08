@@ -42,7 +42,7 @@ export async function request<T>(
       details?: string;
       hint?: string;
     };
-    throw new Error(
+    const message =
       apiError.message ||
       apiError.msg ||
       apiError.error_description ||
@@ -50,8 +50,9 @@ export async function request<T>(
       apiError.detail ||
       apiError.details ||
       apiError.hint ||
-      `Erro na requisicao (${res.status})`
-    );
+      res.statusText ||
+      'Erro na requisicao';
+    throw new Error(`${message} (${res.status})`);
   }
 
   const text = await res.text();
