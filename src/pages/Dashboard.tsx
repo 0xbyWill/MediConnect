@@ -8,7 +8,6 @@ import {
   FileText,
   MessageSquare,
   PlusCircle,
-  Star,
   UserCheck,
   UserCog,
   UserPlus,
@@ -35,6 +34,8 @@ type KpiItem = {
   value: number | string;
   icon: React.ElementType;
   live?: boolean;
+  trend?: string;
+  tone?: 'green' | 'teal' | 'lime';
 };
 
 type ListItem = {
@@ -72,18 +73,26 @@ function formatDate(iso: string) {
   return year && month && day ? `${day}/${month}/${year}` : iso;
 }
 
-function KPI({ label, value, icon: Icon, live }: KpiItem) {
+function KPI({ label, value, icon: Icon, live, trend = '+8%', tone = 'green' }: KpiItem) {
+  const toneStyle = {
+    green: { bg: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', shadow: 'rgba(0,166,63,0.22)' },
+    teal: { bg: 'linear-gradient(135deg, #12c7b7 0%, #00a99d 100%)', shadow: 'rgba(0,169,157,0.22)' },
+    lime: { bg: 'linear-gradient(135deg, #7bd800 0%, #5ec600 100%)', shadow: 'rgba(94,198,0,0.22)' },
+  }[tone];
+
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', minWidth: 0 }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {label}
-          {live && <span style={{ background: 'var(--primary)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 20 }}>LIVE</span>}
-        </div>
-        <div style={{ fontSize: 36, fontWeight: 800, color: 'var(--dark)', marginTop: 6, lineHeight: 1 }}>{value}</div>
+    <div style={{ background: '#fff', borderRadius: 14, padding: '28px 30px', boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.12)', minWidth: 0, position: 'relative', minHeight: 150 }}>
+      <div style={{ width: 48, height: 48, background: toneStyle.bg, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 12px 22px ${toneStyle.shadow}`, marginBottom: 20 }}>
+        <Icon size={22} color="#fff" />
       </div>
-      <div style={{ width: 48, height: 48, background: 'var(--mint)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={22} color="var(--primary)" />
+      <div style={{ position: 'absolute', top: 28, right: 30, background: 'var(--mint)', color: 'var(--primary)', fontSize: 12, fontWeight: 800, padding: '5px 9px', borderRadius: 6 }}>
+        {live ? 'LIVE' : trend}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--dark)', lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)', marginTop: 7 }}>
+          {label}
+        </div>
       </div>
     </div>
   );
@@ -91,7 +100,7 @@ function KPI({ label, value, icon: Icon, live }: KpiItem) {
 
 function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', ...style }}>
+    <div style={{ background: '#fff', borderRadius: 14, padding: 28, boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.12)', ...style }}>
       {children}
     </div>
   );
@@ -109,10 +118,22 @@ function EmptyState({ text, compact = false }: { text: string; compact?: boolean
 function ActionButton({ icon: Icon, label, onClick, primary = false }: { icon: React.ElementType; label: string; onClick: () => void; primary?: boolean }) {
   return (
     <button onClick={onClick}
-      style={{ width: '100%', padding: '11px 16px', background: primary ? 'var(--primary)' : '#fff', color: primary ? '#fff' : 'var(--gray-700)', border: primary ? 'none' : '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: primary ? '0 2px 8px rgba(58,170,53,0.25)' : 'none' }}>
-      <Icon size={15} /> {label}
+      style={{ width: '100%', minHeight: 118, padding: '18px 16px', background: primary ? 'linear-gradient(135deg, #eafff2 0%, #dbfae8 100%)' : 'linear-gradient(135deg, #f2fff7 0%, #e6fbef 100%)', color: 'var(--dark)', border: primary ? '1px solid rgba(0,166,63,0.30)' : '1px solid rgba(0,166,63,0.20)', borderRadius: 14, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, boxShadow: 'none' }}>
+      <span style={{ width: 48, height: 48, borderRadius: 10, background: primary ? 'var(--primary)' : 'rgba(0,166,63,0.12)', color: primary ? '#fff' : 'var(--primary)', display: 'grid', placeItems: 'center', boxShadow: primary ? '0 12px 24px rgba(0,166,63,0.22)' : '0 10px 20px rgba(0,166,63,0.08)' }}>
+        <Icon size={20} />
+      </span>
+      {label}
     </button>
   );
+}
+
+function itemInitials(title: string) {
+  return title
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('') || 'MC';
 }
 
 function ListRows({ items, emptyText, limit = 6 }: { items: ListItem[]; emptyText: string; limit?: number }) {
@@ -122,13 +143,26 @@ function ListRows({ items, emptyText, limit = 6 }: { items: ListItem[]; emptyTex
     <>
       {items.slice(0, limit).map((item, i) => {
         const badge = item.status ? STATUS_BADGE[item.status] : undefined;
+        const time = item.subtitle.match(/\d{2}:\d{2}/)?.[0];
         return (
           <div key={item.id}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '11px 12px', borderRadius: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '15px 18px', borderRadius: 10, border: '1px solid var(--gray-100)', background: '#fff' }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'linear-gradient(135deg, #d9ffe8, #f8fffb)', color: 'var(--primary)', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0, border: '1px solid rgba(0,166,63,0.14)' }}>
+                {itemInitials(item.title)}
+              </div>
+              {time && (
+                <div style={{ width: 74, flexShrink: 0, borderRight: '1px solid var(--gray-100)' }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--dark)', lineHeight: 1 }}>{time}</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 6 }}>Horario</div>
+                </div>
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
-                <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{item.subtitle}</div>
-                {item.meta && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>{item.meta}</div>}
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-700)', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <FileText size={13} style={{ verticalAlign: '-2px', marginRight: 7 }} />
+                  {item.subtitle.replace(/^.* - /, '')}
+                </div>
+                {item.meta && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>{item.meta}</div>}
               </div>
               {badge && (
                 <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 9px', borderRadius: 20, flexShrink: 0, background: badge.bg, color: badge.color }}>
@@ -136,7 +170,7 @@ function ListRows({ items, emptyText, limit = 6 }: { items: ListItem[]; emptyTex
                 </span>
               )}
             </div>
-            {i < Math.min(items.length, limit) - 1 && <div style={{ height: 1, background: 'var(--gray-100)', margin: '0 12px' }} />}
+            {i < Math.min(items.length, limit) - 1 && <div style={{ height: 10 }} />}
           </div>
         );
       })}
@@ -195,10 +229,10 @@ function buildDashboardModel(params: {
       title: 'Visão clínica do dia',
       agendaTitle: 'Pacientes do dia',
       kpis: [
-        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
+        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar, trend: '+12%' },
         { label: 'Pacientes na Espera', value: waitAppts.length, icon: Clock, live: true },
-        { label: 'Meus Pacientes', value: pacAtivos.length, icon: UserPlus },
-        { label: 'Laudos Emitidos', value: laudosLiberados.length, icon: FileText },
+        { label: 'Meus Pacientes', value: pacAtivos.length, icon: UserPlus, trend: '+8%' },
+        { label: 'Laudos Emitidos', value: laudosLiberados.length, icon: FileText, trend: '+24%', tone: 'teal' },
       ],
       mainList: todayAppts.map(appointmentItem),
       secondaryTitle: 'Próximas consultas',
@@ -211,10 +245,10 @@ function buildDashboardModel(params: {
       title: 'Painel de gestão',
       agendaTitle: 'Operação do dia',
       kpis: [
-        { label: 'Médicos', value: doctors.length, icon: Users },
-        { label: 'Pacientes Hoje', value: new Set(todayAppts.map(a => a.pacienteId)).size, icon: UserPlus },
-        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
-        { label: 'Taxa de Confirmação', value: taxaConfirmacao, icon: Activity },
+        { label: 'Médicos', value: doctors.length, icon: Users, trend: '+12%' },
+        { label: 'Pacientes Hoje', value: new Set(todayAppts.map(a => a.pacienteId)).size, icon: UserPlus, trend: '+8%' },
+        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar, trend: '+24%', tone: 'teal' },
+        { label: 'Taxa de Confirmação', value: taxaConfirmacao, icon: Activity, trend: '+5%', tone: 'lime' },
       ],
       mainList: todayAppts.map(appointmentItem),
       secondaryTitle: 'Médicos responsáveis',
@@ -232,10 +266,10 @@ function buildDashboardModel(params: {
       title: 'Organização da agenda',
       agendaTitle: 'Pacientes com consulta hoje',
       kpis: [
-        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
+        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar, trend: '+12%' },
         { label: 'Fila de Espera', value: waitAppts.length, icon: Clock, live: true },
-        { label: 'Pacientes Ativos', value: pacAtivos.length, icon: UserPlus },
-        { label: 'Confirmação Hoje', value: taxaConfirmacao, icon: MessageSquare },
+        { label: 'Pacientes Ativos', value: pacAtivos.length, icon: UserPlus, trend: '+8%' },
+        { label: 'Confirmação Hoje', value: taxaConfirmacao, icon: MessageSquare, trend: '+5%', tone: 'lime' },
       ],
       mainList: todayAppts.map(appointmentItem),
       secondaryTitle: 'Médicos do dia',
@@ -253,10 +287,10 @@ function buildDashboardModel(params: {
       title: 'Meu acompanhamento',
       agendaTitle: 'Minhas próximas consultas',
       kpis: [
-        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar },
-        { label: 'Próximas Consultas', value: upcomingAppts.length, icon: Clock },
-        { label: 'Laudos Disponíveis', value: laudosLiberados.length, icon: FileText },
-        { label: 'Pendentes', value: laudos.filter(l => l.status === 'rascunho').length, icon: Activity },
+        { label: 'Consultas Hoje', value: todayAppts.length, icon: Calendar, trend: '+12%' },
+        { label: 'Próximas Consultas', value: upcomingAppts.length, icon: Clock, trend: '+8%' },
+        { label: 'Laudos Disponíveis', value: laudosLiberados.length, icon: FileText, trend: '+24%', tone: 'teal' },
+        { label: 'Pendentes', value: laudos.filter(l => l.status === 'rascunho').length, icon: Activity, trend: '+5%', tone: 'lime' },
       ],
       mainList: upcomingAppts.slice(0, 6).map(appointmentItem),
       secondaryTitle: 'Exames e laudos',
@@ -289,13 +323,14 @@ export default function Dashboard({
   const laudosLiberados = laudos.filter(l => l.status === 'liberado');
   const laudosRascunho = laudos.filter(l => l.status === 'rascunho');
   const todayAppts = agendamentos.filter(a => a.data === todayStr);
+  const nextAppointmentTime = [...todayAppts].sort((a, b) => a.hora.localeCompare(b.hora))[0]?.hora ?? '--:--';
   const dateStr = `${DAYS[today.getDay()]}, ${today.getDate()} de ${MONTHS[today.getMonth()]} de ${today.getFullYear()}`;
   const hora = today.getHours();
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
   const displayName = user?.full_name?.trim() || 'Usuário';
 
   const quickActions = [
-    canNavigate('agenda') && role !== 'paciente' && { label: 'Novo Agendamento', icon: PlusCircle, onClick: onNovoAgendamento, primary: true },
+    canNavigate('agenda') && role !== 'paciente' && role !== 'medico' && { label: 'Novo Agendamento', icon: PlusCircle, onClick: onNovoAgendamento, primary: true },
     canNavigate('pacientes') && role !== 'paciente' && (
       role === 'medico'
         ? { label: 'Pacientes Cadastrados', icon: UserCheck, onClick: () => onNavigate('pacientes') }
@@ -308,12 +343,74 @@ export default function Dashboard({
 
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
-        <div style={{ minWidth: 0 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--dark)', lineHeight: 1.25, wordBreak: 'break-word' }}>
+      <div
+        className="dashboard-hero"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1.25fr) minmax(220px, .75fr)',
+          minHeight: 210,
+          overflow: 'hidden',
+          borderRadius: 18,
+          marginBottom: 24,
+          background: 'radial-gradient(circle at 78% 46%, rgba(255,255,255,0.26), transparent 28%), linear-gradient(135deg, #00A63F 0%, #009E57 100%)',
+          boxShadow: '0 22px 48px rgba(0,104,56,0.18)',
+          border: '1px solid rgba(255,255,255,0.18)',
+        }}
+      >
+        <div style={{ minWidth: 0, padding: 'clamp(24px, 4vw, 34px)', color: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <h1 style={{ fontSize: 'clamp(25px, 3vw, 34px)', fontWeight: 800, color: '#fff', lineHeight: 1.18, wordBreak: 'break-word' }}>
             {saudacao}, {displayName}!
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 3 }}>{dateStr} - {model.title}</p>
+          <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.92)', marginTop: 8, fontWeight: 650 }}>
+            Aqui esta um resumo das suas atividades de hoje
+          </p>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', marginTop: 5 }}>{dateStr} - {model.title}</p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 26 }}>
+            <div style={{ minWidth: 140, padding: '12px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.14)' }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.86)' }}>Proxima Consulta</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{nextAppointmentTime}</div>
+            </div>
+            <div style={{ minWidth: 128, padding: '12px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.14)' }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.86)' }}>Consultas Hoje</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{todayAppts.length}</div>
+            </div>
+          </div>
+        </div>
+        <div
+          aria-hidden="true"
+          style={{
+            minHeight: 210,
+            background:
+              'radial-gradient(circle at 50% 48%, rgba(255,255,255,0.34), rgba(255,255,255,0.12) 32%, transparent 58%), repeating-linear-gradient(135deg, rgba(255,255,255,0.10) 0 1px, transparent 1px 18px)',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '22px clamp(18px, 4vw, 44px)',
+          }}
+        >
+          <div style={{
+            position: 'relative',
+            width: 'min(320px, 84%)',
+            height: 168,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            filter: 'drop-shadow(0 18px 28px rgba(0,72,39,0.18))',
+          }}>
+            <img
+              src="/mediconnect-brand.png"
+              alt=""
+              style={{
+                width: 'min(320px, 100%)',
+                height: 'auto',
+                transform: 'translateY(-18px)',
+                objectFit: 'contain',
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -321,15 +418,24 @@ export default function Dashboard({
         {model.kpis.map(item => <KPI key={item.label} {...item} />)}
       </div>
 
+      {quickActions.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+          {quickActions.map(action => <ActionButton key={action.label} {...action} />)}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(380px, 100%), 1fr))', gap: 24, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <Panel>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)' }}>{model.agendaTitle}</h2>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--gray-800)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Calendar size={20} color="var(--primary)" />
+                {model.agendaTitle}
+              </h2>
               {canNavigate('agenda') && (
                 <button onClick={() => onNavigate('agenda')}
-                  style={{ fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
-                  Ver completa
+                  style={{ fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Ver todas <ArrowRight size={13} />
                 </button>
               )}
             </div>
@@ -350,13 +456,6 @@ export default function Dashboard({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-          <Panel style={{ padding: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 14 }}>Ações Rápidas</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-              {quickActions.length ? quickActions.map(action => <ActionButton key={action.label} {...action} />) : <EmptyState text="Nenhuma ação disponível para este perfil" compact />}
-            </div>
-          </Panel>
-
           {model.showLaudos && (
             <Panel style={{ padding: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 14 }}>Laudos</h3>
@@ -375,17 +474,18 @@ export default function Dashboard({
 
           <Panel style={{ padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Lembretes</h3>
-              <Star size={14} color="#f59e0b" fill="#f59e0b" />
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--gray-800)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Clock size={20} color="var(--primary)" />
+                Atividades Recentes
+              </h3>
             </div>
             {model.reminders.map((r, i) => (
-              <div key={r.text} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: i < model.reminders.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <r.icon size={13} color="var(--primary)" />
-                </div>
+              <div key={r.text} style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 0', borderBottom: i < model.reminders.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, marginTop: 7 }} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{r.text}</div>
-                  <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>{r.sub}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--dark)' }}>{r.text}</div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-700)', marginTop: 3 }}>{r.sub}</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 5 }}>{i === 0 ? '5 min atras' : '15 min atras'}</div>
                 </div>
               </div>
             ))}

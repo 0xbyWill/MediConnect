@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, Plus, Eye, Pencil, Trash2, X, Camera, User,
   Filter, Calendar, ChevronDown, Phone, MapPin, Gauge,
-  AlertCircle, Clock, CheckCircle2,
+  AlertCircle, ArrowLeft, FileText, Mail,
 } from 'lucide-react';
 import type { Paciente, ConvenioType, StatusPaciente } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -37,6 +37,14 @@ const FORM_TABS = [
   { id: 'prioridade', label: 'Prioridade' },
   { id: 'convenio',  label: 'Convênio' },
   { id: 'obs',       label: 'Observações' },
+];
+
+const PROFILE_TABS = [
+  { id: 'resumo', label: 'Resumo' },
+  { id: 'dados', label: 'Dados Pessoais' },
+  { id: 'historico', label: 'Histórico Médico' },
+  { id: 'prontuarios', label: 'Prontuários' },
+  { id: 'receitas', label: 'Receitas' },
 ];
 
 const HEALTH_CONDITION_OPTIONS = [
@@ -400,6 +408,7 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
 }) {
   const inputId = React.useId();
   const errorId = `${inputId}-error`;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
       <label htmlFor={inputId} style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -521,6 +530,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const [showFiltroAvancado, setShowFiltroAvancado] = useState(false);
   const [filtroPrioridade, setFiltroPrioridade] = useState('');
   const [visibleCount, setVisibleCount]   = useState(20);
+  const [profilePatient, setProfilePatient] = useState<PacienteExtended | null>(null);
+  const [profileTab, setProfileTab] = useState('resumo');
   const loaderRef = useRef<HTMLDivElement>(null);
 
   // ── Estados do modal ──
@@ -585,9 +596,8 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   };
   const openView = (p: Paciente) => {
     const data = { ...emptyForm, ...p, cpf: formatCpf(p.cpf) };
-    setModal({ open: true, mode: 'view', data });
-    setShowResponsavel(hasResponsibleData(data));
-    setActiveTab('dados');
+    setProfilePatient(data);
+    setProfileTab('resumo');
   };
   const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); setShowResponsavel(false); };
 
@@ -688,59 +698,157 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   // ─── IMC calculado ───
   const imc = calcIMC(d.peso || '', d.altura || '');
   const priority = calculatePatientPriority(d);
+  const modalAge = ageFromBirthDate(d.dataNasc);
+
+  if (profilePatient) {
+    const p = profilePatient;
+    const profileAge = ageFromBirthDate(p.dataNasc);
+    const profilePriority = calculatePatientPriority(p);
+    const weight = p.peso && p.peso !== 'null' ? p.peso : '—';
+    const height = p.altura && p.altura !== 'null' ? p.altura : '—';
+    const profileImc = calcIMC(p.peso || '', p.altura || '') || '—';
+    const profileContact = [
+      { label: 'Celular', value: displayPhone(p.telefone), icon: Phone },
+      { label: 'E-mail', value: p.email || '—', icon: Mail },
+      { label: 'Endereço', value: [p.logradouro, p.numero, p.bairro, p.cidade].filter(Boolean).join(', ') || '—', icon: MapPin },
+    ];
+
+    return (
+      <div style={{ flex: 1, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '24px clamp(18px, 4vw, 36px) 36px', minHeight: 0 }}>
+          <section style={{ overflow: 'hidden', borderRadius: 18, background: '#fff', border: '1px solid rgba(15,118,75,0.12)', boxShadow: '0 18px 38px rgba(0,104,56,0.14)' }}>
+            <div style={{ padding: '24px clamp(22px, 3vw, 34px)', background: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', color: '#fff' }}>
+              <button onClick={() => setProfilePatient(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: 'none', background: 'none', color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: 800, cursor: 'pointer', padding: 0, marginBottom: 18 }}>
+                <ArrowLeft size={16} /> Voltar
+              </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 18, alignItems: 'center', minWidth: 0 }}>
+                  <div style={{ width: 96, height: 96, borderRadius: '50%', background: 'rgba(255,255,255,0.94)', color: '#52735f', display: 'grid', placeItems: 'center', fontSize: 30, fontWeight: 800, overflow: 'hidden', flexShrink: 0 }}>
+                    {p.foto ? <img src={p.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : initials(p.nome)}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <h1 style={{ fontSize: 26, fontWeight: 800, color: '#071327', lineHeight: 1.15, margin: 0 }}>{p.nome}</h1>
+                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.88)', marginTop: 8 }}>{p.convenio || 'Particular'} · {profileAge !== null ? `${profileAge} anos` : 'idade não informada'} · {p.dataNasc || 'nascimento não informado'}</p>
+                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.74)', marginTop: 3 }}>CPF: {displayCpf(p.cpf)}</p>
+                    <span style={{ display: 'inline-flex', marginTop: 12, padding: '5px 12px', borderRadius: 999, background: 'rgba(221,251,233,0.18)', color: '#eafff2', fontSize: 12, fontWeight: 800 }}>{p.status}</span>
+                  </div>
+                </div>
+                <button onClick={() => { openEdit(p); setProfilePatient(null); }} style={{ padding: '10px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.42)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Editar cadastro</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', marginTop: 26, borderRadius: 14, background: 'rgba(255,255,255,0.18)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.18)' }}>
+                {[
+                  ['0', 'Consultas'],
+                  ['0', 'Prontuários'],
+                  ['0', 'Receitas'],
+                  [profilePriority.total ? String(profilePriority.total) : '—', 'Score'],
+                  [p.ultimoAtendimento ? formatDateTime(p.ultimoAtendimento).split(' ')[0] : '—', 'Última visita'],
+                ].map(([value, label]) => (
+                  <div key={label} style={{ padding: '18px 10px', textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.14)' }}>
+                    <div style={{ color: '#fff', fontSize: 18, fontWeight: 800 }}>{value}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.66)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', background: '#fff', borderBottom: '1px solid var(--gray-100)' }}>
+              {PROFILE_TABS.map(tab => (
+                <button key={tab.id} onClick={() => setProfileTab(tab.id)} style={{ padding: '14px 18px', border: 'none', borderBottom: `2px solid ${profileTab === tab.id ? 'var(--primary)' : 'transparent'}`, background: 'transparent', color: profileTab === tab.id ? 'var(--primary)' : 'var(--gray-600)', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{tab.label}</button>
+              ))}
+            </div>
+          </section>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 18, marginTop: 18 }}>
+            {[
+              ['Próxima consulta', p.proximoAtendimento ? formatDateTime(p.proximoAtendimento) : 'Nenhuma consulta agendada.'],
+              ['Últimas consultas', p.ultimoAtendimento ? `Último atendimento em ${formatDateTime(p.ultimoAtendimento)}` : 'Sem histórico de consultas.'],
+              ['Sinais vitais', `Peso: ${weight} · Altura: ${height} · IMC: ${profileImc}`],
+            ].map(([title, value]) => (
+              <div key={title} style={{ background: 'rgba(255,255,255,0.94)', borderRadius: 14, border: '1px solid rgba(15,118,75,0.12)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+                <div style={{ padding: '15px 18px', background: '#fbfefd', borderBottom: '1px solid var(--gray-100)', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--dark)' }}>{title}</div>
+                <div style={{ padding: 20, fontSize: 13, color: 'var(--gray-500)', fontStyle: 'italic', minHeight: 58 }}>{value}</div>
+              </div>
+            ))}
+            <div style={{ background: 'rgba(255,255,255,0.94)', borderRadius: 14, border: '1px solid rgba(15,118,75,0.12)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+              <div style={{ padding: '15px 18px', background: '#fbfefd', borderBottom: '1px solid var(--gray-100)', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--dark)' }}>Contato</div>
+              <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {profileContact.map(item => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingBottom: 12, borderBottom: '1px solid var(--gray-100)' }}>
+                      <Icon size={16} color="var(--primary)" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.7 }}>{item.label}</div>
+                        <div style={{ fontSize: 13, color: 'var(--dark)', marginTop: 4 }}>{item.value}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {profileTab !== 'resumo' && (
+            <div style={{ marginTop: 18, padding: 20, borderRadius: 14, background: '#fff', border: '1px solid rgba(15,118,75,0.12)', boxShadow: 'var(--shadow-sm)', color: 'var(--gray-600)', fontSize: 13 }}>
+              <FileText size={18} color="var(--primary)" style={{ verticalAlign: '-4px', marginRight: 8 }} />
+              Esta seção mantém a estrutura do prontuário e será preenchida conforme os dados vinculados ao paciente estiverem disponíveis.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ─── Renderização ────────────────────────────────────────────────────────────
   return (
-    <div style={{ flex: 1, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ flex: 1, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
       {/* ── Área scrollável ── */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '30px clamp(18px, 4vw, 36px) 36px', minHeight: 0 }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dark)' }}>Pacientes</h1>
-            <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
-              {readOnly ? 'Cadastro e consulta de pacientes' : 'Gerencie as informações de seus pacientes'}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12, textAlign: 'center' }}>
+          <div style={{ width: '100%' }}>
+            <h1 style={{ fontSize: 30, fontWeight: 800, color: '#071327', lineHeight: 1.15, margin: 0 }}>Gerenciar Pacientes</h1>
+            <p style={{ fontSize: 14, color: '#334155', marginTop: 8 }}>
+              {readOnly ? 'Visualize os pacientes cadastrados' : 'Visualize e gerencie os pacientes cadastrados'}
             </p>
           </div>
-          {!hideAddButton && (
-            <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
-              <Plus size={16} /> Adicionar
-            </button>
-          )}
         </div>
 
         {/* Filtros */}
-        <div style={{ background: '#fff', borderRadius: 14, padding: '14px 18px', marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)' }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ background: 'rgba(255,255,255,0.86)', borderRadius: 14, padding: '24px', marginBottom: 24, boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.10)' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {/* Busca */}
-            <div style={{ flex: 2, minWidth: 200, position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
+            <div style={{ flex: 2, minWidth: 260, position: 'relative' }}>
+              <Search size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
               <input value={search} onChange={e => { setSearch(e.target.value); setVisibleCount(20); }}
-                placeholder="Buscar por nome, CPF ou telefone..."
-                style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }} />
-            </div>
-
-            {/* Convênio */}
-            <div style={{ flex: 1, minWidth: 160, position: 'relative' }}>
-              <User size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
-              <select value={filterConvenio} onChange={e => setFilterConvenio(e.target.value)}
-                style={{ width: '100%', padding: '9px 12px 9px 30px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)', cursor: 'pointer', appearance: 'none' }}>
-                <option value="">Selecione o Convênio</option>
-                {CONVENIOS.map(c => <option key={c}>{c}</option>)}
-              </select>
+                placeholder="Buscar paciente por nome, telefone..."
+                style={{ width: '100%', minHeight: 50, padding: '12px 14px 12px 42px', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 14, outline: 'none', background: '#fff' }} />
             </div>
 
             {/* Filtro avançado */}
             <button onClick={() => setShowFiltroAvancado(v => !v)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8, border: `1px solid ${showFiltroAvancado ? 'var(--primary)' : 'var(--gray-200)'}`, background: showFiltroAvancado ? 'var(--mint)' : 'var(--gray-50)', fontSize: 13, fontWeight: 600, color: showFiltroAvancado ? 'var(--dark)' : 'var(--gray-500)', cursor: 'pointer' }}>
-              <Filter size={14} /> Filtro avançado <ChevronDown size={12} style={{ transform: showFiltroAvancado ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+              style={{ minHeight: 50, display: 'flex', alignItems: 'center', gap: 8, padding: '12px 18px', borderRadius: 10, border: `1px solid ${showFiltroAvancado ? 'var(--primary)' : 'var(--gray-200)'}`, background: showFiltroAvancado ? 'var(--mint)' : '#fff', fontSize: 14, fontWeight: 800, color: showFiltroAvancado ? 'var(--dark)' : '#071327', cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
+              <Filter size={18} /> Filtros <ChevronDown size={14} style={{ transform: showFiltroAvancado ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
             </button>
+            {!hideAddButton && (
+              <button onClick={openAdd} style={{ minHeight: 50, display: 'flex', alignItems: 'center', gap: 8, padding: '12px 22px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,166,63,0.22)' }}>
+                <Plus size={16} /> Novo Paciente
+              </button>
+            )}
           </div>
 
           {/* Filtro avançado expandido */}
           {showFiltroAvancado && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--gray-100)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <label htmlFor="patient-insurance-filter" style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Convênio</label>
+                <select id="patient-insurance-filter" value={filterConvenio} onChange={e => setFilterConvenio(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 13, outline: 'none', background: 'var(--gray-50)' }}>
+                  <option value="">Todos</option>
+                  {CONVENIOS.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
               <div style={{ flex: 1, minWidth: 140 }}>
                 <label htmlFor="patient-priority-filter" style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Prioridade</label>
                 <select id="patient-priority-filter" value={filtroPrioridade} onChange={e => setFiltroPrioridade(e.target.value)}
@@ -758,12 +866,12 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
         </div>
 
         {/* Tabela */}
-        <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)', overflow: 'auto', maxWidth: '100%' }}>
+        <div style={{ background: 'rgba(255,255,255,0.92)', borderRadius: 14, boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.10)', overflow: 'auto', maxWidth: '100%' }}>
           <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
-                {['Nome', 'Telefone', 'Prioridade', 'Último atendimento', 'Próximo atendimento', 'Ações'].map(h => (
-                  <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
+                {['Nome', 'Telefone', 'Prioridade', 'Último Atendimento', 'Próximo Atendimento', 'Ações'].map(h => (
+                  <th key={h} style={{ padding: '18px 24px', textAlign: 'left', fontSize: 13, fontWeight: 800, color: '#071327', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -773,67 +881,48 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 const priority = calculatePatientPriority(ext);
                 return (
                   <tr key={p.id}
-                    style={{ borderBottom: '1px solid var(--gray-50)', transition: 'background .1s', background: highlightId === p.id ? 'var(--mint)' : undefined }}
+                    style={{ borderBottom: '1px solid var(--gray-100)', transition: 'background .1s', background: highlightId === p.id ? 'var(--mint)' : undefined }}
                     onMouseEnter={e => { if (highlightId !== p.id) (e.currentTarget as HTMLTableRowElement).style.background = 'var(--gray-50)'; }}
                     onMouseLeave={e => { if (highlightId !== p.id) (e.currentTarget as HTMLTableRowElement).style.background = ''; }}>
 
                     {/* Nome */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: 50, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--dark)', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+                    <td style={{ padding: '18px 24px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 50, background: '#d9ffe8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'var(--primary)', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
                           {p.foto ? <img src={p.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : initials(p.nome)}
                         </div>
                         <div>
                           <button onClick={() => openView(p)}
-                            style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+                            style={{ fontSize: 14, fontWeight: 800, color: 'var(--dark)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
                             {p.nome}
                           </button>
-                          <div
-                            title={`CPF: ${displayCpf(p.cpf)}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--gray-500)', marginTop: 4, padding: '2px 7px', borderRadius: 999, background: 'var(--gray-50)', border: '1px solid var(--gray-100)', fontVariantNumeric: 'tabular-nums' }}>
-                            <span style={{ fontWeight: 700, color: 'var(--gray-400)' }}>CPF</span>
-                            <span>{displayCpf(p.cpf)}</span>
-                          </div>
                         </div>
                       </div>
                     </td>
 
                     {/* Telefone */}
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <Phone size={12} color="var(--gray-400)" />
-                        {displayPhone(p.telefone)}
-                      </div>
+                    <td style={{ padding: '18px 24px', fontSize: 14, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>
+                      {displayPhone(p.telefone)}
                     </td>
 
                     {/* Prioridade */}
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--gray-600)' }}>
+                    <td style={{ padding: '18px 24px', fontSize: 14, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>
                       <PriorityBadge level={priority.level} incomplete={priority.missing.length > 0} />
                     </td>
 
                     {/* Último atendimento */}
-                    <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <Clock size={12} color="var(--gray-400)" />
-                        {formatDateTime(ext.ultimoAtendimento || '')}
-                      </div>
+                    <td style={{ padding: '18px 24px', fontSize: 13, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>
+                      {formatDateTime(ext.ultimoAtendimento || '')}
                     </td>
 
                     {/* Próximo atendimento */}
-                    <td style={{ padding: '12px 16px', fontSize: 12, whiteSpace: 'nowrap' }}>
-                      {ext.proximoAtendimento ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--primary)' }}>
-                          <CheckCircle2 size={12} />
-                          {formatDateTime(ext.proximoAtendimento)}
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>Nenhum atendimento agendado</span>
-                      )}
+                    <td style={{ padding: '18px 24px', fontSize: 13, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>
+                      {ext.proximoAtendimento ? formatDateTime(ext.proximoAtendimento) : 'Nenhum atendimento agendado'}
                     </td>
 
                     {/* Ações */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', gap: 2 }}>
+                    <td style={{ padding: '18px 24px' }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <ActionBtn icon={Eye} color="var(--primary)" title="Ver prontuário" onClick={() => openView(p)} />
                         <ActionBtn icon={Pencil} color="#d97706" title="Editar" onClick={() => openEdit(p)} />
                         <ActionBtn icon={Calendar} color="#7c3aed" title="Marcar consulta" onClick={() => {}} />
@@ -876,16 +965,22 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
       {/* ─── Modal de Cadastro/Edição/Visualização ─────────────────────────── */}
       {modal.open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>
-          <div style={{ background: '#fff', borderRadius: 20, width: 'min(1080px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: isView ? '#f4f6f5' : '#fff', borderRadius: isView ? 0 : 20, width: isView ? 'min(1180px, calc(100vw - 24px))' : 'min(1080px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
 
             {/* Cabeçalho do modal */}
-            <div style={{ padding: '20px 24px 0', borderBottom: '1px solid var(--gray-100)' }}>
+            <div style={{
+              padding: isView ? '18px 24px 0' : '20px 24px 0',
+              borderBottom: '1px solid var(--gray-100)',
+              background: isView
+                ? 'linear-gradient(135deg, #00A63F 0%, #009E57 100%), repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 22px), repeating-linear-gradient(0deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 22px)'
+                : '#fff',
+            }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
                   {/* Avatar */}
-                  <div style={{ width: 52, height: 52, borderRadius: 50, background: 'var(--mint)', border: '2px solid var(--light)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', flexShrink: 0, cursor: !isView ? 'pointer' : 'default' }}
+                  <div style={{ width: isView ? 96 : 52, height: isView ? 96 : 52, borderRadius: 50, background: isView ? 'rgba(255,255,255,0.92)' : 'var(--mint)', border: isView ? '1px solid rgba(255,255,255,0.80)' : '2px solid var(--light)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', flexShrink: 0, cursor: !isView ? 'pointer' : 'default', color: isView ? '#667f70' : 'var(--light)', fontSize: isView ? 30 : 12, fontWeight: 800 }}
                     onClick={() => !isView && fileRef.current?.click()}>
-                    {d.foto ? <img src={d.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : <User size={22} color="var(--light)" />}
+                    {d.foto ? <img src={d.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : isView ? initials(d.nome || 'Paciente') : <User size={22} color="var(--light)" />}
                     {!isView && (
                       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity .2s' }}
                         onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.opacity = '1'; }}
@@ -895,18 +990,51 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     )}
                   </div>
                   <div>
-                    <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-800)' }}>
-                      {modal.mode === 'add' ? 'Dados do Paciente' : modal.mode === 'edit' ? 'Editar Paciente' : 'Prontuário'}
+                    <h2 style={{ fontSize: isView ? 24 : 17, fontWeight: 800, color: isView ? '#fff' : 'var(--gray-800)' }}>
+                      {modal.mode === 'add' ? 'Dados do Paciente' : modal.mode === 'edit' ? 'Editar Paciente' : d.nome || 'Prontuário'}
                     </h2>
-                    <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-                      {modal.mode === 'add' ? 'Preencha os dados abaixo para cadastrar' : d.nome || 'Visualização completa'}
+                    <div style={{ fontSize: 12, color: isView ? 'rgba(255,255,255,0.86)' : 'var(--gray-400)', marginTop: 6, lineHeight: 1.7 }}>
+                      {modal.mode === 'add'
+                        ? 'Preencha os dados abaixo para cadastrar'
+                        : isView
+                          ? `${d.convenio || 'Particular'} · ${modalAge !== null ? `${modalAge} anos` : 'idade não informada'} · ${d.dataNasc || 'nascimento não informado'}`
+                          : d.nome || 'Visualização completa'}
+                      {isView && <><br />CPF: {displayCpf(d.cpf)}</>}
                     </div>
+                    {isView && (
+                      <span style={{ display: 'inline-flex', marginTop: 10, padding: '5px 12px', borderRadius: 999, background: 'rgba(0,166,63,0.22)', color: '#dff8ea', fontSize: 12, fontWeight: 800 }}>
+                        {d.status}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <button onClick={closeModal} disabled={saving} style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--gray-100)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: saving ? 0.6 : 1 }}>
-                  <X size={15} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {isView && (
+                    <button onClick={() => setModal(m => ({ ...m, mode: 'edit' }))} style={{ padding: '10px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.30)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      Editar cadastro
+                    </button>
+                  )}
+                  <button onClick={closeModal} disabled={saving} style={{ width: 32, height: 32, borderRadius: 8, background: isView ? 'rgba(255,255,255,0.12)' : 'var(--gray-100)', border: isView ? '1px solid rgba(255,255,255,0.24)' : 'none', color: isView ? '#fff' : 'var(--gray-700)', cursor: saving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: saving ? 0.6 : 1 }}>
+                    <X size={15} />
+                  </button>
+                </div>
               </div>
+              {isView && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(110px, 1fr))', gap: 0, marginTop: 20, borderRadius: 14, background: 'rgba(255,255,255,0.10)', overflow: 'hidden' }}>
+                  {[
+                    ['0', 'Consultas'],
+                    ['0', 'Prontuários'],
+                    ['0', 'Receitas'],
+                    [priority.total ? String(priority.total) : '—', 'Score'],
+                    [d.ultimoAtendimento ? formatDateTime(d.ultimoAtendimento).split(' ')[0] : '—', 'Última visita'],
+                  ].map(([value, label]) => (
+                    <div key={label} style={{ padding: '16px 10px', textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.16)' }}>
+                      <div style={{ color: '#fff', fontSize: 18, fontWeight: 800 }}>{value}</div>
+                      <div style={{ color: 'rgba(255,255,255,0.64)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
 
               {/* Aviso de duplicidade */}

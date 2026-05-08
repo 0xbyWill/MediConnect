@@ -7,17 +7,17 @@
 }
 
 :root {
-  --primary:       #3aaa35;
-  --primary-hover: #32972f;
-  --dark:          #1f6f38;
-  --darker:        #174f28;
-  --light:         #72c55c;
-  --mint:          #def5df;
-  --background:    #f4faf5;
+  --primary:       #00A63F;
+  --primary-hover: #009E57;
+  --dark:          #0f172a;
+  --darker:        #064e3b;
+  --light:         #75e79d;
+  --mint:          #ddfbe9;
+  --background:    #e8faef;
   --white:         #ffffff;
-  --gray-50:  #f9fafb;
-  --gray-100: #f3f4f6;
-  --gray-200: #e5e7eb;
+  --gray-50:  #fbfefd;
+  --gray-100: #edf4f1;
+  --gray-200: #dbe7e2;
   --gray-300: #d1d5db;
   --gray-400: #9ca3af;
   --gray-500: #6b7280;
@@ -33,11 +33,11 @@
   --sidebar-w: 228px;
   --sidebar-compact-w: 76px;
   --topbar-h:  64px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --shadow-sm: 0 1px 2px rgba(20, 83, 45, 0.06), 0 1px 8px rgba(20, 83, 45, 0.04);
-  --shadow-md: 0 10px 28px rgba(16, 24, 40, 0.12);
-  --focus-ring: 0 0 0 3px rgba(58, 170, 53, 0.24);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(0, 104, 56, 0.08);
+  --shadow-md: 0 18px 42px rgba(0, 87, 48, 0.16);
+  --focus-ring: 0 0 0 3px rgba(0, 166, 63, 0.22);
 }
 
 html, body, #root {
@@ -48,7 +48,10 @@ html, body, #root {
 
 body {
   font-family: 'Montserrat', sans-serif;
-  background: var(--background);
+  background:
+    radial-gradient(circle at 78% 12%, rgba(126, 231, 165, 0.42), transparent 31%),
+    radial-gradient(circle at 58% 50%, rgba(0, 166, 63, 0.10), transparent 34%),
+    linear-gradient(105deg, #f9fffb 0%, var(--background) 50%, #dff8ea 100%);
   color: var(--gray-800);
   overflow: hidden;
   line-height: 1.45;
@@ -98,6 +101,76 @@ textarea {
 ::-webkit-scrollbar-thumb { background: #c7d7cb; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: #9fb6a6; border: 2px solid transparent; background-clip: content-box; }
 
+.mc-app-shell {
+  background:
+    radial-gradient(circle at 82% 10%, rgba(117, 231, 157, 0.48), transparent 32%),
+    radial-gradient(circle at 56% 48%, rgba(0, 166, 63, 0.14), transparent 36%),
+    linear-gradient(105deg, #f8fffb 0%, var(--background) 52%, #dcf7e7 100%) !important;
+}
+
+.mc-app-main {
+  background: transparent !important;
+}
+
+.mc-app-main > div {
+  scrollbar-gutter: stable;
+}
+
+.mc-app-main h1 {
+  color: #071327 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+}
+
+.mc-app-main h2,
+.mc-app-main h3 {
+  color: #071327 !important;
+  letter-spacing: 0 !important;
+}
+
+.mc-app-main input,
+.mc-app-main select,
+.mc-app-main textarea {
+  border-color: #d5e4de !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-radius: 12px !important;
+}
+
+.mc-app-main input:focus,
+.mc-app-main select:focus,
+.mc-app-main textarea:focus {
+  border-color: #86efac !important;
+  box-shadow: var(--focus-ring) !important;
+}
+
+.mc-app-main table thead tr {
+  background: #fbfefd !important;
+}
+
+.mc-app-main table th {
+  color: #071327 !important;
+  font-weight: 800 !important;
+}
+
+.mc-app-main table tr {
+  border-color: #dbe7e2 !important;
+}
+
+.mc-app-main button {
+  letter-spacing: 0 !important;
+}
+
+.mc-app-main button[style*="var(--primary)"],
+.mc-app-main button[style*="#00a"],
+.mc-app-main button[style*="#05c"] {
+  box-shadow: 0 12px 24px rgba(0, 166, 63, 0.18) !important;
+}
+
+.mc-app-main [style*="box-shadow: 0 1px 4px"],
+.mc-app-main [style*="boxShadow: 0 1px 4px"] {
+  box-shadow: var(--shadow-sm) !important;
+}
+
 .app-sidebar,
 .app-topbar {
   transition: width .2s ease, padding .2s ease, box-shadow .2s ease;
@@ -108,6 +181,10 @@ textarea {
 .app-sidebar-user-copy,
 .app-topbar-user-copy {
   min-width: 0;
+}
+
+.dashboard-hero {
+  grid-template-columns: minmax(0, 1.25fr) minmax(220px, .75fr);
 }
 
 @media (max-width: 760px) {
@@ -148,6 +225,14 @@ textarea {
   }
 
   .app-topbar-user-copy {
+    display: none !important;
+  }
+
+  .dashboard-hero {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-hero > div[aria-hidden="true"] {
     display: none !important;
   }
 }

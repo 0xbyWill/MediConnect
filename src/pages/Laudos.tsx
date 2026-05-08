@@ -240,6 +240,15 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   // Controla se o editor já foi inicializado para evitar sobrescrever o DOM
   const editorInitialized         = useRef(false);
 
+  const resizeEditorToContent = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const minHeight = showEditorPanel ? 520 : 650;
+    editor.style.minHeight = `${minHeight}px`;
+    editor.style.height = 'auto';
+    editor.style.height = `${Math.max(minHeight, editor.scrollHeight)}px`;
+  }, [showEditorPanel]);
+
   // ── FIX #2: Inicializa o innerHTML do editor UMA vez ao montar / ao abrir ──
   // Remove o uso de dangerouslySetInnerHTML no contentEditable
   useEffect(() => {
@@ -248,11 +257,17 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         editorContent || (isMedico ? '<br/>' : '<p style="color:#aaa">Somente médicos podem editar este laudo.</p>')
       );
       editorInitialized.current = true;
+      requestAnimationFrame(resizeEditorToContent);
     }
     if (view !== 'editor') {
       editorInitialized.current = false;
     }
-  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [resizeEditorToContent, view]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (view !== 'editor') return;
+    requestAnimationFrame(resizeEditorToContent);
+  }, [editorContent, fonte, resizeEditorToContent, tamanho, view]);
 
   useEffect(() => {
     return () => {
@@ -711,9 +726,9 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           <style>
             @page { size: A4; margin: 0; }
             * { box-sizing: border-box; }
-            body { margin: 0; background: #d9dde3; font-family: Arial, Helvetica, sans-serif; color: #101828; }
-            .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 13mm; border: 1px solid #23352b; position: relative; }
-            .topline { position: absolute; left: 0; right: 0; top: 0; height: 4mm; background: #155e36; }
+            body { margin: 0; background: #e3f7ed; font-family: Arial, Helvetica, sans-serif; color: #101828; }
+            .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 13mm; border: 1px solid #1aa966; position: relative; overflow: visible; }
+            .topline { position: absolute; left: 0; right: 0; top: 0; height: 4mm; background: linear-gradient(135deg, #00A63F 0%, #009E57 100%); }
             header { display: grid; grid-template-columns: 34mm 1fr 34mm; gap: 8mm; align-items: center; border-bottom: 1px solid #d0d5dd; padding: 7mm 0 5mm; }
             .logo { height: 24mm; border: 1px solid #98a2b3; display: flex; align-items: center; justify-content: center; color: #155e36; font-weight: 800; font-size: 10px; text-align: center; text-transform: uppercase; }
             .clinic { text-align: center; font-size: 10px; line-height: 1.5; color: #475467; }
@@ -727,13 +742,15 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             .field { padding: 6px 8px; border-right: 1px solid #e4e7ec; border-bottom: 1px solid #e4e7ec; }
             .field:nth-child(2n) { border-right: 0; }
             .field span { display: block; color: #667085; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
-            main { min-height: 132mm; position: relative; z-index: 1; font-size: 12px; line-height: 1.65; }
-            main h3 { font-size: 11px; margin: 15px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: #155e36; }
+            main { min-height: 132mm; position: relative; z-index: 1; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+            main * { max-width: 100%; overflow-wrap: anywhere; }
+            main p, main div, main li { break-inside: auto; page-break-inside: auto; }
+            main h3 { font-size: 11px; margin: 15px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: #009E57; }
             .watermark { position: absolute; inset: 92mm 0 auto; text-align: center; font-size: 88px; color: rgba(16,24,40,.045); font-weight: 900; transform: rotate(-18deg); pointer-events: none; }
-            .signature { margin-top: 18mm; margin-left: auto; width: 78mm; text-align: center; font-size: 11px; color: #344054; }
+            .signature { margin-top: 18mm; margin-left: auto; width: 78mm; text-align: center; font-size: 11px; color: #344054; break-inside: avoid; page-break-inside: avoid; }
             .line { border-top: 1px solid #101828; padding-top: 6px; font-weight: 800; color: #101828; }
-            footer { position: absolute; left: 13mm; right: 13mm; bottom: 10mm; border-top: 1px solid #d0d5dd; padding-top: 5mm; font-size: 9px; color: #667085; text-align: center; }
-            @media print { body { background: #fff; } .page { margin: 0; } }
+            footer { margin-top: 10mm; border-top: 1px solid #d0d5dd; padding-top: 5mm; font-size: 9px; color: #667085; text-align: center; break-inside: avoid; page-break-inside: avoid; }
+            @media print { body { background: #fff; } .page { margin: 0; border: 0; } }
           </style>
         </head>
         <body>
@@ -1023,20 +1040,21 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     // editorContent foi salvo via handleGoPreview antes de desmontar o editor
     const conteudoPreview = sanitizeHtml(resolveCampos(editorContent));
     return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', zIndex: 2000 }}>
-        <div style={{ background: 'var(--dark)', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 72, 35, 0.34)', display: 'flex', flexDirection: 'column', zIndex: 2000 }}>
+        <div style={{ background: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, boxShadow: '0 12px 28px rgba(0, 158, 87, 0.22)' }}>
           <h2 style={{ color: '#fff', fontSize: 16, fontWeight: 700, margin: 0 }}>Pré-visualização de Laudo</h2>
-          <button onClick={() => setView('editor')} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+          <button onClick={() => setView('editor')} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
             <X size={16} />
           </button>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 32, background: '#e5e7eb' }}>
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 32, background: 'linear-gradient(135deg, #e9fbf1 0%, #d9f7e7 100%)' }}>
           <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center', transition: 'transform .2s' }}>
             <div style={{
-              width: 794, minHeight: 1123, background: '#fff',
-              padding: '60px 72px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              width: 794, minHeight: 1123, height: 'auto', background: '#fff',
+              padding: '60px 72px', boxShadow: '0 18px 42px rgba(0, 112, 65, 0.18), 0 3px 10px rgba(15, 23, 42, 0.12)',
               fontFamily: fonte, fontSize: `${tamanho}pt`, lineHeight: 1.6, color: '#111',
+              overflow: 'visible',
             }}>
               <div style={{ textAlign: 'center', borderBottom: '2px solid #111', paddingBottom: 16, marginBottom: 32 }}>
                 <h1 style={{ fontSize: 16, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', margin: 0 }}>
@@ -1051,7 +1069,17 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
               )}
 
               {/* FIX XSS: conteúdo sanitizado antes de renderizar */}
-              <div dangerouslySetInnerHTML={{ __html: conteudoPreview }} style={{ minHeight: 400 }} />
+              <div
+                dangerouslySetInnerHTML={{ __html: conteudoPreview }}
+                style={{
+                  minHeight: 400,
+                  display: 'block',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.75,
+                }}
+              />
 
               {editingLaudo.cid && (
                 <div style={{ marginTop: 24, fontSize: 12 }}><strong>CID:</strong> {editingLaudo.cid}</div>
@@ -1074,8 +1102,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           </div>
         </div>
 
-        <div style={{ background: 'var(--dark)', padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 30, padding: '6px 12px' }}>
+        <div style={{ background: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, boxShadow: '0 -12px 28px rgba(0, 158, 87, 0.18)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.24)', borderRadius: 30, padding: '6px 12px' }}>
             <button onClick={() => setZoom(z => Math.max(50, z - 10))} style={previewBtnStyle}><ZoomOut size={15} /></button>
             <button onClick={() => setZoom(z => Math.min(150, z + 10))} style={previewBtnStyle}><ZoomIn size={15} /></button>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
@@ -1083,7 +1111,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             <button onClick={() => exportLaudo()} style={previewBtnStyle}><Download size={14} /></button>
           </div>
           <button onClick={() => setView('editor')}
-            style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
             Voltar
           </button>
         </div>
@@ -1109,7 +1137,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             <div>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>{isNew ? 'Novo Laudo' : 'Editar Laudo'}</h2>
               <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>
-                Status: <span style={{ fontWeight: 700, color: editingLaudo.status === 'liberado' ? '#7c3aed' : 'var(--amber-600)' }}>
+                Status: <span style={{ fontWeight: 700, color: editingLaudo.status === 'liberado' ? 'var(--primary)' : 'var(--amber-600)' }}>
                   {editingLaudo.status === 'liberado' ? 'Liberado' : 'A descrever'}
                 </span>
               </div>
@@ -1295,7 +1323,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           flex: 1,
           overflowY: 'auto',
           padding: showEditorPanel ? '28px 24px' : '18px 18px',
-          background: '#c8cdd4',          /* cinza escuro tipo "mesa" */
+          background: 'linear-gradient(135deg, #e9fbf1 0%, #d9f7e7 100%)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -1304,19 +1332,19 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           <div style={{
             width: showEditorPanel ? 794 : 'min(980px, calc(100vw - 64px))',
             minHeight: 1123,              /* altura mínima A4 a 96dpi */
+            height: 'auto',
             background: '#ffffff',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.2)',
+            boxShadow: '0 18px 42px rgba(0, 112, 65, 0.18), 0 3px 10px rgba(15, 23, 42, 0.12)',
             padding: '44px 48px 52px',
             boxSizing: 'border-box',
-            display: 'flex',
-            flexDirection: 'column',
+            display: 'block',
             position: 'relative',
             marginBottom: 32,
-            border: '1px solid #23352b',
-            overflow: 'hidden',
+            border: '1px solid #1aa966',
+            overflow: 'visible',
           }}>
 
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 14, background: '#155e36' }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 14, background: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)' }} />
             <div style={{ position: 'absolute', inset: '350px 0 auto', textAlign: 'center', fontSize: 92, color: 'rgba(16,24,40,0.045)', fontWeight: 900, transform: 'rotate(-18deg)', pointerEvents: 'none' }}>MC</div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 112px', gap: 22, alignItems: 'center', borderBottom: '1px solid #d0d5dd', padding: '16px 0 18px', position: 'relative', zIndex: 1 }}>
@@ -1394,10 +1422,15 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
               ref={editorRef}
               contentEditable={isMedico}
               suppressContentEditableWarning
-              onInput={() => { setEditorContent(editorRef.current?.innerHTML || ''); }}
+              onInput={() => {
+                setEditorContent(editorRef.current?.innerHTML || '');
+                requestAnimationFrame(resizeEditorToContent);
+              }}
               style={{
-                flex: 1,
+                display: 'block',
                 minHeight: showEditorPanel ? 520 : 650,
+                height: 'auto',
+                overflow: 'visible',
                 outline: 'none',
                 fontFamily: fonte,
                 fontSize: `${tamanho}pt`,
