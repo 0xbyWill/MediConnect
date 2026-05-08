@@ -60,6 +60,7 @@ type DashboardModel = {
 
 const DAYS = ['Domingo', 'Segunda-feira', 'Terca-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sabado'];
 const MONTHS = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const PROJECT_MARK_SRC = '/mediconnect-mark.png';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }> = {
   confirmado: { bg: 'var(--mint)', color: 'var(--dark)', label: 'Confirmada' },
@@ -365,14 +366,30 @@ export default function Dashboard({
                 width: 48,
                 height: 48,
                 borderRadius: 14,
-                background: 'rgba(255,255,255,0.14)',
+                background: '#fff',
                 border: '1px solid rgba(255,255,255,0.22)',
                 display: 'grid',
                 placeItems: 'center',
                 flexShrink: 0,
+                overflow: 'hidden',
+                padding: 5,
+                position: 'relative',
               }}
             >
-              <Activity size={25} color="#fff" />
+              <img
+                src={PROJECT_MARK_SRC}
+                alt=""
+                style={{
+                  width: '185%',
+                  height: '185%',
+                  display: 'block',
+                  objectFit: 'contain',
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                }}
+              />
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 21, fontWeight: 800, color: '#fff', lineHeight: 1.1 }}>MediConnect</div>
