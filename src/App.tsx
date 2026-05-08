@@ -430,13 +430,13 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', background: 'linear-gradient(135deg, var(--background) 0%, #eef8ef 100%)' }}>
+    <div className="mc-app-shell" style={{ display: 'flex', width: '100%', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', background: 'linear-gradient(135deg, var(--background) 0%, #eef8ef 100%)' }}>
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate}/>
 
       <div style={{ flex: 1, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
         <Topbar currentPage={currentPage} notifications={notifications} onMarkNotificationRead={markNotificationRead} onClearNotifications={clearNotifications}/>
 
-        <main style={{ flex: 1, minWidth: 0, width: '100%', overflow: 'hidden', display: 'flex', position: 'relative', minHeight: 0, background: 'var(--background)' }}>
+        <main className="mc-app-main" style={{ flex: 1, minWidth: 0, width: '100%', overflow: 'hidden', display: 'flex', position: 'relative', minHeight: 0, background: 'var(--background)' }}>
           {!dataLoaded && apiLoading ? (
             <LoadingState label="Carregando dados do perfil..." />
           ) : (
