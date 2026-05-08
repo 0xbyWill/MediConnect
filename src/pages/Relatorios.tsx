@@ -34,7 +34,7 @@ function inRange(iso: string, start: string, end: string) {
 
 function KPI({ label, value, sub, icon: Icon, color = 'var(--primary)' }: { label: string; value: number | string; sub?: string; icon: ElementType; color?: string }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '18px 20px', border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: '#fff', borderRadius: 12, padding: '18px 20px', border: '1px solid var(--gray-100)', boxShadow: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
@@ -145,7 +145,7 @@ export default function Relatorios({ pacientes, agendamentos, laudos }: Relatori
 
 function Panel({ title, icon: Icon, children }: { title: string; icon: ElementType; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: 22, border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: '#fff', borderRadius: 12, padding: 22, border: '1px solid var(--gray-100)', boxShadow: 'none' }}>
       <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
         <Icon size={16} color="var(--primary)" /> {title}
       </h3>

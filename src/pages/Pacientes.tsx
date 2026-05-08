@@ -2,16 +2,17 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, Plus, Eye, Pencil, Trash2, X, Camera, User,
   Filter, Calendar, ChevronDown, Phone, MapPin, Gauge,
-  AlertCircle, ArrowLeft, FileText, Mail,
+  AlertCircle, ArrowLeft, Mail,
 } from 'lucide-react';
-import type { Paciente, ConvenioType, StatusPaciente } from '../types';
+import type { Agendamento, Laudo, Paciente, ConvenioType, StatusPaciente } from '../types';
+import type { ApiDoctor } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { dateToISO } from '../shared/utils/date';
+import { dateToISO, formatDateBR } from '../shared/utils/date';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
 import { formatCep, formatPhoneBR, isValidCep, isValidEmail, isValidPhoneBR, validateImageFile } from '../shared/utils/validation';
 import { initials } from '../shared/utils/text';
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
+// --- Constantes ---------------------------------------------------------------
 const CONVENIOS: ConvenioType[] = [
   'Particular', 'Unimed Nacional', 'Bradesco Saúde',
   'Amil S450', 'SulAmérica', 'Porto Seguro', 'Notre Dame',
@@ -112,7 +113,7 @@ const priorityCellStyle: React.CSSProperties = {
   overflowWrap: 'anywhere',
 };
 
-// ─── Tipos auxiliares ─────────────────────────────────────────────────────────
+// --- Tipos auxiliares ---------------------------------------------------------
 interface PacienteExtended extends Paciente {
   rg?: string;
   sexo?: string;
@@ -163,6 +164,9 @@ interface PacienteExtended extends Paciente {
 
 interface PacientesProps {
   pacientes: Paciente[];
+  agendamentos?: Agendamento[];
+  laudos?: Laudo[];
+  doctors?: ApiDoctor[];
   onAdd: (p: Omit<Paciente, 'id'>) => void | Promise<void>;
   onUpdate: (p: Paciente) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
@@ -172,7 +176,7 @@ interface PacientesProps {
   allowDelete?: boolean;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 function formatDateTime(iso: string) {
   if (!iso) return 'Ainda não houve atendimento';
   const d = new Date(iso);
@@ -199,8 +203,10 @@ function responsiveGrid(min = 180, gap = 12): React.CSSProperties {
 }
 
 function calcIMC(peso: string, altura: string) {
-  const p = parseFloat(peso), a = parseFloat(altura);
+  const p = Number(String(peso).replace(',', '.'));
+  let a = Number(String(altura).replace(',', '.'));
   if (!p || !a) return '';
+  if (a > 3) a = a / 100;
   return (p / (a * a)).toFixed(1);
 }
 function hasResponsibleData(p: PacienteExtended) {
@@ -400,7 +406,7 @@ const emptyForm: PacienteExtended = {
   observacoes: '', foto: '',
 };
 
-// ─── Sub-componentes de campo ─────────────────────────────────────────────────
+// --- Sub-componentes de campo -------------------------------------------------
 function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '', min, max, step, inputMode, maxLength }: {
   label: string; value: string; onChange: (v: string) => void;
   placeholder?: string; type?: string; required?: boolean; disabled?: boolean; error?: string;
@@ -519,12 +525,24 @@ function PriorityBadge({ level, incomplete }: { level: number; incomplete: boole
   );
 }
 
-// ─── Componente Principal ─────────────────────────────────────────────────────
-export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highlightId, initialOpen, readOnly = false, allowDelete = false }: PacientesProps) {
+// --- Componente Principal -----------------------------------------------------
+export default function Pacientes({
+  pacientes,
+  agendamentos = [],
+  laudos = [],
+  doctors = [],
+  onAdd,
+  onUpdate,
+  onDelete,
+  highlightId,
+  initialOpen,
+  readOnly = false,
+  allowDelete = false,
+}: PacientesProps) {
   const { user } = useAuth();
   const hideAddButton = user?.role === 'medico';
 
-  // ── Estados de lista/filtro ──
+  // -- Estados de lista/filtro --
   const [search, setSearch]               = useState('');
   const [filterConvenio, setFilterConvenio] = useState('');
   const [showFiltroAvancado, setShowFiltroAvancado] = useState(false);
@@ -534,7 +552,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const [profileTab, setProfileTab] = useState('resumo');
   const loaderRef = useRef<HTMLDivElement>(null);
 
-  // ── Estados do modal ──
+  // -- Estados do modal --
   const [modal, setModal] = useState<{ open: boolean; mode: 'add' | 'edit' | 'view'; data: PacienteExtended }>({
     open: false, mode: 'add', data: { ...emptyForm },
   });
@@ -559,7 +577,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     return () => obs.disconnect();
   }, []);
 
-  // ── Filtros ──
+  // -- Filtros --
   const filtered = pacientes.filter(p => {
     const q = search.toLowerCase().trim();
     const qDigits = digitsOnly(search);
@@ -578,7 +596,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
   const visible = filtered.slice(0, visibleCount);
 
-  // ── Abrir modal ──
+  // -- Abrir modal --
   const openAdd  = useCallback(() => {
     if (hideAddButton) return;
     setModal({ open: true, mode: 'add', data: { ...emptyForm } });
@@ -603,12 +621,12 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
   useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen, openAdd]);
 
-  // ── Set field helper ──
+  // -- Set field helper --
   const setField = useCallback(<K extends keyof PacienteExtended>(field: K, value: PacienteExtended[K]) => {
     setModal(m => ({ ...m, data: { ...m.data, [field]: value } }));
   }, []);
 
-  // ── Foto ──
+  // -- Foto --
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -624,7 +642,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     reader.readAsDataURL(file);
   };
 
-  // ── Validação ──
+  // -- Validação --
   const validate = (d: PacienteExtended) => {
     const e: Record<string, string> = {};
     if (showResponsavel && !d.nomeResponsavel?.trim()) e.nomeResponsavel = 'Nome do responsável obrigatório.';
@@ -646,7 +664,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     return e;
   };
 
-  // ── Salvar ──
+  // -- Salvar --
   const savePatient = async (ignoreDuplicate = false) => {
     if (saving) return;
     const e = validate(modal.data);
@@ -695,7 +713,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   const isView = modal.mode === 'view';
   const d = modal.data;
 
-  // ─── IMC calculado ───
+  // --- IMC calculado ---
   const imc = calcIMC(d.peso || '', d.altura || '');
   const priority = calculatePatientPriority(d);
   const modalAge = ageFromBirthDate(d.dataNasc);
@@ -707,6 +725,73 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     const weight = p.peso && p.peso !== 'null' ? p.peso : '—';
     const height = p.altura && p.altura !== 'null' ? p.altura : '—';
     const profileImc = calcIMC(p.peso || '', p.altura || '') || '—';
+    const patientAppointments = agendamentos
+      .filter(a => a.pacienteId === p.id)
+      .sort((a, b) => `${b.data} ${b.hora}`.localeCompare(`${a.data} ${a.hora}`));
+    const todayISO = dateToISO(new Date());
+    const upcomingAppointments = patientAppointments
+      .filter(a => a.data >= todayISO && a.status !== 'cancelado')
+      .sort((a, b) => `${a.data} ${a.hora}`.localeCompare(`${b.data} ${b.hora}`));
+    const pastAppointments = patientAppointments
+      .filter(a => a.data < todayISO || a.status === 'realizado')
+      .sort((a, b) => `${b.data} ${b.hora}`.localeCompare(`${a.data} ${a.hora}`));
+    const patientReports = laudos
+      .filter(l => l.pacienteId === p.id)
+      .sort((a, b) => b.data.localeCompare(a.data));
+    const releasedReports = patientReports.filter(l => l.status === 'liberado');
+    const doctorName = (doctorId?: string) => doctors.find(doctor => doctor.id === doctorId)?.full_name || 'Profissional nao informado';
+    const personalRows: Array<[string, unknown]> = [
+      ['Nome completo', p.nome],
+      ['Nome social', p.nomeSocial],
+      ['CPF', displayCpf(p.cpf)],
+      ['RG', p.rg],
+      ['Sexo', p.sexo],
+      ['Nascimento', p.dataNasc ? formatDateBR(p.dataNasc) : '---'],
+      ['Idade', profileAge !== null ? `${profileAge} anos` : '---'],
+      ['Raça/cor', p.raca],
+      ['Naturalidade', p.naturalidade],
+      ['Nacionalidade', p.nacionalidade],
+      ['Profissao', p.profissao],
+      ['Estado civil', p.estadoCivil],
+      ['Responsavel', p.nomeResponsavel],
+      ['CPF responsavel', displayCpf(p.cpfResponsavel)],
+      ['Convenio', p.convenio],
+      ['Plano', p.planoConvenio],
+      ['Matricula', p.matriculaConvenio],
+      ['Validade carteira', p.validadeCarteira ? formatDateBR(p.validadeCarteira) : '---'],
+      ['Telefone 1', displayPhone(p.telefone)],
+      ['Telefone 2', displayPhone(p.telefone2)],
+      ['Telefone 3', displayPhone(p.telefone3)],
+      ['E-mail', p.email],
+      ['CEP', p.cep ? formatCep(p.cep) : '---'],
+      ['Logradouro', [p.logradouro, p.numero].filter(Boolean).join(', ') || '---'],
+      ['Complemento', p.complemento],
+      ['Bairro', p.bairro],
+      ['Cidade/UF', [p.cidade, p.estado].filter(Boolean).join(' / ') || '---'],
+      ['Referência', p.referencia],
+    ];
+    const clinicalRows: Array<[string, unknown]> = [
+      ['Tipo sanguíneo', p.tipoSanguineo],
+      ['Peso', weight === '---' || weight === '—' ? '---' : `${weight} kg`],
+      ['Altura', height === '---' || height === '—' ? '---' : `${height} m`],
+      ['IMC', profileImc],
+      ['Alergias', p.alergias],
+      ['Condição principal', p.condicaoSaudePrincipal],
+      ['Estado da condição', p.condicaoSaudePontuacao],
+      ['Comorbidades', p.comorbidades],
+      ['Nível de dor', p.nivelDor],
+      ['Mobilidade', p.mobilidade],
+      ['Dependência funcional', p.dependenciaFuncional],
+      ['Integridade física', p.integridadeFisica],
+      ['Urgência terapêutica', p.urgenciaTerapeutica],
+      ['Tempo na fila', p.tempoNaFila],
+      ['Disponibilidade encaixe', p.disponibilidadeEncaixe],
+      ['Tipo de atendimento necessário', p.tipoAtendimentoNecessario],
+      ['Profissional/especialidade necessária', p.profissionalEspecialidadeNecessaria],
+      ['Observações clínicas', p.observacoesClinicas],
+      ['Alertas críticos', p.alertasCriticos],
+      ['Observações gerais', p.observacoes],
+    ];
     const profileContact = [
       { label: 'Celular', value: displayPhone(p.telefone), icon: Phone },
       { label: 'E-mail', value: p.email || '—', icon: Mail },
@@ -715,19 +800,19 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
     return (
       <div style={{ flex: 1, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
-        <div style={{ flex: 1, overflow: 'auto', padding: '24px clamp(18px, 4vw, 36px) 36px', minHeight: 0 }}>
-          <section style={{ overflow: 'hidden', borderRadius: 18, background: '#fff', border: '1px solid rgba(15,118,75,0.12)', boxShadow: '0 18px 38px rgba(0,104,56,0.14)' }}>
-            <div style={{ padding: '24px clamp(22px, 3vw, 34px)', background: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', color: '#fff' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: 'var(--app-gutter-y) var(--app-gutter-x) 44px', minHeight: 0 }}>
+          <section style={{ overflow: 'hidden', borderRadius: 12, background: '#fff', border: '1px solid rgba(15,118,75,0.10)', boxShadow: 'none' }}>
+            <div style={{ padding: '32px clamp(28px, 3.4vw, 48px)', background: '#008f51', color: '#fff' }}>
               <button onClick={() => setProfilePatient(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: 'none', background: 'none', color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: 800, cursor: 'pointer', padding: 0, marginBottom: 18 }}>
                 <ArrowLeft size={16} /> Voltar
               </button>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', gap: 18, alignItems: 'center', minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 22, alignItems: 'center', minWidth: 0 }}>
                   <div style={{ width: 96, height: 96, borderRadius: '50%', background: 'rgba(255,255,255,0.94)', color: '#52735f', display: 'grid', placeItems: 'center', fontSize: 30, fontWeight: 800, overflow: 'hidden', flexShrink: 0 }}>
                     {p.foto ? <img src={p.foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : initials(p.nome)}
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <h1 style={{ fontSize: 26, fontWeight: 800, color: '#071327', lineHeight: 1.15, margin: 0 }}>{p.nome}</h1>
+                    <h1 style={{ fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.15, margin: 0 }}>{p.nome}</h1>
                     <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.88)', marginTop: 8 }}>{p.convenio || 'Particular'} · {profileAge !== null ? `${profileAge} anos` : 'idade não informada'} · {p.dataNasc || 'nascimento não informado'}</p>
                     <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.74)', marginTop: 3 }}>CPF: {displayCpf(p.cpf)}</p>
                     <span style={{ display: 'inline-flex', marginTop: 12, padding: '5px 12px', borderRadius: 999, background: 'rgba(221,251,233,0.18)', color: '#eafff2', fontSize: 12, fontWeight: 800 }}>{p.status}</span>
@@ -735,15 +820,15 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 </div>
                 <button onClick={() => { openEdit(p); setProfilePatient(null); }} style={{ padding: '10px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.42)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Editar cadastro</button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', marginTop: 26, borderRadius: 14, background: 'rgba(255,255,255,0.18)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.18)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', marginTop: 30, borderRadius: 10, background: 'rgba(255,255,255,0.10)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.14)' }}>
                 {[
-                  ['0', 'Consultas'],
-                  ['0', 'Prontuários'],
-                  ['0', 'Receitas'],
+                  [String(patientAppointments.length), 'Consultas'],
+                  [String(patientReports.length), 'Prontuários'],
+                  [String(releasedReports.length), 'Receitas'],
                   [profilePriority.total ? String(profilePriority.total) : '—', 'Score'],
                   [p.ultimoAtendimento ? formatDateTime(p.ultimoAtendimento).split(' ')[0] : '—', 'Última visita'],
                 ].map(([value, label]) => (
-                  <div key={label} style={{ padding: '18px 10px', textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.14)' }}>
+                  <div key={label} style={{ padding: '22px 12px', textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.14)' }}>
                     <div style={{ color: '#fff', fontSize: 18, fontWeight: 800 }}>{value}</div>
                     <div style={{ color: 'rgba(255,255,255,0.66)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
                   </div>
@@ -753,29 +838,31 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
             <div style={{ display: 'flex', flexWrap: 'wrap', background: '#fff', borderBottom: '1px solid var(--gray-100)' }}>
               {PROFILE_TABS.map(tab => (
-                <button key={tab.id} onClick={() => setProfileTab(tab.id)} style={{ padding: '14px 18px', border: 'none', borderBottom: `2px solid ${profileTab === tab.id ? 'var(--primary)' : 'transparent'}`, background: 'transparent', color: profileTab === tab.id ? 'var(--primary)' : 'var(--gray-600)', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{tab.label}</button>
+                <button key={tab.id} onClick={() => setProfileTab(tab.id)} style={{ padding: '17px 22px', border: 'none', borderBottom: `2px solid ${profileTab === tab.id ? 'var(--primary)' : 'transparent'}`, background: 'transparent', color: profileTab === tab.id ? 'var(--primary)' : 'var(--gray-600)', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{tab.label}</button>
               ))}
             </div>
           </section>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 18, marginTop: 18 }}>
-            {[
-              ['Próxima consulta', p.proximoAtendimento ? formatDateTime(p.proximoAtendimento) : 'Nenhuma consulta agendada.'],
-              ['Últimas consultas', p.ultimoAtendimento ? `Último atendimento em ${formatDateTime(p.ultimoAtendimento)}` : 'Sem histórico de consultas.'],
-              ['Sinais vitais', `Peso: ${weight} · Altura: ${height} · IMC: ${profileImc}`],
-            ].map(([title, value]) => (
-              <div key={title} style={{ background: 'rgba(255,255,255,0.94)', borderRadius: 14, border: '1px solid rgba(15,118,75,0.12)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-                <div style={{ padding: '15px 18px', background: '#fbfefd', borderBottom: '1px solid var(--gray-100)', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--dark)' }}>{title}</div>
-                <div style={{ padding: 20, fontSize: 13, color: 'var(--gray-500)', fontStyle: 'italic', minHeight: 58 }}>{value}</div>
-              </div>
-            ))}
-            <div style={{ background: 'rgba(255,255,255,0.94)', borderRadius: 14, border: '1px solid rgba(15,118,75,0.12)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-              <div style={{ padding: '15px 18px', background: '#fbfefd', borderBottom: '1px solid var(--gray-100)', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--dark)' }}>Contato</div>
-              <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {profileTab === 'resumo' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 22, marginTop: 22 }}>
+              <ProfileCard title="Próxima consulta">
+                {upcomingAppointments[0] ? (
+                  <InfoLine label={`${formatDateBR(upcomingAppointments[0].data)} às ${upcomingAppointments[0].hora}`} value={`${upcomingAppointments[0].tipo} - ${doctorName(upcomingAppointments[0].medicoId)}`} />
+                ) : <EmptyProfileState text="Nenhuma consulta agendada." />}
+              </ProfileCard>
+              <ProfileCard title="Últimas consultas">
+                <AppointmentList items={pastAppointments.slice(0, 4)} doctorName={doctorName} />
+              </ProfileCard>
+              <ProfileCard title="Sinais vitais">
+                <InfoLine label="Peso" value={weight} />
+                <InfoLine label="Altura" value={height} />
+                <InfoLine label="IMC" value={profileImc} />
+              </ProfileCard>
+              <ProfileCard title="Contato">
                 {profileContact.map(item => {
                   const Icon = item.icon;
                   return (
-                    <div key={item.label} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingBottom: 12, borderBottom: '1px solid var(--gray-100)' }}>
+                    <div key={item.label} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid var(--gray-100)' }}>
                       <Icon size={16} color="var(--primary)" style={{ marginTop: 2, flexShrink: 0 }} />
                       <div>
                         <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.7 }}>{item.label}</div>
@@ -784,14 +871,35 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                     </div>
                   );
                 })}
-              </div>
+              </ProfileCard>
             </div>
-          </div>
+          )}
 
-          {profileTab !== 'resumo' && (
-            <div style={{ marginTop: 18, padding: 20, borderRadius: 14, background: '#fff', border: '1px solid rgba(15,118,75,0.12)', boxShadow: 'var(--shadow-sm)', color: 'var(--gray-600)', fontSize: 13 }}>
-              <FileText size={18} color="var(--primary)" style={{ verticalAlign: '-4px', marginRight: 8 }} />
-              Esta seção mantém a estrutura do prontuário e será preenchida conforme os dados vinculados ao paciente estiverem disponíveis.
+          {profileTab === 'dados' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(460px, 100%), 1fr))', gap: 22, marginTop: 22 }}>
+              <ProfileCard title="Identificação e contato"><DetailGrid rows={personalRows} /></ProfileCard>
+              <ProfileCard title="Informações médicas"><DetailGrid rows={clinicalRows} /></ProfileCard>
+            </div>
+          )}
+
+          {profileTab === 'historico' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(460px, 100%), 1fr))', gap: 22, marginTop: 22 }}>
+              <ProfileCard title="Histórico de consultas"><AppointmentList items={patientAppointments} doctorName={doctorName} /></ProfileCard>
+              <ProfileCard title="Histórico médico"><DetailGrid rows={clinicalRows} /></ProfileCard>
+            </div>
+          )}
+
+          {profileTab === 'prontuarios' && (
+            <div style={{ marginTop: 22 }}>
+              <ProfileCard title="Prontuários e laudos vinculados"><ReportsList items={patientReports} /></ProfileCard>
+            </div>
+          )}
+
+          {profileTab === 'receitas' && (
+            <div style={{ marginTop: 22 }}>
+              <ProfileCard title="Receitas e orientações">
+                {releasedReports.length > 0 ? <ReportsList items={releasedReports} /> : <EmptyProfileState text="Nenhuma receita ou orientação liberada para este paciente." />}
+              </ProfileCard>
             </div>
           )}
         </div>
@@ -799,11 +907,11 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
     );
   }
 
-  // ─── Renderização ────────────────────────────────────────────────────────────
+  // --- Renderização ------------------------------------------------------------
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
-      {/* ── Área scrollável ── */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '30px clamp(18px, 4vw, 36px) 36px', minHeight: 0 }}>
+      {/* -- Área scrollável -- */}
+      <div style={{ flex: 1, overflow: 'auto', padding: 'var(--app-gutter-y) var(--app-gutter-x) 44px', minHeight: 0 }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12, textAlign: 'center' }}>
@@ -816,7 +924,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
         </div>
 
         {/* Filtros */}
-        <div style={{ background: 'rgba(255,255,255,0.86)', borderRadius: 14, padding: '24px', marginBottom: 24, boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.10)' }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '20px', marginBottom: 22, boxShadow: 'none', border: '1px solid rgba(15,118,75,0.10)' }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {/* Busca */}
             <div style={{ flex: 2, minWidth: 260, position: 'relative' }}>
@@ -866,7 +974,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
         </div>
 
         {/* Tabela */}
-        <div style={{ background: 'rgba(255,255,255,0.92)', borderRadius: 14, boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.10)', overflow: 'auto', maxWidth: '100%' }}>
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: 'none', border: '1px solid rgba(15,118,75,0.10)', overflow: 'auto', maxWidth: '100%' }}>
           <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
@@ -962,7 +1070,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
 
       </div>{/* fim área scrollável */}
 
-      {/* ─── Modal de Cadastro/Edição/Visualização ─────────────────────────── */}
+      {/* --- Modal de Cadastro/Edição/Visualização --------------------------- */}
       {modal.open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>
           <div style={{ background: isView ? '#f4f6f5' : '#fff', borderRadius: isView ? 0 : 20, width: isView ? 'min(1180px, calc(100vw - 24px))' : 'min(1080px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
@@ -1073,7 +1181,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
             {/* Conteúdo da aba — scrollável */}
             <div style={{ flex: 1, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', minHeight: 0 }}>
 
-              {/* ── ABA: Dados Pessoais ── */}
+              {/* -- ABA: Dados Pessoais -- */}
               {activeTab === 'dados' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Identificação" icon={User} />
@@ -1150,7 +1258,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 </div>
               )}
 
-              {/* ── ABA: Endereço ── */}
+              {/* -- ABA: Endereço -- */}
               {activeTab === 'endereco' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Endereço" icon={MapPin} />
@@ -1169,7 +1277,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 </div>
               )}
 
-              {/* ── ABA: Informações Médicas ── */}
+              {/* -- ABA: Informações Médicas -- */}
               {activeTab === 'medico' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Informações Médicas" />
@@ -1193,7 +1301,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 </div>
               )}
 
-              {/* ── ABA: Prioridade ── */}
+              {/* -- ABA: Prioridade -- */}
               {activeTab === 'prioridade' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="NPS-Paciente para substituição de agenda" icon={Gauge} />
@@ -1285,7 +1393,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 </div>
               )}
 
-              {/* ── ABA: Convênio ── */}
+              {/* -- ABA: Convênio -- */}
               {activeTab === 'convenio' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Informações de Convênio" />
@@ -1298,7 +1406,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
                 </div>
               )}
 
-              {/* ── ABA: Observações ── */}
+              {/* -- ABA: Observações -- */}
               {activeTab === 'obs' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Observações e Notas" />
@@ -1345,7 +1453,7 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
         </div>
       )}
 
-      {/* ─── Confirm Delete ─────────────────────────────────────────────────── */}
+      {/* --- Confirm Delete --------------------------------------------------- */}
       {confirmDelete && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 380, width: '90%', boxShadow: '0 12px 32px rgba(0,0,0,0.15)' }}>
@@ -1375,7 +1483,89 @@ export default function Pacientes({ pacientes, onAdd, onUpdate, onDelete, highli
   );
 }
 
-// ─── Componentes auxiliares ───────────────────────────────────────────────────
+// --- Componentes auxiliares ---------------------------------------------------
+function ProfileCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(15,118,75,0.10)', boxShadow: 'none', overflow: 'hidden' }}>
+      <div style={{ padding: '17px 20px', background: '#fbfefd', borderBottom: '1px solid var(--gray-100)', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--dark)' }}>{title}</div>
+      <div style={{ padding: 22, display: 'grid', gap: 14 }}>{children}</div>
+    </div>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value?: string | number | null }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--gray-50)' }}>
+      <span style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>{label}</span>
+      <strong style={{ fontSize: 13, color: 'var(--gray-800)', textAlign: 'right', overflowWrap: 'anywhere' }}>{value || '---'}</strong>
+    </div>
+  );
+}
+
+function DetailGrid({ rows }: { rows: Array<[string, unknown]> }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+      {rows.map(([label, value]) => (
+        <div key={label} style={{ minWidth: 0, padding: 14, border: '1px solid var(--gray-100)', borderRadius: 10, background: 'var(--gray-50)' }}>
+          <div style={{ fontSize: 10, color: 'var(--gray-500)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+          <div style={{ fontSize: 13, color: 'var(--gray-800)', fontWeight: 700, marginTop: 5, overflowWrap: 'anywhere' }}>
+            {String(value || '---')}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyProfileState({ text }: { text: string }) {
+  return <div style={{ padding: '12px 0', color: 'var(--gray-400)', fontSize: 13, fontStyle: 'italic' }}>{text}</div>;
+}
+
+function AppointmentList({ items, doctorName }: { items: Agendamento[]; doctorName: (doctorId?: string) => string }) {
+  if (items.length === 0) return <EmptyProfileState text="Nenhuma consulta registrada." />;
+
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {items.map(item => (
+        <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '92px 1fr auto', gap: 12, alignItems: 'center', padding: 12, border: '1px solid var(--gray-100)', borderRadius: 10 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--dark)' }}>{item.hora}</div>
+            <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{formatDateBR(item.data)}</div>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-800)' }}>{item.tipo}</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>{doctorName(item.medicoId)}</div>
+            {item.observacoes && <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 5 }}>{item.observacoes}</div>}
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 800, color: item.status === 'cancelado' ? 'var(--red-600)' : 'var(--primary)', background: item.status === 'cancelado' ? 'var(--red-50)' : 'var(--mint)', borderRadius: 999, padding: '4px 9px' }}>
+            {item.status}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportsList({ items }: { items: Laudo[] }) {
+  if (items.length === 0) return <EmptyProfileState text="Nenhum prontuário ou laudo vinculado." />;
+
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {items.map(item => (
+        <div key={item.id} style={{ padding: 12, border: '1px solid var(--gray-100)', borderRadius: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: 13, color: 'var(--gray-800)' }}>{item.exame || 'Laudo médico'}</strong>
+            <span style={{ fontSize: 11, color: item.status === 'liberado' ? 'var(--primary)' : 'var(--amber-600)', fontWeight: 800 }}>{item.status}</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>{formatDateBR(item.data)}{item.cid ? ` - CID ${item.cid}` : ''}</div>
+          {item.diagnostico && <div style={{ fontSize: 12, color: 'var(--gray-700)', marginTop: 8 }}>{item.diagnostico}</div>}
+          {item.impressao && <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 5 }}>{item.impressao}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ActionBtn({ icon: Icon, color, title, onClick }: { icon: React.ElementType; color: string; title: string; onClick: () => void }) {
   return (
     <button title={title} onClick={onClick}

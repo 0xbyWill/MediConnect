@@ -75,14 +75,14 @@ function formatDate(iso: string) {
 
 function KPI({ label, value, icon: Icon, live, trend = '+8%', tone = 'green' }: KpiItem) {
   const toneStyle = {
-    green: { bg: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', shadow: 'rgba(0,166,63,0.22)' },
-    teal: { bg: 'linear-gradient(135deg, #12c7b7 0%, #00a99d 100%)', shadow: 'rgba(0,169,157,0.22)' },
-    lime: { bg: 'linear-gradient(135deg, #7bd800 0%, #5ec600 100%)', shadow: 'rgba(94,198,0,0.22)' },
+    green: { bg: 'var(--primary)' },
+    teal: { bg: '#0f9f93' },
+    lime: { bg: '#65a30d' },
   }[tone];
 
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '28px 30px', boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.12)', minWidth: 0, position: 'relative', minHeight: 150 }}>
-      <div style={{ width: 48, height: 48, background: toneStyle.bg, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 12px 22px ${toneStyle.shadow}`, marginBottom: 20 }}>
+    <div style={{ background: '#fff', borderRadius: 12, padding: '22px 24px', boxShadow: 'none', border: '1px solid rgba(15,118,75,0.10)', minWidth: 0, position: 'relative', minHeight: 132 }}>
+      <div style={{ width: 42, height: 42, background: toneStyle.bg, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'none', marginBottom: 18 }}>
         <Icon size={22} color="#fff" />
       </div>
       <div style={{ position: 'absolute', top: 28, right: 30, background: 'var(--mint)', color: 'var(--primary)', fontSize: 12, fontWeight: 800, padding: '5px 9px', borderRadius: 6 }}>
@@ -100,7 +100,7 @@ function KPI({ label, value, icon: Icon, live, trend = '+8%', tone = 'green' }: 
 
 function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: 28, boxShadow: 'var(--shadow-sm)', border: '1px solid rgba(15,118,75,0.12)', ...style }}>
+    <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: 'none', border: '1px solid rgba(15,118,75,0.10)', ...style }}>
       {children}
     </div>
   );
@@ -118,8 +118,8 @@ function EmptyState({ text, compact = false }: { text: string; compact?: boolean
 function ActionButton({ icon: Icon, label, onClick, primary = false }: { icon: React.ElementType; label: string; onClick: () => void; primary?: boolean }) {
   return (
     <button onClick={onClick}
-      style={{ width: '100%', minHeight: 118, padding: '18px 16px', background: primary ? 'linear-gradient(135deg, #eafff2 0%, #dbfae8 100%)' : 'linear-gradient(135deg, #f2fff7 0%, #e6fbef 100%)', color: 'var(--dark)', border: primary ? '1px solid rgba(0,166,63,0.30)' : '1px solid rgba(0,166,63,0.20)', borderRadius: 14, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, boxShadow: 'none' }}>
-      <span style={{ width: 48, height: 48, borderRadius: 10, background: primary ? 'var(--primary)' : 'rgba(0,166,63,0.12)', color: primary ? '#fff' : 'var(--primary)', display: 'grid', placeItems: 'center', boxShadow: primary ? '0 12px 24px rgba(0,166,63,0.22)' : '0 10px 20px rgba(0,166,63,0.08)' }}>
+      style={{ width: '100%', minHeight: 92, padding: '16px 18px', background: primary ? 'var(--primary)' : '#fff', color: primary ? '#fff' : 'var(--dark)', border: primary ? '1px solid var(--primary)' : '1px solid rgba(0,166,63,0.16)', borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 12, boxShadow: 'none', textAlign: 'left' }}>
+      <span style={{ width: 38, height: 38, borderRadius: 9, background: primary ? 'rgba(255,255,255,0.18)' : 'rgba(0,166,63,0.10)', color: primary ? '#fff' : 'var(--primary)', display: 'grid', placeItems: 'center', boxShadow: 'none', flexShrink: 0 }}>
         <Icon size={20} />
       </span>
       {label}
@@ -347,18 +347,39 @@ export default function Dashboard({
         className="dashboard-hero"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.25fr) minmax(220px, .75fr)',
-          minHeight: 210,
+          gridTemplateColumns: 'minmax(0, 1.3fr) minmax(220px, 0.7fr)',
+          minHeight: 0,
           overflow: 'hidden',
-          borderRadius: 18,
+          borderRadius: 12,
           marginBottom: 24,
-          background: 'radial-gradient(circle at 78% 46%, rgba(255,255,255,0.26), transparent 28%), linear-gradient(135deg, #00A63F 0%, #009E57 100%)',
-          boxShadow: '0 22px 48px rgba(0,104,56,0.18)',
-          border: '1px solid rgba(255,255,255,0.18)',
+          background: '#008f51',
+          boxShadow: 'none',
+          border: '1px solid rgba(0,104,56,0.12)',
         }}
       >
-        <div style={{ minWidth: 0, padding: 'clamp(24px, 4vw, 34px)', color: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <h1 style={{ fontSize: 'clamp(25px, 3vw, 34px)', fontWeight: 800, color: '#fff', lineHeight: 1.18, wordBreak: 'break-word' }}>
+        <div style={{ minWidth: 0, padding: 'clamp(24px, 3vw, 32px)', color: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+            <div
+              aria-hidden="true"
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: 'rgba(255,255,255,0.14)',
+                border: '1px solid rgba(255,255,255,0.22)',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Activity size={25} color="#fff" />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 21, fontWeight: 800, color: '#fff', lineHeight: 1.1 }}>MediConnect</div>
+            </div>
+          </div>
+
+          <h1 style={{ fontSize: 'clamp(24px, 2.6vw, 31px)', fontWeight: 800, color: '#fff', lineHeight: 1.18, wordBreak: 'break-word' }}>
             {saudacao}, {displayName}!
           </h1>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.92)', marginTop: 8, fontWeight: 650 }}>
@@ -366,12 +387,12 @@ export default function Dashboard({
           </p>
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', marginTop: 5 }}>{dateStr} - {model.title}</p>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 26 }}>
-            <div style={{ minWidth: 140, padding: '12px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.14)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 22 }}>
+            <div style={{ minWidth: 136, padding: '10px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.14)' }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.86)' }}>Proxima Consulta</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{nextAppointmentTime}</div>
             </div>
-            <div style={{ minWidth: 128, padding: '12px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.14)' }}>
+            <div style={{ minWidth: 124, padding: '10px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.14)' }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.86)' }}>Consultas Hoje</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{todayAppts.length}</div>
             </div>
@@ -380,37 +401,26 @@ export default function Dashboard({
         <div
           aria-hidden="true"
           style={{
-            minHeight: 210,
-            background:
-              'radial-gradient(circle at 50% 48%, rgba(255,255,255,0.34), rgba(255,255,255,0.12) 32%, transparent 58%), repeating-linear-gradient(135deg, rgba(255,255,255,0.10) 0 1px, transparent 1px 18px)',
+            minHeight: 190,
             position: 'relative',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '22px clamp(18px, 4vw, 44px)',
+            padding: '22px clamp(24px, 4vw, 56px)',
+            background: 'rgba(255,255,255,0.08)',
+            borderLeft: '1px solid rgba(255,255,255,0.12)',
           }}
         >
-          <div style={{
-            position: 'relative',
-            width: 'min(320px, 84%)',
-            height: 168,
-            overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            filter: 'drop-shadow(0 18px 28px rgba(0,72,39,0.18))',
-          }}>
-            <img
-              src="/mediconnect-brand.png"
-              alt=""
-              style={{
-                width: 'min(320px, 100%)',
-                height: 'auto',
-                transform: 'translateY(-18px)',
-                objectFit: 'contain',
-              }}
-            />
-          </div>
+          <img
+            src="/image-removebg-preview%20(20).png"
+            alt=""
+            style={{
+              width: 'min(250px, 100%)',
+              height: 'auto',
+              objectFit: 'contain',
+              display: 'block',
+            }}
+          />
         </div>
       </div>
 

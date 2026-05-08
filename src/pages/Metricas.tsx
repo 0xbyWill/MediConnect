@@ -10,7 +10,7 @@ interface MetricasProps {
 
 function MetricCard({ label, value, sub, icon: Icon, color }: { label: string; value: string | number; sub?: string; icon: ElementType; color: string }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '18px 20px', border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: '#fff', borderRadius: 12, padding: '18px 20px', border: '1px solid var(--gray-100)', boxShadow: 'none' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
@@ -120,7 +120,7 @@ export default function Metricas({ pacientes, agendamentos, laudos }: MetricasPr
 
 function Panel({ title, icon: Icon, children }: { title: string; icon: ElementType; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: '#fff', borderRadius: 12, padding: 24, border: '1px solid var(--gray-100)', boxShadow: 'none' }}>
       <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon size={16} color="var(--primary)" /> {title}
       </h3>
