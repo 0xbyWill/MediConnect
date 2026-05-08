@@ -14,6 +14,17 @@ type AuthTarget = {
   email: string;
 };
 
+type ActorAccess = {
+  role: string;
+  active: boolean;
+};
+
+type ActorUser = {
+  id: string;
+  app_metadata?: Record<string, unknown>;
+  user_metadata?: Record<string, unknown>;
+};
+
 function createUserClient(req: Request) {
   return createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -37,6 +48,30 @@ async function getProfileRole(adminClient: SupabaseAdmin, userId: string) {
     .maybeSingle();
 
   return data as { role?: string; active?: boolean; disabled?: boolean } | null;
+}
+
+async function getUserRole(adminClient: SupabaseAdmin, userId: string) {
+  const { data, error } = await adminClient
+    .from('user_roles')
+    .select('role')
+    .or(`user_id.eq.${userId},id.eq.${userId}`)
+    .limit(1);
+
+  if (error || !Array.isArray(data) || !data[0]) return '';
+  return String((data[0] as { role?: unknown }).role ?? '').toLowerCase().trim();
+}
+
+async function getActorAccess(
+  adminClient: SupabaseAdmin,
+  user: ActorUser,
+): Promise<ActorAccess> {
+  const profile = await getProfileRole(adminClient, user.id);
+  const userRole = await getUserRole(adminClient, user.id);
+  const metadataRole = String(user.app_metadata?.role ?? user.user_metadata?.role ?? '').toLowerCase().trim();
+  return {
+    role: String(profile?.role || userRole || metadataRole).toLowerCase().trim(),
+    active: profile?.active !== false && profile?.disabled !== true,
+  };
 }
 
 async function getUserById(adminClient: SupabaseAdmin, userId: string): Promise<AuthTarget | null> {
@@ -96,6 +131,37 @@ async function resolveFromTable(
 
     const byEmail = await findUserByEmail(adminClient, String(row.email ?? ''));
     if (byEmail) return byEmail;
+  }
+
+  return null;
+}
+
+async function resolveStoredTarget(
+  adminClient: SupabaseAdmin,
+  requestedId: string,
+): Promise<AuthTarget | null> {
+  for (const table of ['profiles', 'doctors', 'patients']) {
+    for (const lookupColumn of ['id', 'user_id', 'auth_user_id', 'profile_id']) {
+      const { data, error } = await adminClient
+        .from(table)
+        .select('*')
+        .eq(lookupColumn, requestedId)
+        .limit(1);
+
+      if (error || !Array.isArray(data) || !data[0]) continue;
+
+      const row = data[0] as Record<string, unknown>;
+      const candidateId = ['auth_user_id', 'user_id', 'profile_id', 'id']
+        .map(column => String(row[column] ?? '').trim())
+        .find(value => UUID_RE.test(value));
+
+      if (candidateId) {
+        return {
+          userId: candidateId,
+          email: String(row.email ?? '').trim().toLowerCase(),
+        };
+      }
+    }
   }
 
   return null;
@@ -238,7 +304,10 @@ async function cleanupRelatedData(adminClient: SupabaseAdmin, userId: string, em
 
 async function hardDeleteUser(adminClient: SupabaseAdmin, userId: string, email: string) {
   const firstAttempt = await adminClient.auth.admin.deleteUser(userId);
-  if (!firstAttempt.error) return;
+  if (!firstAttempt.error) {
+    await cleanupRelatedData(adminClient, userId, email);
+    return;
+  }
   if (!isRelationError(firstAttempt.error)) throw firstAttempt.error;
 
   await cleanupRelatedData(adminClient, userId, email);
@@ -278,25 +347,28 @@ Deno.serve(async req => {
       return jsonResponse({ error: 'Nao e possivel deletar seu proprio usuario' }, 400);
     }
 
-    const profile = await getProfileRole(adminClient, actorId);
-    const metadataRole = String(authData.user.app_metadata?.role ?? authData.user.user_metadata?.role ?? '').toLowerCase();
-    const role = String(profile?.role ?? metadataRole).toLowerCase();
-    const active = profile?.active !== false && profile?.disabled !== true;
+    const access = await getActorAccess(adminClient, authData.user);
 
-    if (!active || !ADMIN_ROLES.has(role)) {
+    if (!access.active || !ADMIN_ROLES.has(access.role)) {
       return jsonResponse({ error: 'Apenas admins/gestores podem deletar usuarios' }, 403);
     }
 
-    const target = await resolveTargetUser(adminClient, targetUserId);
+    const target = await resolveTargetUser(adminClient, targetUserId) ?? await resolveStoredTarget(adminClient, targetUserId);
     if (!target) {
       return jsonResponse({ error: 'Usuario alvo nao encontrado' }, 404);
     }
 
-    if (target.userId === actorId) {
+    const actorEmail = String(authData.user.email ?? '').trim().toLowerCase();
+    if (target.userId === actorId || (target.email && target.email === actorEmail)) {
       return jsonResponse({ error: 'Nao e possivel deletar seu proprio usuario' }, 400);
     }
 
-    await hardDeleteUser(adminClient, target.userId, target.email);
+    const authTarget = await getUserById(adminClient, target.userId);
+    if (authTarget) {
+      await hardDeleteUser(adminClient, authTarget.userId, authTarget.email);
+    } else {
+      await cleanupRelatedData(adminClient, target.userId, target.email);
+    }
 
     await logDeleteAttempt(adminClient, {
       actorId,
