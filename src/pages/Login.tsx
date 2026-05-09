@@ -24,7 +24,7 @@ interface LoginProps {
 const PROJECT_MARK_SRC = '/mediconnect-mark.png';
 
 export default function Login({ onCreateAccount }: LoginProps) {
-  const { login, loginMockPatient, loading, error, clearError } = useAuth();
+  const { login, loading, error, clearError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -53,11 +53,6 @@ export default function Login({ onCreateAccount }: LoginProps) {
     setPassword(preset.password);
     clearError();
     await login(preset.email, preset.password);
-  };
-
-  const demoPatient = () => {
-    clearError();
-    loginMockPatient();
   };
 
   return (
@@ -230,7 +225,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
           subtitle="Visualizar perfil do paciente"
           color="#2563eb"
           disabled={loading}
-          onClick={demoPatient}
+          onClick={() => void quickLogin({ email: 'bobesponja@popcode.com', password: 'Teste@123' })}
         />
       </aside>
 
