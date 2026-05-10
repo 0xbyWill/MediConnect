@@ -174,7 +174,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
                   id="patient-full-name"
                   value={form.full_name}
                   onChange={event => setField('full_name', event.target.value)}
-                  placeholder="Maria Santos"
+                  placeholder="Seu Nome Completo"
                   autoComplete="name"
                   maxLength={120}
                   required
