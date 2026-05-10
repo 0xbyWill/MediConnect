@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle, Calendar, CalendarCheck, Clock, Loader2, Mail, MapPin,
   Pencil, Phone, Plus, Search, Trash2, Users, X,
@@ -43,6 +43,7 @@ interface AgendaProps {
   onUpdate: (a: Agendamento) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   initialOpen?: boolean;
+  initialPatientId?: string | null;
   readOnly?: boolean;
 }
 
@@ -161,7 +162,7 @@ const STATUS_LABEL: Record<Agendamento['status'], { label: string; bg: string; c
   realizado: { label: 'Realizada', bg: '#ede9fe', color: '#5b21b6' },
 };
 
-export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, readOnly = false }: AgendaProps) {
+export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, initialPatientId, readOnly = false }: AgendaProps) {
   const { user } = useAuth();
   const isMedico = user?.role === 'medico';
   const isSecretaria = user?.role === 'secretaria';
@@ -202,8 +203,9 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const [availabilitySaveError, setAvailabilitySaveError] = useState('');
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [availabilityDeletingId, setAvailabilityDeletingId] = useState<string | null>(null);
+  const initialOpenKeyRef = useRef('');
 
-  const openModal = useCallback((appt?: Agendamento, dateOverride = selectedDate, timeOverride = '') => {
+  const openModal = useCallback((appt?: Agendamento, dateOverride = selectedDate, timeOverride = '', pacienteId = '') => {
     if (isPaciente) return;
     if (!appt && !canCreateAgendamento) return;
     setErrors({});
@@ -228,13 +230,21 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       setPatientSearch('');
       return;
     }
-    setModal({ open: true, mode: 'add', data: { ...emptyForm(dateOverride), medicoId: filterDoctorId, hora: timeOverride } });
+    setModal({ open: true, mode: 'add', data: { ...emptyForm(dateOverride), pacienteId, medicoId: filterDoctorId, hora: timeOverride } });
     setPatientSearch('');
   }, [canCreateAgendamento, filterDoctorId, isPaciente, selectedDate]);
 
   useEffect(() => {
-    if (initialOpen && canCreateAgendamento) openModal();
-  }, [canCreateAgendamento, initialOpen, openModal]);
+    if (!initialOpen) {
+      initialOpenKeyRef.current = '';
+      return;
+    }
+    const key = initialPatientId ?? 'novo';
+    if (canCreateAgendamento && initialOpenKeyRef.current !== key) {
+      initialOpenKeyRef.current = key;
+      openModal(undefined, selectedDate, '', initialPatientId ?? '');
+    }
+  }, [canCreateAgendamento, initialOpen, initialPatientId, openModal, selectedDate]);
 
   const closeModal = () => {
     if (saving) return;

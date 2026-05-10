@@ -170,6 +170,7 @@ interface PacientesProps {
   onAdd: (p: Omit<Paciente, 'id'>) => void | Promise<void>;
   onUpdate: (p: Paciente) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
+  onSchedule?: (pacienteId: string) => void;
   highlightId?: string;
   initialOpen?: boolean;
   readOnly?: boolean;
@@ -534,6 +535,7 @@ export default function Pacientes({
   onAdd,
   onUpdate,
   onDelete,
+  onSchedule,
   highlightId,
   initialOpen,
   readOnly = false,
@@ -1033,7 +1035,7 @@ export default function Pacientes({
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <ActionBtn icon={Eye} color="var(--primary)" title="Ver prontuário" onClick={() => openView(p)} />
                         <ActionBtn icon={Pencil} color="#d97706" title="Editar" onClick={() => openEdit(p)} />
-                        <ActionBtn icon={Calendar} color="#7c3aed" title="Marcar consulta" onClick={() => {}} />
+                        <ActionBtn icon={Calendar} color="#7c3aed" title="Marcar consulta" onClick={() => onSchedule?.(p.id)} />
                         {(!readOnly || allowDelete) && <ActionBtn icon={Trash2} color="var(--red-500)" title="Excluir" onClick={() => { setDeleteError(''); setConfirmDelete(p.id); }} />}
                       </div>
                     </td>
