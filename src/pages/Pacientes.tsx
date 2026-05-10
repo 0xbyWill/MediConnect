@@ -1037,7 +1037,7 @@ export default function Pacientes({
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <ActionBtn icon={Eye} color="var(--primary)" title="Ver prontuário" onClick={() => openView(p)} />
                         <ActionBtn icon={Pencil} color="#d97706" title="Editar" onClick={() => openEdit(p)} />
-                        {canSchedulePatient && <ActionBtn icon={Calendar} color="#7c3aed" title="Marcar consulta" onClick={() => onSchedule(p.id)} />}
+                        {canSchedulePatient && <ActionBtn icon={Calendar} color="#7c3aed" title="Marcar consulta" onClick={() => onSchedule?.(p.id)} />}
                         {canDeletePatient && <ActionBtn icon={Trash2} color="var(--red-500)" title="Excluir" onClick={() => { setDeleteError(''); setConfirmDelete(p.id); }} />}
                       </div>
                     </td>
