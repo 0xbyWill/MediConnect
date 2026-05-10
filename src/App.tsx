@@ -60,6 +60,7 @@ export default function App() {
 
   const [openAgendaModal,    setOpenAgendaModal]    = useState(false);
   const [openPacienteModal,  setOpenPacienteModal]  = useState(false);
+  const [agendaPatientId,    setAgendaPatientId]    = useState<string | null>(null);
   const [page, setPage]                             = useState<PageType>('dashboard');
   const [authView, setAuthView]                     = useState<'login' | 'cadastro-paciente'>('login');
   const createdPatientsRef = useRef<ApiPatient[]>([]);
@@ -73,6 +74,7 @@ export default function App() {
     setPage('dashboard');
     setOpenAgendaModal(false);
     setOpenPacienteModal(false);
+    setAgendaPatientId(null);
     setApiError(null);
 
     if (!nextUserId) {
@@ -358,7 +360,16 @@ export default function App() {
       setPage(p);
       setOpenAgendaModal(false);
       setOpenPacienteModal(false);
+      setAgendaPatientId(null);
     }
+  };
+
+  const handleSchedulePatient = (pacienteId: string) => {
+    if (!user || !ROLE_PAGES[user.role].includes('agenda')) return;
+    setAgendaPatientId(pacienteId);
+    setOpenAgendaModal(true);
+    setOpenPacienteModal(false);
+    setPage('agenda');
   };
 
   // ─── Loading de autenticação ──────────────────────────────────────────────
@@ -468,7 +479,7 @@ export default function App() {
             <Dashboard
               pacientes={pacientes} agendamentos={agendamentos} laudos={laudos} doctors={doctors}
               onNavigate={handleNavigate}
-              onNovoAgendamento={() => { setOpenAgendaModal(true); setPage('agenda'); }}
+              onNovoAgendamento={() => { setAgendaPatientId(null); setOpenAgendaModal(true); setPage('agenda'); }}
               onNovoPaciente={() => { setOpenPacienteModal(true); setPage('pacientes'); }}
             />
           )}
@@ -477,6 +488,7 @@ export default function App() {
               pacientes={pacientes} onAdd={addPaciente} onUpdate={updatePaciente}
               onDelete={deletePaciente}
               agendamentos={agendamentos} laudos={laudos} doctors={doctors}
+              onSchedule={handleSchedulePatient}
               initialOpen={openPacienteModal} readOnly={user.role === 'secretaria'} allowDelete={user.role === 'gestao'}
             />
           )}
@@ -484,7 +496,7 @@ export default function App() {
             <Agenda
               agendamentos={agendamentos} pacientes={pacientes} doctors={doctors}
               onAdd={addAgendamento} onUpdate={updateAgendamento}
-              onDelete={deleteAgendamento} initialOpen={openAgendaModal} readOnly={user.role === 'paciente'}
+              onDelete={deleteAgendamento} initialOpen={openAgendaModal} initialPatientId={agendaPatientId} readOnly={user.role === 'paciente'}
             />
           )}
           {currentPage === 'laudos' && allowedPages.includes('laudos') && (
