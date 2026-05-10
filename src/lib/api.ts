@@ -328,6 +328,16 @@ function toApiWeekday(weekday: number | string | undefined) {
   return weekday;
 }
 
+function toApiWeekdayNumber(weekday: number | string | undefined) {
+  if (weekday === undefined) return undefined;
+  if (typeof weekday === 'number') return weekday;
+  const normalized = weekday.toLowerCase().trim();
+  const numeric = Number(normalized);
+  if (Number.isInteger(numeric)) return numeric;
+  const index = WEEKDAY_VALUES.findIndex(value => value === normalized);
+  return index >= 0 ? index : undefined;
+}
+
 function fromApiWeekday(weekday: number | string): number {
   if (typeof weekday === 'number') return weekday;
   const normalized = weekday.toLowerCase().trim();
@@ -339,6 +349,26 @@ function fromApiWeekday(weekday: number | string): number {
 
 function apiAvailabilityToUi(row: ApiDoctorAvailability): ApiDoctorAvailability {
   return { ...row, weekday: fromApiWeekday(row.weekday) };
+}
+
+function shouldRetryAvailabilityWeekdayAsNumber(err: unknown) {
+  const msg = err instanceof Error ? err.message.toLowerCase() : '';
+  return (
+    msg.includes('weekday') ||
+    msg.includes('invalid input syntax') ||
+    msg.includes('invalid input value') ||
+    msg.includes('erro na requisicao (400)') ||
+    msg.includes('(400)')
+  );
+}
+
+function availabilityBody<T extends Partial<CreateDoctorAvailabilityPayload>>(data: T, numericWeekday = false) {
+  return {
+    ...data,
+    ...(data.weekday === undefined
+      ? {}
+      : { weekday: numericWeekday ? toApiWeekdayNumber(data.weekday) : toApiWeekday(data.weekday) }),
+  };
 }
 
 export interface AvailableSlotsPayload {
@@ -841,28 +871,54 @@ export const appointmentsApi = {
 // â”€â”€â”€ Disponibilidade / Slots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const availabilityApi = {
   list: (params: { doctor_id?: string; weekday?: number; active?: boolean; appointment_type?: string } = {}) => {
-    const q = new URLSearchParams({ select: '*' });
-    if (params.doctor_id) q.set('doctor_id', `eq.${params.doctor_id}`);
-    if (params.weekday !== undefined) q.set('weekday', `eq.${toApiWeekday(params.weekday)}`);
-    if (params.active !== undefined) q.set('active', `eq.${params.active}`);
-    if (params.appointment_type) q.set('appointment_type', `eq.${params.appointment_type}`);
-    return request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?${q.toString()}`)
-      .then(rows => rows.map(apiAvailabilityToUi));
+    const buildQuery = (numericWeekday = false) => {
+      const q = new URLSearchParams({ select: '*' });
+      if (params.doctor_id) q.set('doctor_id', `eq.${params.doctor_id}`);
+      if (params.weekday !== undefined) {
+        q.set('weekday', `eq.${numericWeekday ? toApiWeekdayNumber(params.weekday) : toApiWeekday(params.weekday)}`);
+      }
+      if (params.active !== undefined) q.set('active', `eq.${params.active}`);
+      if (params.appointment_type) q.set('appointment_type', `eq.${params.appointment_type}`);
+      return q;
+    };
+
+    const fetchRows = (numericWeekday = false) =>
+      request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?${buildQuery(numericWeekday).toString()}`)
+        .then(rows => rows.map(apiAvailabilityToUi));
+
+    return fetchRows().catch(err => {
+      if (params.weekday === undefined || !shouldRetryAvailabilityWeekdayAsNumber(err)) throw err;
+      return fetchRows(true);
+    });
   },
 
-  create: (data: CreateDoctorAvailabilityPayload) =>
-    request<ApiDoctorAvailability[] | ApiDoctorAvailability>('/rest/v1/doctor_availability', {
-      method: 'POST',
-      body: JSON.stringify({ ...data, weekday: toApiWeekday(data.weekday) }),
-    }, { Prefer: 'return=representation' }).then(response =>
-      apiAvailabilityToUi(Array.isArray(response) ? expectOne(response, 'disponibilidade criada') : response)
-    ),
+  create: (data: CreateDoctorAvailabilityPayload) => {
+    const post = (numericWeekday = false) =>
+      request<ApiDoctorAvailability[] | ApiDoctorAvailability>('/rest/v1/doctor_availability', {
+        method: 'POST',
+        body: JSON.stringify(availabilityBody(data, numericWeekday)),
+      }, { Prefer: 'return=representation' }).then(response =>
+        apiAvailabilityToUi(Array.isArray(response) ? expectOne(response, 'disponibilidade criada') : response)
+      );
 
-  update: (id: string, data: Partial<ApiDoctorAvailability>) =>
-    request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?id=eq.${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ ...data, weekday: toApiWeekday(data.weekday) }),
-    }, { Prefer: 'return=representation' }).then(rows => apiAvailabilityToUi(expectOne(rows, 'disponibilidade atualizada'))),
+    return post().catch(err => {
+      if (!shouldRetryAvailabilityWeekdayAsNumber(err)) throw err;
+      return post(true);
+    });
+  },
+
+  update: (id: string, data: Partial<ApiDoctorAvailability>) => {
+    const patch = (numericWeekday = false) =>
+      request<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?id=eq.${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(availabilityBody(data, numericWeekday)),
+      }, { Prefer: 'return=representation' }).then(rows => apiAvailabilityToUi(expectOne(rows, 'disponibilidade atualizada')));
+
+    return patch().catch(err => {
+      if (data.weekday === undefined || !shouldRetryAvailabilityWeekdayAsNumber(err)) throw err;
+      return patch(true);
+    });
+  },
 
   delete: (id: string) =>
     request<void>(`/rest/v1/doctor_availability?id=eq.${id}`, { method: 'DELETE' }),
