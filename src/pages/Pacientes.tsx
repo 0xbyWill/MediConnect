@@ -1194,7 +1194,7 @@ export default function Pacientes({
                     <FieldInput label="Nome Social" value={d.nomeSocial || ''} onChange={v => setField('nomeSocial', v)} disabled={isView} placeholder="Apelido ou nome social" />
                   </div>
                   <div style={responsiveGrid(220)}>
-                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', formatCpf(v))} disabled={isView} error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', formatCpf(v))} required disabled={isView} error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                     <FieldInput label="RG" value={d.rg || ''} onChange={v => setField('rg', v)} disabled={isView} placeholder="00.000.000-0" />
                     <FieldSelect label="Tipo de documento" value={d.outroDocTipo || ''} onChange={v => setField('outroDocTipo', v)} options={TIPOS_DOC} disabled={isView} />
                     <FieldInput label="Número do documento" value={d.outroDocNumero || ''} onChange={v => setField('outroDocNumero', v)} disabled={isView} placeholder="Número" />
