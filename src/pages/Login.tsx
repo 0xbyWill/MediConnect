@@ -79,14 +79,14 @@ export default function Login({ onCreateAccount }: LoginProps) {
             </span>
             <span className="login-brand-copy">
               <span className="login-brand-name">MediConnect</span>
-              <span className="login-brand-caption">Gestao Inteligente de Saude</span>
+              <span className="login-brand-caption">Gestão Inteligente de Saúde</span>
             </span>
           </header>
 
           <div className="login-card" aria-label="Entrada no sistema">
             <div className="login-heading">
               <h1 id="login-title">Bem-vindo de volta</h1>
-              <p>Faca login para acessar sua conta</p>
+              <p>Faça login para acessar sua conta</p>
             </div>
 
             {error && (
@@ -165,7 +165,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
                   </>
                 ) : (
                   <>
-                    Fazer Login
+                    aazer Login
                     <ArrowRight size={19} aria-hidden="true" />
                   </>
                 )}
@@ -174,7 +174,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
             {onCreateAccount && (
               <div className="login-create-account">
-                <span>Nao tem uma conta?</span>
+                <span>Não tem uma conta?</span>
                 <button type="button" onClick={onCreateAccount}>
                   Criar Conta
                 </button>
@@ -187,13 +187,13 @@ export default function Login({ onCreateAccount }: LoginProps) {
         <div className="login-hero" aria-label="Resumo da plataforma">
           <div className="login-hero-copy">
             <h2>MediConnect</h2>
-            <p>Prontuarios digitais, agendamento inteligente e muito mais em uma unica plataforma</p>
+            <p>Prontuários digitais, agendamento inteligente e muito mais em uma única plataforma</p>
           </div>
 
           <div className="login-benefits" aria-label="Recursos principais">
             <FeatureItem icon={Stethoscope} title="Atendimento" subtitle="Completo e eficiente" />
-            <FeatureItem icon={UsersRound} title="Pacientes" subtitle="Gestao centralizada" />
-            <FeatureItem icon={ShieldCheck} title="Seguranca" subtitle="Dados protegidos" />
+            <FeatureItem icon={UsersRound} title="Pacientes" subtitle="Gestão centralizada" />
+            <FeatureItem icon={ShieldCheck} title="Segurança" subtitle="Dados protegidos" />
           </div>
         </div>
       </section>
@@ -208,7 +208,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
         <QuickAccessButton
           icon={Stethoscope}
-          title="Medico"
+          title="Médico"
           subtitle="Agenda, pacientes e laudos"
           color="var(--primary)"
           disabled={loading}

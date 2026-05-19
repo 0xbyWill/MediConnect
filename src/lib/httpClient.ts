@@ -51,7 +51,7 @@ export async function request<T>(
       apiError.details ||
       apiError.hint ||
       res.statusText ||
-      'Erro na requisicao';
+      'Erro na requisição';
     throw new Error(`${message} (${res.status})`);
   }
 

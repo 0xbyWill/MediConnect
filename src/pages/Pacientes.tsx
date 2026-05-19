@@ -96,6 +96,78 @@ const FIT_AVAILABILITY_OPTIONS = [
   'Confirmou disponibilidade imediata ou alta disponibilidade',
 ];
 
+const MAIN_HEALTH_CONDITION_PRESETS = [
+  'Sem condição relevante informada',
+  'Condição crônica controlada',
+  'Dor ou limitação funcional',
+  'Pos-operatorio recente',
+  'Acompanhamento frequente necessario',
+  'Piora recente informada',
+  'Risco de queda informado',
+  'Imunossupressao ou fragilidade informada',
+  'Gestante ou puerpera',
+];
+
+const COMORBIDITY_PRESETS = [
+  'Nenhuma comorbidade relevante informada',
+  'Hipertensao controlada',
+  'Diabetes controlado',
+  'Doenca respiratoria cronica',
+  'Doenca cardiovascular',
+  'Multiplas comorbidades',
+  'Imunossupressao',
+  'Histórico de quedas',
+];
+
+const PAIN_LEVEL_OPTIONS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+
+const ABSENCE_HISTORY_OPTIONS = [
+  'Sem faltas anteriores',
+  '1 falta justificada',
+  '1 falta sem justificativa',
+  '2 faltas ou mais',
+  'Histórico recorrente de faltas',
+];
+
+const ARRIVAL_TIME_OPTIONS = ['15', '30', '45', '60', '90', '120', '180'];
+const TRAVEL_TIME_OPTIONS = ['15', '30', '45', '60', '90', '120'];
+
+const APPOINTMENT_NEED_OPTIONS = [
+  'Consulta',
+  'Retorno',
+  'Avaliação inicial',
+  'Reavaliação',
+  'Procedimento',
+  'Exame',
+  'Fisioterapia',
+  'Telemedicina',
+];
+
+const SPECIALTY_NEED_OPTIONS = [
+  'Clínica geral',
+  'Cardiologia',
+  'Dermatologia',
+  'Endocrinologia',
+  'Fisioterapia',
+  'Geriatria',
+  'Ginecologia',
+  'Neurologia',
+  'Ortopedia',
+  'Pediatria',
+  'Psiquiatria',
+  'Profissional responsável já definido',
+];
+
+const CRITICAL_ALERT_PRESETS = [
+  'Sem alerta critico informado',
+  'Risco de queda',
+  'Piora recente',
+  'Dor intensa persistente',
+  'Limitação funcional importante',
+  'Necessita revisao humana antes do encaixe',
+  'Alerta para profissional responsável',
+];
+
 const NPS_PRIORITY_LABEL: Record<number, string> = {
   1: 'baixa prioridade',
   2: 'prioridade leve',
@@ -121,8 +193,8 @@ interface PacienteExtended extends Paciente {
   nacionalidade?: string;
   profissao?: string;
   estadoCivil?: string;
-  nomeResponsavel?: string;
-  cpfResponsavel?: string;
+  nomeResponsável?: string;
+  cpfResponsável?: string;
   vip?: boolean;
   urlRedirecionamento?: string;
   outroDocTipo?: string;
@@ -211,7 +283,7 @@ function calcIMC(peso: string, altura: string) {
   return (p / (a * a)).toFixed(1);
 }
 function hasResponsibleData(p: PacienteExtended) {
-  return Boolean(p.nomeResponsavel || p.cpfResponsavel);
+  return Boolean(p.nomeResponsável || p.cpfResponsável);
 }
 
 function ageFromBirthDate(value?: string) {
@@ -391,7 +463,7 @@ function calculatePatientPriority(d: PacienteExtended) {
 const emptyForm: PacienteExtended = {
   id: '', nome: '', nomeSocial: '', cpf: '', rg: '', sexo: '',
   dataNasc: '', raca: '', naturalidade: '', nacionalidade: '',
-  profissao: '', estadoCivil: '', nomeResponsavel: '', cpfResponsavel: '',
+  profissao: '', estadoCivil: '', nomeResponsável: '', cpfResponsável: '',
   vip: false, urlRedirecionamento: '',
   outroDocTipo: '', outroDocNumero: '',
   email: '', telefone: '', telefone2: '', telefone3: '',
@@ -449,6 +521,7 @@ function FieldSelect({ label, value, onChange, options, required = false, disabl
   options: string[]; required?: boolean; disabled?: boolean;
 }) {
   const selectId = React.useId();
+  const visibleOptions = value && !options.includes(value) ? [value, ...options] : options;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
       <label htmlFor={selectId} style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -457,7 +530,7 @@ function FieldSelect({ label, value, onChange, options, required = false, disabl
       <select id={selectId} value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
         style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, outline: 'none', border: '1px solid var(--gray-200)', background: disabled ? 'var(--gray-50)' : '#fff', color: 'var(--gray-800)', cursor: disabled ? 'default' : 'pointer', width: '100%', boxSizing: 'border-box' }}>
         <option value="">Selecione</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {visibleOptions.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
   );
@@ -568,7 +641,7 @@ export default function Pacientes({
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [duplicateWarn, setDuplicateWarn] = useState(false);
-  const [showResponsavel, setShowResponsavel] = useState(false);
+  const [showResponsável, setShowResponsável] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const maxBirthDate = yesterdayISO();
 
@@ -608,12 +681,12 @@ export default function Pacientes({
     setErrors({});
     setSubmitError('');
     setDuplicateWarn(false);
-    setShowResponsavel(false);
+    setShowResponsável(false);
   }, [hideAddButton]);
   const openEdit = (p: Paciente) => {
     const data = { ...emptyForm, ...p, cpf: formatCpf(p.cpf) };
     setModal({ open: true, mode: 'edit', data });
-    setShowResponsavel(hasResponsibleData(data));
+    setShowResponsável(hasResponsibleData(data));
     setActiveTab('dados'); setErrors({}); setSubmitError(''); setDuplicateWarn(false);
   };
   const openView = (p: Paciente) => {
@@ -621,7 +694,7 @@ export default function Pacientes({
     setProfilePatient(data);
     setProfileTab('resumo');
   };
-  const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); setShowResponsavel(false); };
+  const closeModal = () => { if (saving) return; setModal({ open: false, mode: 'add', data: { ...emptyForm } }); setErrors({}); setSubmitError(''); setDuplicateWarn(false); setShowResponsável(false); };
 
   useEffect(() => { if (initialOpen) openAdd(); }, [initialOpen, openAdd]);
 
@@ -641,7 +714,7 @@ export default function Pacientes({
       return;
     }
     const reader = new FileReader();
-    reader.onerror = () => setSubmitError('Nao foi possivel ler a imagem selecionada.');
+    reader.onerror = () => setSubmitError('Não foi possível ler a imagem selecionada.');
     reader.onload = ev => setField('foto', ev.target?.result as string);
     reader.readAsDataURL(file);
   };
@@ -649,9 +722,9 @@ export default function Pacientes({
   // -- Validação --
   const validate = (d: PacienteExtended) => {
     const e: Record<string, string> = {};
-    if (showResponsavel && !d.nomeResponsavel?.trim()) e.nomeResponsavel = 'Nome do responsável obrigatório.';
-    if (showResponsavel && !d.cpfResponsavel?.trim()) e.cpfResponsavel = 'CPF do responsável obrigatório.';
-    if (d.cpfResponsavel && !isValidCpf(d.cpfResponsavel)) e.cpfResponsavel = 'CPF do responsável inválido.';
+    if (showResponsável && !d.nomeResponsável?.trim()) e.nomeResponsável = 'Nome do responsável obrigatório.';
+    if (showResponsável && !d.cpfResponsável?.trim()) e.cpfResponsável = 'CPF do responsável obrigatório.';
+    if (d.cpfResponsável && !isValidCpf(d.cpfResponsável)) e.cpfResponsável = 'CPF do responsável inválido.';
     if (d.email.trim() && !isValidEmail(d.email)) e.email = 'Informe um e-mail valido.';
     if (d.telefone.trim() && !isValidPhoneBR(d.telefone)) e.telefone = 'Informe um telefone com DDD.';
     if (d.telefone2 && !isValidPhoneBR(d.telefone2, false)) e.telefone2 = 'Informe um telefone com DDD.';
@@ -675,7 +748,7 @@ export default function Pacientes({
     if (Object.keys(e).length) {
       setErrors(e);
       // Vai para a aba que tem o erro
-      if (e.nome || e.cpf || e.dataNasc || e.email || e.telefone || e.nomeResponsavel || e.cpfResponsavel) setActiveTab('dados');
+      if (e.nome || e.cpf || e.dataNasc || e.email || e.telefone || e.nomeResponsável || e.cpfResponsável) setActiveTab('dados');
       return;
     }
     // Verifica duplicidade por CPF
@@ -743,7 +816,7 @@ export default function Pacientes({
       .filter(l => l.pacienteId === p.id)
       .sort((a, b) => b.data.localeCompare(a.data));
     const releasedReports = patientReports.filter(l => l.status === 'liberado');
-    const doctorName = (doctorId?: string) => doctors.find(doctor => doctor.id === doctorId)?.full_name || 'Profissional nao informado';
+    const doctorName = (doctorId?: string) => doctors.find(doctor => doctor.id === doctorId)?.full_name || 'Profissional não informado';
     const personalRows: Array<[string, unknown]> = [
       ['Nome completo', p.nome],
       ['Nome social', p.nomeSocial],
@@ -757,8 +830,8 @@ export default function Pacientes({
       ['Nacionalidade', p.nacionalidade],
       ['Profissao', p.profissao],
       ['Estado civil', p.estadoCivil],
-      ['Responsavel', p.nomeResponsavel],
-      ['CPF responsavel', displayCpf(p.cpfResponsavel)],
+      ['Responsável', p.nomeResponsável],
+      ['CPF responsável', displayCpf(p.cpfResponsável)],
       ['Convenio', p.convenio],
       ['Plano', p.planoConvenio],
       ['Matricula', p.matriculaConvenio],
@@ -1240,15 +1313,15 @@ export default function Pacientes({
 
                   {/* Toggles */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', flexWrap: 'wrap' }}>
-                    <Toggle label="Paciente é menor de idade?" value={showResponsavel} onChange={setShowResponsavel} disabled={isView} />
+                    <Toggle label="Paciente é menor de idade?" value={showResponsável} onChange={setShowResponsável} disabled={isView} />
                   </div>
 
-                  {showResponsavel && (
+                  {showResponsável && (
                     <>
                       <SectionHeader label="Responsável" />
                       <div style={responsiveGrid(240)}>
-                        <FieldInput label="Nome do responsável" value={d.nomeResponsavel || ''} onChange={v => setField('nomeResponsavel', v)} required disabled={isView} error={errors.nomeResponsavel} />
-                        <FieldInput label="CPF do responsável" value={d.cpfResponsavel || ''} onChange={v => setField('cpfResponsavel', formatCpf(v))} required disabled={isView} error={errors.cpfResponsavel} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                        <FieldInput label="Nome do responsável" value={d.nomeResponsável || ''} onChange={v => setField('nomeResponsável', v)} required disabled={isView} error={errors.nomeResponsável} />
+                        <FieldInput label="CPF do responsável" value={d.cpfResponsável || ''} onChange={v => setField('cpfResponsável', formatCpf(v))} required disabled={isView} error={errors.cpfResponsável} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                       </div>
                     </>
                   )}
@@ -1315,10 +1388,10 @@ export default function Pacientes({
                   </div>
 
                   <div style={responsiveGrid(220)}>
-                    <FieldInput label="Condição de saúde principal" value={d.condicaoSaudePrincipal || ''} onChange={v => setField('condicaoSaudePrincipal', v)} disabled={isView} placeholder="Resumo operacional, sem excesso de dados sensíveis" />
+                    <FieldSelect label="Condição de saúde principal" value={d.condicaoSaudePrincipal || ''} onChange={v => setField('condicaoSaudePrincipal', v)} options={MAIN_HEALTH_CONDITION_PRESETS} disabled={isView} />
                     <FieldSelect label="Estado da condição de saúde" value={d.condicaoSaudePontuacao || ''} onChange={v => setField('condicaoSaudePontuacao', v)} options={HEALTH_CONDITION_OPTIONS} disabled={isView} />
-                    <FieldInput label="Comorbidades" value={d.comorbidades || ''} onChange={v => setField('comorbidades', v)} disabled={isView} placeholder="Ex: condição crônica controlada" />
-                    <FieldInput label="Nível de dor" value={d.nivelDor || ''} onChange={v => setField('nivelDor', String(Math.min(Number(v.replace(/\D/g, '').slice(0, 2) || 0), 10)))} disabled={isView} placeholder="0 a 10" inputMode="numeric" maxLength={2} />
+                    <FieldSelect label="Comorbidades" value={d.comorbidades || ''} onChange={v => setField('comorbidades', v)} options={COMORBIDITY_PRESETS} disabled={isView} />
+                    <FieldSelect label="Nível de dor" value={d.nivelDor || ''} onChange={v => setField('nivelDor', v)} options={PAIN_LEVEL_OPTIONS} disabled={isView} />
                   </div>
 
                   <div style={responsiveGrid(220)}>
@@ -1331,19 +1404,19 @@ export default function Pacientes({
                   <div style={responsiveGrid(220)}>
                     <FieldSelect label="Tempo na fila" value={d.tempoNaFila || ''} onChange={v => setField('tempoNaFila', v)} options={WAITING_TIME_OPTIONS} disabled={isView} />
                     <FieldSelect label="Disponibilidade para encaixe" value={d.disponibilidadeEncaixe || ''} onChange={v => setField('disponibilidadeEncaixe', v)} options={FIT_AVAILABILITY_OPTIONS} disabled={isView} />
-                    <FieldInput label="Faltas anteriores" value={d.faltasAnteriores || ''} onChange={v => setField('faltasAnteriores', v)} disabled={isView} placeholder="Ex: 1 falta justificada" />
-                    <FieldInput label="Tempo mínimo para chegar" value={d.tempoMinimoChegar || ''} onChange={v => setField('tempoMinimoChegar', v.replace(/\D/g, '').slice(0, 3))} disabled={isView} placeholder="Ex: 40 min" inputMode="numeric" maxLength={3} />
+                    <FieldSelect label="Faltas anteriores" value={d.faltasAnteriores || ''} onChange={v => setField('faltasAnteriores', v)} options={ABSENCE_HISTORY_OPTIONS} disabled={isView} />
+                    <FieldSelect label="Tempo mínimo para chegar" value={d.tempoMinimoChegar || ''} onChange={v => setField('tempoMinimoChegar', v)} options={ARRIVAL_TIME_OPTIONS} disabled={isView} />
                   </div>
 
                   <div style={responsiveGrid(220)}>
-                    <FieldInput label="Tempo de deslocamento" value={d.tempoDeslocamento || ''} onChange={v => setField('tempoDeslocamento', v.replace(/\D/g, '').slice(0, 3))} disabled={isView} placeholder="Ex: 25 min" inputMode="numeric" maxLength={3} />
-                    <FieldInput label="Tipo de atendimento necessário" value={d.tipoAtendimentoNecessario || ''} onChange={v => setField('tipoAtendimentoNecessario', v)} disabled={isView} placeholder="Ex: consulta, retorno, procedimento" />
-                    <FieldInput label="Profissional ou especialidade necessária" value={d.profissionalEspecialidadeNecessaria || ''} onChange={v => setField('profissionalEspecialidadeNecessaria', v)} disabled={isView} placeholder="Ex: cardiologia, fisioterapia, Dr(a). responsável" />
+                    <FieldSelect label="Tempo de deslocamento" value={d.tempoDeslocamento || ''} onChange={v => setField('tempoDeslocamento', v)} options={TRAVEL_TIME_OPTIONS} disabled={isView} />
+                    <FieldSelect label="Tipo de atendimento necessário" value={d.tipoAtendimentoNecessario || ''} onChange={v => setField('tipoAtendimentoNecessario', v)} options={APPOINTMENT_NEED_OPTIONS} disabled={isView} />
+                    <FieldSelect label="Profissional ou especialidade necessária" value={d.profissionalEspecialidadeNecessaria || ''} onChange={v => setField('profissionalEspecialidadeNecessaria', v)} options={SPECIALTY_NEED_OPTIONS} disabled={isView} />
                   </div>
 
                   <div style={responsiveGrid(260)}>
                     <PriorityTextArea label="Observações clínicas" value={d.observacoesClinicas || ''} onChange={v => setField('observacoesClinicas', v)} disabled={isView} placeholder="Use linguagem objetiva e evite diagnósticos sensíveis desnecessários." />
-                    <PriorityTextArea label="Alertas críticos" value={d.alertasCriticos || ''} onChange={v => setField('alertasCriticos', v)} disabled={isView} placeholder="Ex: risco de queda, piora recente, alerta para profissional." />
+                    <FieldSelect label="Alertas críticos" value={d.alertasCriticos || ''} onChange={v => setField('alertasCriticos', v)} options={CRITICAL_ALERT_PRESETS} disabled={isView} />
                   </div>
 
                   <SectionHeader label="Resultado calculado" icon={Gauge} />

@@ -6,10 +6,12 @@ export interface AiProviderMessage {
 }
 
 export class AiProviderService {
-  private apiKey = Deno.env.get('AI_API_KEY') ?? '';
-  private model = Deno.env.get('AI_MODEL') ?? 'gpt-4o-mini';
+  private provider = (Deno.env.get('AI_PROVIDER') ?? 'openai').toLowerCase();
+  private apiKey = this.provider === 'gemini'
+    ? Deno.env.get('GEMINI_API_KEY') ?? Deno.env.get('AI_API_KEY') ?? ''
+    : Deno.env.get('AI_API_KEY') ?? '';
+  private model = Deno.env.get('AI_MODEL') ?? (this.provider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
   private embeddingModel = Deno.env.get('AI_EMBEDDING_MODEL') ?? 'text-embedding-3-small';
-  private provider = Deno.env.get('AI_PROVIDER') ?? 'openai';
   private temperature = Number(Deno.env.get('AI_TEMPERATURE') ?? '0.2');
   private maxTokens = Number(Deno.env.get('AI_MAX_TOKENS') ?? '700');
 
@@ -64,10 +66,12 @@ export class AiProviderService {
   }
 
   private async callModel(messages: AiProviderMessage[]) {
-    if (this.provider !== 'openai') {
-      throw new Error(`Provider nao suportado neste MVP: ${this.provider}`);
-    }
+    if (this.provider === 'gemini') return this.callGemini(messages);
+    if (this.provider === 'openai') return this.callOpenAi(messages);
+    throw new Error(`Provider nao suportado neste MVP: ${this.provider}`);
+  }
 
+  private async callOpenAi(messages: AiProviderMessage[]) {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -85,6 +89,38 @@ export class AiProviderService {
     if (!response.ok) throw new Error(`Falha no provedor de IA: ${response.status}`);
     const data = await response.json();
     return String(data?.choices?.[0]?.message?.content ?? '');
+  }
+
+  private async callGemini(messages: AiProviderMessage[]) {
+    const system = messages
+      .filter(message => message.role === 'system')
+      .map(message => message.content)
+      .join('\n\n');
+    const contents = messages
+      .filter(message => message.role !== 'system')
+      .map(message => ({
+        role: message.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: maskSensitive(message.content).slice(0, 12000) }],
+      }));
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...(system ? { systemInstruction: { parts: [{ text: maskSensitive(system).slice(0, 6000) }] } } : {}),
+        contents,
+        generationConfig: {
+          temperature: this.temperature,
+          maxOutputTokens: this.maxTokens,
+        },
+      }),
+    });
+
+    if (!response.ok) throw new Error(`Falha no provedor Gemini: ${response.status}`);
+    const data = await response.json();
+    return String(data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '');
   }
 
   private handleProviderError() {

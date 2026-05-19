@@ -154,7 +154,7 @@ function ListRows({ items, emptyText, limit = 6 }: { items: ListItem[]; emptyTex
               {time && (
                 <div style={{ width: 74, flexShrink: 0, borderRight: '1px solid var(--gray-100)' }}>
                   <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--dark)', lineHeight: 1 }}>{time}</div>
-                  <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 6 }}>Horario</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 6 }}>Horário</div>
                 </div>
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -400,7 +400,7 @@ export default function Dashboard({
             {saudacao}, {displayName}!
           </h1>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.92)', marginTop: 8, fontWeight: 650 }}>
-            Aqui esta um resumo das suas atividades de hoje
+            Aqui está um resumo das suas atividades de hoje
           </p>
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', marginTop: 5 }}>{dateStr} - {model.title}</p>
 

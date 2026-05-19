@@ -701,7 +701,7 @@ export default function Usuarios() {
                           setConfirmDelete(u.id);
                         }}
                         disabled={selfUser}
-                        title={selfUser ? 'A API nao permite excluir o proprio usuario' : 'Excluir usuario'}
+                        title={selfUser ? 'A API não permite excluir o próprio usuário' : 'Excluir usuário'}
                         style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: selfUser ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: selfUser ? 'var(--gray-300)' : 'var(--red-500)' }}
                       ><Trash2 size={14} /></button>
                     </div>

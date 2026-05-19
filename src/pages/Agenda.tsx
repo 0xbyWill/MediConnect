@@ -534,7 +534,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       .catch(err => {
         if (cancelled) return;
         setModalDoctorAvailability([]);
-        setModalDoctorAvailabilityError(err instanceof Error ? err.message : 'Erro ao carregar medicos disponiveis.');
+        setModalDoctorAvailabilityError(err instanceof Error ? err.message : 'Erro ao carregar médicos disponíveis.');
       })
       .finally(() => {
         if (!cancelled) setModalDoctorAvailabilityLoading(false);
@@ -575,7 +575,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
 
   const validate = () => {
     const nextErrors: Record<string, string> = {};
-    if (!modal.data.pacienteId) nextErrors.paciente = canPatientSchedule ? 'Seu perfil de paciente nao esta vinculado a um cadastro de paciente.' : 'Selecione um paciente do banco.';
+    if (!modal.data.pacienteId) nextErrors.paciente = canPatientSchedule ? 'Seu perfil de paciente não está vinculado a um cadastro de paciente.' : 'Selecione um paciente do banco.';
     if (!modal.data.data) nextErrors.data = 'Informe a data da consulta.';
     if (modal.data.data && modal.data.data < today) nextErrors.data = 'A consulta não pode ser agendada para data anterior a hoje.';
     if (!modal.data.hora) nextErrors.hora = 'Informe o horário.';
@@ -743,7 +743,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           <div>
             <h1 style={{ fontSize: 30, fontWeight: 800, color: '#071327', margin: 0, lineHeight: 1.15 }}>Agenda de Consultas</h1>
             <p style={{ fontSize: 14, color: '#334155', marginTop: 6 }}>
-              {isPaciente ? 'Acompanhe suas consultas agendadas e anteriores.' : isMedico ? 'Acompanhe seus horarios e consultas vinculadas.' : 'Gerencie seus horários e agendamentos'}
+              {isPaciente ? 'Acompanhe suas consultas agendadas e anteriores.' : isMedico ? 'Acompanhe seus horários e consultas vinculadas.' : 'Gerencie seus horários e agendamentos'}
             </p>
           </div>
           {(canManageAvailability || canCreateAgendamento) && (
@@ -786,7 +786,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               style={{ padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }} />
           </div>
           <div>
-            <label htmlFor="agenda-period-filter" style={labelStyle}>Visualizacao</label>
+            <label htmlFor="agenda-period-filter" style={labelStyle}>Visualização</label>
             <select id="agenda-period-filter" value={period} onChange={e => setPeriod(e.target.value as typeof period)}
             style={{ padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
             <option value="dia">Dia</option>
@@ -826,7 +826,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           <aside style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, boxShadow: 'none', padding: 22, position: 'sticky', top: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 22 }}>
               <Calendar size={20} color="var(--primary)" />
-              <h2 style={{ fontSize: 17, fontWeight: 800, color: '#071327', margin: 0 }}>Calendario</h2>
+              <h2 style={{ fontSize: 17, fontWeight: 800, color: '#071327', margin: 0 }}>Calendário</h2>
             </div>
 
             <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 900, color: '#071327', marginBottom: 18, textTransform: 'lowercase' }}>
@@ -879,8 +879,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
 
             <div style={{ borderTop: '1px solid #dbe7e2', paddingTop: 22, display: 'grid', gap: 14 }}>
               <StatLine label="Total de Consultas" value={selectedDayAppointments.length} />
-              <StatLine label="Horarios Livres" value={freeSlots} tone="green" />
-              <StatLine label="Taxa de Ocupacao" value={`${occupancyRate}%`} />
+              <StatLine label="Horários livres" value={freeSlots} tone="green" />
+              <StatLine label="Taxa de ocupação" value={`${occupancyRate}%`} />
             </div>
           </aside>
 
@@ -889,7 +889,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                   <Clock size={20} color="var(--primary)" />
-                  <h2 style={{ fontSize: 17, fontWeight: 800, color: '#071327', margin: 0 }}>Horarios do Dia</h2>
+                  <h2 style={{ fontSize: 17, fontWeight: 800, color: '#071327', margin: 0 }}>Horários do dia</h2>
                 </div>
                 <p style={{ fontSize: 13, color: '#475569', marginTop: 6, textTransform: 'lowercase' }}>{selectedDateLabel}</p>
               </div>
@@ -901,11 +901,11 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   <label htmlFor="agenda-doctor-filter-visual" style={labelStyle}>Agenda</label>
                   <select id="agenda-doctor-filter-visual" value={filterDoctorId} onChange={e => setFilterDoctorId(e.target.value)}
                     style={{ minWidth: 210, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
-                    <option value="">Todos os medicos disponiveis</option>
+                    <option value="">Todos os médicos disponíveis</option>
                     {visibleDoctors.map(d => <option key={d.id} value={d.id}>{d.full_name}{d.specialty ? ` - ${d.specialty}` : ''}</option>)}
                   </select>
                   {canPatientSchedule && !dayAvailabilityLoading && visibleDoctors.length === 0 && (
-                    <span style={{ display: 'block', marginTop: 5, fontSize: 11, color: 'var(--gray-400)' }}>Nenhum medico disponivel nesta data.</span>
+                    <span style={{ display: 'block', marginTop: 5, fontSize: 11, color: 'var(--gray-400)' }}>Nenhum médico disponível nesta data.</span>
                   )}
                 </div>
               )}
@@ -966,14 +966,14 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
 
                   <div style={{ minWidth: 0, display: 'grid', gap: 8 }}>
                     {appointments.length === 0 ? (
-                      <span style={{ color: '#64748b', fontSize: 15, fontStyle: 'italic' }}>Horario disponivel</span>
+                      <span style={{ color: '#64748b', fontSize: 15, fontStyle: 'italic' }}>Horário disponível</span>
                     ) : appointments.map(appt => {
                       const patient = pacientes.find(p => p.id === appt.pacienteId);
                       const doctor = doctors.find(d => d.id === appt.medicoId);
                       return (
                         <div key={appt.id} style={{ minWidth: 0 }}>
                           <div title={patient?.nome || ''} style={{ fontSize: 15, fontWeight: 800, color: '#071327', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {patient?.nome || 'Paciente nao encontrado'}
+                            {patient?.nome || 'Paciente não encontrado'}
                           </div>
                           <div title={doctor?.full_name || ''} style={{ fontSize: 13, color: '#334155', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {appt.tipo}{doctor?.full_name ? ` - ${doctor.full_name}` : ''}
@@ -991,7 +991,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     )
                   ) : canPatientSchedule ? (
                     <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', border: '1px solid var(--red-100)', borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', fontSize: 12, fontWeight: 700 }}>
-                      <AlertCircle size={15} /> Seu perfil nao esta vinculado a um cadastro de paciente.
+                      <AlertCircle size={15} /> Seu perfil não está vinculado a um cadastro de paciente.
                     </div>
                   ) : (
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -1024,9 +1024,9 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                 <div style={{ padding: '20px 10px 4px', textAlign: 'center', color: 'var(--gray-400)' }}>
                   <Calendar size={30} style={{ display: 'block', margin: '0 auto 8px' }} />
                   <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-600)' }}>
-                    {selectedDate < today ? 'Dia encerrado' : 'Nenhum horario disponivel'}
+                    {selectedDate < today ? 'Dia encerrado' : 'Nenhum horário disponível'}
                   </div>
-                  <div style={{ fontSize: 12, marginTop: 4 }}>{selectedDate < today ? 'Os horarios deste dia ja ficaram no historico.' : isPaciente ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerao aqui.' : 'Cadastre a disponibilidade do medico para liberar horarios na agenda.'}</div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>{selectedDate < today ? 'Os horários deste dia já ficaram no histórico.' : isPaciente ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerão aqui.' : 'Cadastre a disponibilidade do médico para liberar horários na agenda.'}</div>
                 </div>
               )}
             </div>
@@ -1038,7 +1038,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <div>
                 <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)', margin: 0 }}>Agendas</h2>
-                <p style={{ fontSize: 11, color: 'var(--gray-400)', margin: '2px 0 0' }}>{activeDoctors.length || doctors.length} medico(s)</p>
+                <p style={{ fontSize: 11, color: 'var(--gray-400)', margin: '2px 0 0' }}>{activeDoctors.length || doctors.length} médico(s)</p>
               </div>
               {!isMedico && (
                 <button type="button" onClick={() => setFilterDoctorId('')} style={{ border: 'none', background: 'transparent', color: 'var(--primary)', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
@@ -1059,7 +1059,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     </span>
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <span title={doctor.full_name} style={{ display: 'block', fontSize: 12, fontWeight: 800, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doctor.full_name}</span>
-                      <span style={{ display: 'block', fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{doctor.specialty || 'Clinica geral'}</span>
+                      <span style={{ display: 'block', fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{doctor.specialty || 'Clínica geral'}</span>
                     </span>
                     <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--primary)' }}>{count}</span>
                   </button>
@@ -1067,7 +1067,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               })}
               {doctorSidebarItems.length === 0 && (
                 <div style={{ border: '1px dashed var(--gray-200)', borderRadius: 12, padding: 14, color: 'var(--gray-500)', fontSize: 12, lineHeight: 1.5 }}>
-                  Nenhum medico disponivel para listar.
+                  Nenhum médico disponível para listar.
                 </div>
               )}
             </div>
@@ -1077,7 +1077,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>{period === 'dia' ? formatDateBR(selectedDate) : weekRangeLabel}</div>
-                <h2 style={{ fontSize: 16, color: 'var(--gray-800)', fontWeight: 850, margin: '2px 0 0' }}>Calendario de atendimentos</h2>
+                <h2 style={{ fontSize: 16, color: 'var(--gray-800)', fontWeight: 850, margin: '2px 0 0' }}>Calendário de atendimentos</h2>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button type="button" onClick={() => setSelectedDate(today)} style={{ border: '1px solid var(--gray-200)', background: '#fff', borderRadius: 9, padding: '8px 12px', fontSize: 12, fontWeight: 800, color: 'var(--gray-700)', cursor: 'pointer' }}>
@@ -1119,10 +1119,10 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                                 style={{ width: '100%', border: '1px solid #fbbf24', background: '#fffbeb', borderRadius: 10, padding: 8, marginBottom: 5, textAlign: 'left', boxShadow: '0 6px 14px rgba(245, 158, 11, 0.12)', cursor: isPaciente ? 'default' : 'pointer' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                                   <span style={{ width: 7, height: 7, borderRadius: 999, background: '#f59e0b', flexShrink: 0 }} />
-                                  <span title={patient?.nome || ''} style={{ fontSize: 12, fontWeight: 900, color: 'var(--gray-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{patient?.nome || 'Paciente nao encontrado'}</span>
+                                  <span title={patient?.nome || ''} style={{ fontSize: 12, fontWeight: 900, color: 'var(--gray-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{patient?.nome || 'Paciente não encontrado'}</span>
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--gray-600)', fontWeight: 700, marginTop: 5 }}>{appt.hora} - {appt.duracao || '30 min'}</div>
-                                <div title={doctor?.full_name || ''} style={{ fontSize: 10, color: 'var(--gray-500)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doctor?.full_name || user?.full_name || 'Medico nao informado'}</div>
+                                <div title={doctor?.full_name || ''} style={{ fontSize: 10, color: 'var(--gray-500)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doctor?.full_name || user?.full_name || 'Médico não informado'}</div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 7 }}>
                                   <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--gray-600)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.tipo}</span>
                                   <StatusBadge status={appt.status} />
@@ -1142,7 +1142,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               <div style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--gray-400)', borderTop: '1px solid var(--gray-100)' }}>
                 <Calendar size={30} style={{ display: 'block', margin: '0 auto 8px' }} />
                 <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-600)' }}>Nenhuma consulta neste recorte</div>
-                <div style={{ fontSize: 12, marginTop: 4 }}>{isPaciente || isMedico ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerao aqui.' : 'Use os filtros, escolha outra data ou crie um novo agendamento.'}</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>{isPaciente || isMedico ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerão aqui.' : 'Use os filtros, escolha outra data ou crie um novo agendamento.'}</div>
               </div>
             )}
           </section>
@@ -1214,7 +1214,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   <td colSpan={6} style={{ padding: '54px 24px', textAlign: 'center', color: 'var(--gray-400)' }}>
                     <Calendar size={32} style={{ display: 'block', margin: '0 auto 10px' }} />
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-600)' }}>Nenhuma consulta encontrada</div>
-                    <div style={{ fontSize: 12, marginTop: 4 }}>{isPaciente || isMedico ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerao aqui.' : 'Ajuste os filtros ou crie um novo agendamento.'}</div>
+                    <div style={{ fontSize: 12, marginTop: 4 }}>{isPaciente || isMedico ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerão aqui.' : 'Ajuste os filtros ou crie um novo agendamento.'}</div>
                   </td>
                 </tr>
               )}
@@ -1301,10 +1301,10 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     {errors.medico && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{errors.medico}</span>}
                     {!errors.medico && modalDoctorAvailabilityError && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{modalDoctorAvailabilityError}</span>}
                     {!errors.medico && !modalDoctorAvailabilityError && canPatientSchedule && modal.data.data && !modalDoctorAvailabilityLoading && doctors.length === 0 && (
-                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Nenhum medico ativo encontrado.</span>
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Nenhum médico ativo encontrado.</span>
                     )}
                     {!errors.medico && !modalDoctorAvailabilityError && canPatientSchedule && modal.data.data && !modalDoctorAvailabilityLoading && doctors.length > 0 && !hasModalAvailabilityForDate && (
-                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Ainda nao ha disponibilidade ativa cadastrada para esta data.</span>
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Ainda não há disponibilidade ativa cadastrada para esta data.</span>
                     )}
                   </div>
                 )}
@@ -1429,7 +1429,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                         <div key={rule.id} style={{ padding: '11px 14px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 10, alignItems: 'center', borderTop: '1px solid var(--gray-50)', background: selected ? '#ecfdf5' : '#fff' }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {availabilityWeekdayLabel(rule.weekday)} - {normalizeTime(rule.start_time)} as {normalizeTime(rule.end_time)}
+                              {availabilityWeekdayLabel(rule.weekday)} - {normalizeTime(rule.start_time)} às {normalizeTime(rule.end_time)}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {availabilityDoctorName(rule.doctor_id)} - {rule.slot_minutes} min - {rule.appointment_type === 'telemedicina' ? 'Telemedicina' : 'Presencial'} - {rule.active === false ? 'Inativa' : 'Ativa'}
@@ -1545,7 +1545,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 380, width: '100%', boxShadow: '0 12px 32px rgba(0,0,0,0.15)' }}>
             <AlertCircle size={24} color="var(--red-500)" />
             <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)', margin: '12px 0 6px' }}>{isPaciente || isSecretaria ? 'Cancelar agendamento?' : 'Excluir agendamento?'}</h3>
-            <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.5 }}>{isPaciente || isSecretaria ? 'Esta acao marcara a consulta como cancelada.' : 'Esta acao removera a consulta da agenda.'}</p>
+            <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.5 }}>{isPaciente || isSecretaria ? 'Esta ação marcará a consulta como cancelada.' : 'Esta ação removerá a consulta da agenda.'}</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
               <button onClick={() => setConfirmDelete(null)} style={{ padding: '9px 16px', border: '1px solid var(--gray-200)', borderRadius: 9, background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={handleDelete} style={{ padding: '9px 16px', border: 'none', borderRadius: 9, background: 'var(--red-500)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{isPaciente || isSecretaria ? 'Cancelar consulta' : 'Excluir'}</button>

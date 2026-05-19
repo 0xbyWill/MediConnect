@@ -3,7 +3,8 @@ import type { CSSProperties, ElementType, FormEvent } from 'react';
 import { Bell, CheckCircle2, Clock, Mail, MessageSquare, Phone, Plus, Search, Send, XCircle } from 'lucide-react';
 import type { Paciente } from '../types';
 import { smsApi, type ApiSmsLog } from '../lib/api';
-import { formatPhoneBR, isValidPhoneBR, normalizePhoneBRForSms } from '../shared/utils/validation';
+import { SMS_MESSAGE_MAX_LENGTH, SMS_TEMPLATES } from '../shared/constants/smsTemplates';
+import { formatPhoneBR, isValidPhoneBRForSms, normalizePhoneBRForSms } from '../shared/utils/validation';
 import { digitsOnly, formatCpf } from '../shared/utils/cpf';
 
 interface ComunicacaoProps {
@@ -25,7 +26,7 @@ interface Mensagem {
   sid?: string;
 }
 
-const MESSAGE_MAX_LENGTH = 1000;
+const MESSAGE_MAX_LENGTH = SMS_MESSAGE_MAX_LENGTH;
 const STORAGE_KEY = 'mc_communication_history';
 
 const CANAL_ICON: Record<Canal, ElementType> = {
@@ -51,13 +52,6 @@ const STATUS_STYLE: Record<StatusMsg, { bg: string; color: string; icon: Element
   pendente: { bg: 'var(--amber-100)', color: 'var(--amber-600)', icon: Clock, label: 'Pendente' },
   falhou: { bg: 'var(--red-100)', color: 'var(--red-600)', icon: XCircle, label: 'Falhou' },
 };
-
-const TEMPLATES = [
-  { label: 'Confirmação de consulta', texto: 'Olá {nome}! Confirmamos sua consulta para {data} às {hora}. Responda SIM para confirmar ou NÃO para cancelar.' },
-  { label: 'Lembrete de consulta', texto: 'Olá {nome}! Lembramos que você tem consulta amanhã às {hora}. Qualquer dúvida, entre em contato.' },
-  { label: 'Resultado de exame', texto: 'Ola {nome}! Seu resultado de exame esta disponivel. Entre em contato para mais informacoes.' },
-  { label: 'Boas-vindas', texto: 'Bem-vindo(a) a nossa clinica, {nome}! Estamos a disposicao para cuidar da sua saude.' },
-];
 
 const fieldStyle = {
   width: '100%',
@@ -121,7 +115,7 @@ function smsLogToMensagem(log: ApiSmsLog): Mensagem {
 function getProblemMessage(err: unknown) {
   const msg = err instanceof Error ? err.message : 'Erro ao enviar SMS.';
   const lower = msg.toLowerCase();
-  if (msg.includes('503') || lower.includes('service-disabled') || lower.includes('servico desabilitado') || lower.includes('servico de sms esta temporariamente desabilitado')) {
+  if (msg.includes('503') || lower.includes('service-disabled') || lower.includes('serviço desabilitado') || lower.includes('serviço de SMS está temporariamente desabilitado')) {
     return 'O serviço de SMS está temporariamente desabilitado no servidor.';
   }
   return msg;
@@ -188,7 +182,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
 
     if (!pacienteId) errors.pacienteId = 'Selecione um paciente.';
     if (pacienteId && !paciente?.telefone) errors.pacienteId = 'Paciente sem telefone cadastrado.';
-    if (paciente?.telefone && !isValidPhoneBR(paciente.telefone)) errors.pacienteId = 'Paciente sem telefone com DDD válido.';
+    if (paciente?.telefone && !isValidPhoneBRForSms(paciente.telefone)) errors.pacienteId = 'Paciente sem telefone com DDD válido para SMS.';
     if (!message) errors.texto = 'Informe a mensagem.';
     if (message.length > MESSAGE_MAX_LENGTH) errors.texto = `A mensagem deve ter no máximo ${MESSAGE_MAX_LENGTH} caracteres.`;
 
@@ -267,7 +261,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Comunicação</h1>
         <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
-          Envie SMS via Twilio e acompanhe os registros salvos em sms_logs.
+          Confirme consultas e envie comunicados administrativos por SMS. WhatsApp e e-mail ficam separados como canais de comunicação.
         </p>
       </div>
 
@@ -277,7 +271,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
             <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Plus size={16} color="var(--primary)" />
             </div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Nova Mensagem</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Confirmação de consulta</h2>
           </div>
 
           <div style={{ marginBottom: 16 }}>
@@ -287,7 +281,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
                 const Icon = CANAL_ICON[c];
                 const active = c === 'sms';
                 return (
-                  <button key={c} type="button" disabled={!active} title={!active ? 'Canal ainda não integrado ao banco' : 'Enviar SMS'} style={{
+                  <button key={c} type="button" disabled={!active} title={!active ? 'Canal preparado para integração futura' : 'Enviar SMS'} style={{
                     flex: 1,
                     padding: '8px 6px',
                     borderRadius: 8,
@@ -368,8 +362,8 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Modelos de mensagem</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {TEMPLATES.map(t => (
-                <button key={t.label} type="button" onClick={() => handleTemplate(t.texto)} disabled={enviando} style={{
+              {SMS_TEMPLATES.map(t => (
+                <button key={t.id} type="button" onClick={() => handleTemplate(t.message)} disabled={enviando} style={{
                   padding: '5px 10px',
                   background: 'var(--gray-50)',
                   border: '1px solid var(--gray-200)',

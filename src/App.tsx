@@ -296,17 +296,17 @@ export default function App() {
       const rawMsg = err instanceof Error ? err.message : 'Erro ao excluir paciente.';
       const lowerMsg = rawMsg.toLowerCase();
       if (rawMsg.includes('403') || lowerMsg.includes('forbidden')) {
-        const msg = 'A API nao permitiu excluir este paciente para o perfil logado.';
+        const msg = 'A API não permitiu excluir este paciente para o perfil logado.';
         setApiError(msg);
         throw new Error(msg);
       }
       if (lowerMsg.includes('nao excluiu nenhum paciente')) {
-        const msg = 'A API nao excluiu o paciente. Pela documentacao, esta acao exige perfil admin/gestao.';
+        const msg = 'A API não excluiu o paciente. Pela documentação, esta ação exige perfil admin/gestão.';
         setApiError(msg);
         throw new Error(msg);
       }
       if (lowerMsg.includes('foreign key') || lowerMsg.includes('violates') || lowerMsg.includes('referenced')) {
-        const msg = 'Nao foi possivel excluir este paciente porque ele possui registros vinculados na API.';
+        const msg = 'Não foi possível excluir este paciente porque ele possui registros vinculados na API.';
         setApiError(msg);
         throw new Error(msg);
       }
@@ -327,7 +327,7 @@ export default function App() {
       return;
     }
     if (!pacienteId) {
-      setApiError('Seu perfil de paciente nao esta vinculado a um cadastro de paciente.');
+      setApiError('Seu perfil de paciente não está vinculado a um cadastro de paciente.');
       return;
     }
     const payload = agendamentoToApiAppointment({ ...a, pacienteId, medicoId }, user.id);
@@ -350,7 +350,7 @@ export default function App() {
     } catch (err) {
       if (user.role !== 'paciente') throw err;
       if (isPermissionError(err) || isMissingPatientAppointmentRpc(err)) {
-        throw new Error('O Supabase ainda nao liberou o agendamento pelo paciente. Aplique a migration 202605190002_appointments_patient_self_schedule.sql e recarregue o schema da API.');
+        throw new Error('O Supabase ainda não liberou o agendamento pelo paciente. Aplique a migration 202605190002_appointments_patient_self_schedule.sql e recarregue o schema da API.');
       }
       throw err;
     }
@@ -384,7 +384,7 @@ export default function App() {
       const lowerMsg = rawMsg.toLowerCase();
       const msg =
         rawMsg.includes('403') || lowerMsg.includes('forbidden')
-          ? 'A API nao permitiu alterar este agendamento para o perfil logado.'
+          ? 'A API não permitiu alterar este agendamento para o perfil logado.'
           : rawMsg;
       setApiError(msg);
       throw new Error(msg);
