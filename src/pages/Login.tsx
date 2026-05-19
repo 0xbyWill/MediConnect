@@ -57,6 +57,20 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
   return (
     <main className="login-page" aria-labelledby="login-title">
+      <div className="auth-background" aria-hidden="true">
+        <span className="pulse-orb pulse-orb-primary" />
+        <span className="pulse-orb pulse-orb-secondary" />
+        <svg className="heartbeat-line" viewBox="0 0 1200 240" preserveAspectRatio="none" focusable="false">
+          <path
+            d="M0 128H204L240 128L270 128L300 42L344 206L390 128H482L520 128L552 128L586 82L632 166L670 128H776L812 128L844 128L880 34L934 216L982 128H1200"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="10"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
       <section className="login-shell">
         <div className="login-left">
           <header className="login-logo-row" aria-label="MediConnect">
@@ -184,7 +198,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
         </div>
       </section>
 
-      <footer className="login-footer">© 2026 MediConnect. Todos os direitos reservados.</footer>
+      <footer className="login-footer">&copy; 2026 MediConnect. Todos os direitos reservados.</footer>
 
       <aside className="login-quick-access" aria-label="Acessos rapidos">
         <div className="login-quick-header">
@@ -231,6 +245,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
       <style>{`
         .login-page {
+          --heartbeat-duration: 5.2s;
           width: 100%;
           min-height: 100dvh;
           position: relative;
@@ -239,9 +254,9 @@ export default function Login({ onCreateAccount }: LoginProps) {
           justify-content: center;
           padding: 42px 40px 54px;
           background:
-            radial-gradient(circle at 55% 50%, rgba(175, 244, 213, 0.82) 0, rgba(198, 249, 225, 0.48) 22%, transparent 47%),
-            radial-gradient(circle at 74% 3%, rgba(220, 252, 231, 0.8) 0, transparent 28%),
-            linear-gradient(105deg, #fbfefc 0%, #f2fbf6 46%, #eaf9ef 100%);
+            radial-gradient(circle at 55% 50%, rgba(0, 166, 63, 0.28) 0, rgba(117, 231, 157, 0.34) 25%, rgba(221, 251, 233, 0.54) 42%, transparent 58%),
+            radial-gradient(circle at 74% 3%, rgba(220, 252, 231, 0.84) 0, transparent 28%),
+            linear-gradient(105deg, #fbfefc 0%, #f4fcf8 30%, #e7f9ef 56%, #f9fffb 100%);
           overflow-x: hidden;
           overflow-y: auto;
         }
@@ -255,13 +270,66 @@ export default function Login({ onCreateAccount }: LoginProps) {
           top: 50%;
           transform: translate(-50%, -50%) scale(1);
           background:
-            radial-gradient(circle at 43% 37%, rgba(0, 166, 63, 0.20), transparent 26%),
-            radial-gradient(circle at 62% 42%, rgba(0, 158, 87, 0.22), transparent 31%);
+            radial-gradient(circle at 43% 37%, rgba(0, 166, 63, 0.30), transparent 26%),
+            radial-gradient(circle at 62% 42%, rgba(0, 158, 87, 0.30), transparent 31%);
           border-radius: 50%;
           pointer-events: none;
           filter: blur(1px);
           opacity: 0.78;
           transform-origin: center;
+          animation: pulseHeartCentered var(--heartbeat-duration) ease-in-out infinite;
+        }
+
+        .auth-background {
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .pulse-orb {
+          position: absolute;
+          display: block;
+          border-radius: 999px;
+          background: radial-gradient(circle, rgba(0, 166, 63, 0.28) 0, rgba(117, 231, 157, 0.18) 32%, rgba(255, 255, 255, 0.04) 52%, transparent 70%);
+          filter: blur(0.5px);
+          transform: translate3d(0, 0, 0) scale(1);
+          opacity: 0.68;
+          animation: pulseHeart var(--heartbeat-duration) ease-in-out infinite;
+        }
+
+        .pulse-orb-primary {
+          width: min(58vw, 700px);
+          height: min(58vw, 700px);
+          left: 33%;
+          top: 16%;
+        }
+
+        .pulse-orb-secondary {
+          width: min(38vw, 430px);
+          height: min(38vw, 430px);
+          right: 7%;
+          bottom: 6%;
+          opacity: 0.34;
+          animation-delay: calc(var(--heartbeat-duration) * 0.5);
+        }
+
+        .heartbeat-line {
+          position: absolute;
+          left: -8%;
+          top: 52%;
+          width: 116%;
+          height: min(30vw, 280px);
+          color: rgba(0, 126, 66, 0.18);
+          filter: drop-shadow(0 16px 26px rgba(0, 166, 63, 0.12));
+          transform: translate3d(0, -50%, 0);
+        }
+
+        .heartbeat-line path {
+          stroke-dasharray: 1420;
+          stroke-dashoffset: 1420;
+          animation: ecgDraw var(--heartbeat-duration) ease-in-out infinite;
         }
 
         .login-shell {
@@ -296,7 +364,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
           border-radius: 12px;
           background: #ffffff;
           border: 1px solid rgba(0, 166, 63, 0.16);
-          box-shadow: 0 14px 26px rgba(0, 176, 91, 0.16);
+          box-shadow: 0 14px 26px rgba(0, 176, 91, 0.18);
           flex-shrink: 0;
           overflow: hidden;
           padding: 5px;
@@ -332,6 +400,12 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
         .login-card {
           width: 100%;
+          padding: 0;
+          border: 0;
+          border-radius: 0;
+          background: transparent;
+          box-shadow: none;
+          backdrop-filter: none;
         }
 
         .login-heading {
@@ -410,7 +484,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
         .login-input-wrap input {
           width: 100%;
           min-height: 54px;
-          border: 1.5px solid #9cf5bd;
+          border: 1.5px solid rgba(0, 166, 63, 0.26);
           border-radius: 12px;
           padding: 13px 48px 13px 49px;
           background: rgba(255, 255, 255, 0.92);
@@ -432,9 +506,9 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
         .login-input-wrap input:hover,
         .login-input-wrap input:focus {
-          border-color: #54e890;
+          border-color: var(--primary);
           background: var(--white);
-          box-shadow: 0 0 0 4px rgba(84, 232, 144, 0.15);
+          box-shadow: 0 0 0 4px rgba(0, 166, 63, 0.16);
         }
 
         .login-input-wrap input:invalid:not(:placeholder-shown) {
@@ -522,7 +596,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
           gap: 11px;
           border: 0;
           border-radius: 12px;
-          background: linear-gradient(90deg, #05c956 0%, #00a566 100%);
+          background: linear-gradient(90deg, var(--primary) 0%, #008f5a 100%);
           color: var(--white);
           font-size: 14px;
           font-weight: 800;
@@ -578,7 +652,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
         .login-hero-copy h2 {
           margin: 0;
-          color: #0f172a;
+          color: #063a2a;
           font-size: clamp(40px, 4vw, 50px);
           line-height: 0.96;
           font-weight: 800;
@@ -587,7 +661,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
         .login-hero-copy p {
           margin: 22px auto 0;
           max-width: 560px;
-          color: #475569;
+          color: #275741;
           font-size: 20px;
           line-height: 1.44;
           font-weight: 500;
@@ -621,7 +695,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
           line-height: 0;
           border-radius: 14px;
           border: 1.5px solid #a7f3c4;
-          background: rgba(255, 255, 255, 0.78);
+          background: rgba(255, 255, 255, 0.72);
           color: #00a957;
           box-shadow: 0 10px 18px rgba(15, 118, 75, 0.12);
         }
@@ -755,6 +829,62 @@ export default function Login({ onCreateAccount }: LoginProps) {
           to { transform: rotate(360deg); }
         }
 
+        @keyframes pulseHeart {
+          0%, 100% {
+            opacity: 0.54;
+            transform: translate3d(0, 0, 0) scale(0.98);
+          }
+          14% {
+            opacity: 0.84;
+            transform: translate3d(0, 0, 0) scale(1.04);
+          }
+          28% {
+            opacity: 0.62;
+            transform: translate3d(0, 0, 0) scale(1);
+          }
+          44% {
+            opacity: 0.78;
+            transform: translate3d(0, 0, 0) scale(1.025);
+          }
+        }
+
+        @keyframes pulseHeartCentered {
+          0%, 100% {
+            opacity: 0.58;
+            transform: translate(-50%, -50%) scale(0.98);
+          }
+          14% {
+            opacity: 0.86;
+            transform: translate(-50%, -50%) scale(1.04);
+          }
+          28% {
+            opacity: 0.64;
+            transform: translate(-50%, -50%) scale(1);
+          }
+          44% {
+            opacity: 0.8;
+            transform: translate(-50%, -50%) scale(1.025);
+          }
+        }
+
+        @keyframes ecgDraw {
+          0% {
+            stroke-dashoffset: 1420;
+            opacity: 0;
+          }
+          14% {
+            opacity: 0.9;
+          }
+          44% {
+            stroke-dashoffset: 0;
+            opacity: 0.8;
+          }
+          100% {
+            stroke-dashoffset: -1420;
+            opacity: 0;
+          }
+        }
+
         @media (max-width: 1160px) {
           .login-page {
             padding: 30px 24px 54px;
@@ -832,6 +962,17 @@ export default function Login({ onCreateAccount }: LoginProps) {
             padding: 22px 16px 28px;
           }
 
+          .pulse-orb-secondary {
+            display: none;
+          }
+
+          .heartbeat-line {
+            top: 31%;
+            width: 140%;
+            left: -20%;
+            opacity: 0.58;
+          }
+
           .login-brand-name {
             font-size: 25px;
           }
@@ -862,6 +1003,26 @@ export default function Login({ onCreateAccount }: LoginProps) {
           .login-benefits {
             grid-template-columns: 1fr;
             gap: 22px;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .login-page::before,
+          .pulse-orb,
+          .heartbeat-line path,
+          .login-spinner {
+            animation: none;
+          }
+
+          .heartbeat-line path {
+            stroke-dashoffset: 0;
+          }
+
+          .login-submit,
+          .login-quick-button,
+          .login-input-wrap input,
+          .login-input-wrap > svg {
+            transition: none;
           }
         }
       `}</style>
