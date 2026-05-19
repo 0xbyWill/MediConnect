@@ -109,8 +109,9 @@ Deno.serve(async req => {
     const body = sanitizePayload(await readJson<Record<string, unknown>>(req)) as SendSmsBody;
     parsed = validatePayload(body);
 
-    const smsApiUrl = Deno.env.get('SMS_API_URL') ?? 'https://mock.apidog.com/m1/1053378-0-default/send-sms';
+    const smsApiUrl = Deno.env.get('SMS_API_URL') ?? '';
     const smsApiKey = Deno.env.get('SMS_API_KEY') ?? '';
+    if (!smsApiUrl) throw new Error('SMS_API_URL nao configurada nos secrets da Supabase.');
     if (!smsApiKey) throw new Error('SMS_API_KEY nao configurada nos secrets da Supabase.');
 
     const providerResponse = await fetch(smsApiUrl, {

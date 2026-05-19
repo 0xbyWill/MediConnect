@@ -1,4 +1,5 @@
 const MAX_TEXT = 8000;
+const CORS_ALLOWED_ORIGIN = Deno.env.get('CORS_ALLOWED_ORIGIN') ?? '*';
 const SECRET_PATTERNS = [
   /\b[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{24,}\b/g,
   /\b(sk|pk|rk|xoxb|ghp|github_pat)_[A-Za-z0-9_=-]{16,}\b/gi,
@@ -11,7 +12,7 @@ export function jsonResponse(body: unknown, status = 200) {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'access-control-allow-origin': '*',
+      'access-control-allow-origin': CORS_ALLOWED_ORIGIN,
       'access-control-allow-headers': 'authorization, x-client-info, apikey, content-type',
       'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
     },

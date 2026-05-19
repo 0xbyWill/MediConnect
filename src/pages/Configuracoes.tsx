@@ -1,5 +1,6 @@
 import type { ElementType, ReactNode } from 'react';
 import { Bell, Database, Lock, Palette, ShieldCheck, UserCog } from 'lucide-react';
+import { appEnv } from '../config/env';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Configuracoes() {
@@ -46,7 +47,7 @@ export default function Configuracoes() {
 
           <Section title="Integração da API" icon={Database}>
             <Info label="Backend" value="Supabase / RiseUP API" />
-            <Info label="Base URL" value="https://yuanqfswhberkoevtmfr.supabase.co" />
+            <Info label="Base URL" value={appEnv.supabaseUrl} />
             <Info label="Persistência" value="REST e Edge Functions" />
           </Section>
         </div>
