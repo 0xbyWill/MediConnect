@@ -73,6 +73,16 @@ function timeToMinutes(value: string) {
   return hour * 60 + minute;
 }
 
+function isPastAppointmentSlot(date: string, time: string, now = new Date()) {
+  if (!date || !time) return false;
+  const todayISO = dateToISO(now);
+  if (date < todayISO) return true;
+  if (date > todayISO) return false;
+  const slotMinutes = timeToMinutes(time);
+  if (slotMinutes === null) return false;
+  return slotMinutes <= now.getHours() * 60 + now.getMinutes();
+}
+
 function minutesToTime(value: number) {
   const hour = Math.floor(value / 60);
   const minute = value % 60;
@@ -167,7 +177,9 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const isMedico = user?.role === 'medico';
   const isSecretaria = user?.role === 'secretaria';
   const isPaciente = user?.role === 'paciente' || readOnly;
-  const canCreateAgendamento = !isPaciente && !isMedico;
+  const canPatientSchedule = user?.role === 'paciente' && !readOnly;
+  const canCreateAgendamento = canPatientSchedule || (!isPaciente && !isMedico);
+  const canCancelAgendamento = canPatientSchedule || !isPaciente;
   const canManageAvailability = !isPaciente && !isSecretaria;
   const today = dateToISO(new Date());
 
@@ -192,6 +204,9 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const [dayAvailability, setDayAvailability] = useState<ApiDoctorAvailability[]>([]);
   const [dayAvailabilityLoading, setDayAvailabilityLoading] = useState(false);
   const [dayAvailabilityError, setDayAvailabilityError] = useState('');
+  const [modalDoctorAvailability, setModalDoctorAvailability] = useState<ApiDoctorAvailability[]>([]);
+  const [modalDoctorAvailabilityLoading, setModalDoctorAvailabilityLoading] = useState(false);
+  const [modalDoctorAvailabilityError, setModalDoctorAvailabilityError] = useState('');
   const [availabilityModal, setAvailabilityModal] = useState<{ open: boolean; data: AvailabilityForm }>({
     open: false,
     data: emptyAvailabilityForm(),
@@ -206,7 +221,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const initialOpenKeyRef = useRef('');
 
   const openModal = useCallback((appt?: Agendamento, dateOverride = selectedDate, timeOverride = '', pacienteId = '') => {
-    if (isPaciente) return;
+    if (isPaciente && appt) return;
     if (!appt && !canCreateAgendamento) return;
     setErrors({});
     setApiError('');
@@ -230,9 +245,10 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       setPatientSearch('');
       return;
     }
-    setModal({ open: true, mode: 'add', data: { ...emptyForm(dateOverride), pacienteId, medicoId: filterDoctorId, hora: timeOverride } });
+    const ownPatientId = canPatientSchedule ? user?.patient_id || pacientes[0]?.id || user?.id || '' : pacienteId;
+    setModal({ open: true, mode: 'add', data: { ...emptyForm(dateOverride), pacienteId: ownPatientId, medicoId: filterDoctorId, hora: timeOverride } });
     setPatientSearch('');
-  }, [canCreateAgendamento, filterDoctorId, isPaciente, selectedDate]);
+  }, [canCreateAgendamento, canPatientSchedule, filterDoctorId, isPaciente, pacientes, selectedDate, user?.id, user?.patient_id]);
 
   useEffect(() => {
     if (!initialOpen) {
@@ -355,9 +371,13 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const calendarDays = period === 'dia' ? weekDays.filter(day => day.iso === selectedDate) : weekDays;
   const calendarAppointments = filteredAppointments.filter(a => calendarDays.some(day => day.iso === a.data));
   const activeDoctors = doctors.filter(doctor => !activeDoctorId || doctor.id === activeDoctorId);
+  const selectedDateAvailableDoctorIds = new Set(dayAvailability.map(item => item.doctor_id));
+  const visibleDoctors = canPatientSchedule && !dayAvailabilityLoading && dayAvailability.length > 0
+    ? doctors.filter(doctor => selectedDateAvailableDoctorIds.has(doctor.id))
+    : doctors;
   const doctorSidebarItems = isMedico
     ? doctors.filter(doctor => doctor.id === user?.doctor_id)
-    : doctors;
+    : visibleDoctors;
   const weekRangeLabel = `${formatDateBR(weekDays[0].iso)} - ${formatDateBR(weekDays[6].iso)}`;
   const selectedDateLabel = selectedDateObject.toLocaleDateString('pt-BR', {
     day: 'numeric',
@@ -385,10 +405,18 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       inMonth: date.getMonth() === selectedDateObject.getMonth(),
       isSelected: iso === selectedDate,
       isToday: iso === today,
+      isPast: iso < today,
       count,
     };
   });
   const selectedDayAppointments = filteredAppointments.filter(appt => appt.data === selectedDate);
+  const ownPatientId = user?.role === 'paciente' ? user.patient_id || pacientes[0]?.id || user.id : '';
+  const canCancelAppointment = (appt: Agendamento) =>
+    canCancelAgendamento &&
+    appt.status !== 'cancelado' &&
+    appt.status !== 'realizado' &&
+    appt.data >= today &&
+    (!canPatientSchedule || appt.pacienteId === ownPatientId);
   const selectedDateWeekday = selectedDateObject.getDay();
   const dayAvailabilitySlots = buildTimeSlotsFromAvailability(dayAvailability);
   const daySlotDoctors = buildSlotDoctorsFromAvailability(dayAvailability);
@@ -396,19 +424,27 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const selectedDaySlots = Array.from(new Set([...dayAvailabilitySlots, ...appointmentSlots])).sort().map(slot => {
     const appointments = selectedDayAppointments.filter(appt => normalizeTime(appt.hora) === slot);
     const availableDoctorIds = daySlotDoctors[slot] ?? new Set<string>();
-    const busyDoctorIds = new Set(appointments.map(appt => appt.medicoId).filter((id): id is string => Boolean(id)));
+    const busyDoctorIds = new Set(appointments.filter(appt => appt.status !== 'cancelado').map(appt => appt.medicoId).filter((id): id is string => Boolean(id)));
     const isAvailable = availableDoctorIds.size > 0 && Array.from(availableDoctorIds).some(doctorId => !busyDoctorIds.has(doctorId));
-    return { slot, appointments, isAvailable };
+    const isPast = isPastAppointmentSlot(selectedDate, slot);
+    return { slot, appointments, isAvailable, isPast };
   });
+  const visibleSelectedDaySlots = selectedDaySlots.filter(item => !(item.isPast && item.appointments.length === 0));
   const calendarSlots = selectedDaySlots.map(item => item.slot);
-  const freeSlots = selectedDaySlots.filter(item => item.isAvailable).length;
+  const freeSlots = visibleSelectedDaySlots.filter(item => item.isAvailable && !item.isPast).length;
   const occupancyRate = dayAvailabilitySlots.length
     ? Math.min(100, Math.round((selectedDayAppointments.length / dayAvailabilitySlots.length) * 100))
     : 0;
 
   const modalDoctorId = isMedico ? user?.doctor_id || '' : modal.data.medicoId || '';
   const modalWeekday = modal.data.data ? new Date(`${modal.data.data}T00:00:00`).getDay() : undefined;
-  const availableTimeSlots = buildTimeSlotsFromAvailability(availability);
+  const availableTimeSlots = buildTimeSlotsFromAvailability(availability)
+    .filter(slot => !isPastAppointmentSlot(modal.data.data, slot));
+  const modalAvailableDoctorIds = new Set(modalDoctorAvailability.map(item => item.doctor_id));
+  const modalDoctorOptions = canPatientSchedule && modal.data.data && !modalDoctorAvailabilityLoading && modalDoctorAvailability.length > 0
+    ? doctors.filter(doctor => modalAvailableDoctorIds.has(doctor.id))
+    : doctors;
+  const hasModalAvailabilityForDate = modalDoctorAvailability.length > 0;
   const availabilityDoctorName = (doctorId: string) =>
     doctors.find(doctor => doctor.id === doctorId)?.full_name || (isMedico && doctorId === user?.doctor_id ? user?.full_name : 'Médico não informado');
   const availabilityWeekdayLabel = (weekday: number) =>
@@ -428,12 +464,11 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     void availabilityApi
       .list({
         ...(activeDoctorId ? { doctor_id: activeDoctorId } : {}),
-        weekday: selectedDateWeekday,
         active: true,
       })
       .then(rows => {
         if (cancelled) return;
-        setDayAvailability(rows);
+        setDayAvailability(rows.filter(row => row.weekday === selectedDateWeekday));
       })
       .catch(err => {
         if (cancelled) return;
@@ -461,10 +496,10 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     setAvailabilityLoading(true);
     setAvailabilityError('');
     void availabilityApi
-      .list({ doctor_id: modalDoctorId, weekday: modalWeekday, active: true })
+      .list({ doctor_id: modalDoctorId, active: true })
       .then(rows => {
         if (cancelled) return;
-        setAvailability(rows);
+        setAvailability(rows.filter(row => row.weekday === modalWeekday));
       })
       .catch(err => {
         if (cancelled) return;
@@ -480,10 +515,41 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     };
   }, [modal.data.data, modal.open, modalDoctorId, modalWeekday]);
 
+  useEffect(() => {
+    if (!canPatientSchedule || !modal.open || !modal.data.data || modalWeekday === undefined) {
+      setModalDoctorAvailability([]);
+      setModalDoctorAvailabilityLoading(false);
+      setModalDoctorAvailabilityError('');
+      return;
+    }
+
+    let cancelled = false;
+    setModalDoctorAvailabilityLoading(true);
+    setModalDoctorAvailabilityError('');
+    void availabilityApi
+      .list({ active: true })
+      .then(rows => {
+        if (!cancelled) setModalDoctorAvailability(rows.filter(row => row.weekday === modalWeekday));
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setModalDoctorAvailability([]);
+        setModalDoctorAvailabilityError(err instanceof Error ? err.message : 'Erro ao carregar medicos disponiveis.');
+      })
+      .finally(() => {
+        if (!cancelled) setModalDoctorAvailabilityLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canPatientSchedule, modal.data.data, modal.open, modalWeekday]);
+
   const dayConflicts = agendamentos.filter(a =>
     a.medicoId === modalDoctorId &&
     a.data === modal.data.data &&
-    a.id !== modal.data.id
+    a.id !== modal.data.id &&
+    a.status !== 'cancelado'
   );
 
   const validateAvailability = () => {
@@ -509,10 +575,13 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
 
   const validate = () => {
     const nextErrors: Record<string, string> = {};
-    if (!modal.data.pacienteId) nextErrors.paciente = 'Selecione um paciente do banco.';
+    if (!modal.data.pacienteId) nextErrors.paciente = canPatientSchedule ? 'Seu perfil de paciente nao esta vinculado a um cadastro de paciente.' : 'Selecione um paciente do banco.';
     if (!modal.data.data) nextErrors.data = 'Informe a data da consulta.';
     if (modal.data.data && modal.data.data < today) nextErrors.data = 'A consulta não pode ser agendada para data anterior a hoje.';
     if (!modal.data.hora) nextErrors.hora = 'Informe o horário.';
+    if (modal.data.data && modal.data.hora && isPastAppointmentSlot(modal.data.data, modal.data.hora)) {
+      nextErrors.hora = 'A consulta não pode ser agendada para horário que já passou.';
+    }
     if (!isMedico && !modal.data.medicoId) nextErrors.medico = 'Selecione um médico.';
     if (modalDoctorId && modal.data.data && !availabilityLoading && !availabilityError && availableTimeSlots.length === 0) {
       nextErrors.hora = 'Este médico não possui disponibilidade ativa para esta data.';
@@ -622,7 +691,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   };
 
   const handleSave = async () => {
-    if (isPaciente) return;
+    if (isPaciente && modal.mode !== 'add') return;
     const nextErrors = validate();
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
@@ -633,7 +702,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     setApiError('');
     try {
       const payload: Omit<Agendamento, 'id'> = {
-        pacienteId: modal.data.pacienteId,
+        pacienteId: canPatientSchedule ? modal.data.pacienteId || user?.patient_id || pacientes[0]?.id || user?.id || '' : modal.data.pacienteId,
         medicoId: modalDoctorId,
         data: modal.data.data,
         hora: modal.data.hora,
@@ -641,7 +710,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         observacoes: modal.data.observacoes,
         enviarEmail: modal.data.enviarEmail,
         enviarWhatsapp: modal.data.enviarWhatsapp,
-        status: modal.data.status ?? 'pendente',
+        status: canPatientSchedule ? 'pendente' : modal.data.status ?? 'pendente',
         duracao: '30 min',
       };
 
@@ -656,7 +725,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   };
 
   const handleDelete = async () => {
-    if (isPaciente) return;
+    if (!canCancelAgendamento) return;
     if (!confirmDelete) return;
     try {
       await onDelete(confirmDelete);
@@ -677,14 +746,14 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               {isPaciente ? 'Acompanhe suas consultas agendadas e anteriores.' : isMedico ? 'Acompanhe seus horarios e consultas vinculadas.' : 'Gerencie seus horários e agendamentos'}
             </p>
           </div>
-          {!isPaciente && (
+          {(canManageAvailability || canCreateAgendamento) && (
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {canManageAvailability && (
                 <button onClick={openAvailabilityModal} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '11px 16px', background: '#fff', color: 'var(--primary)', border: '1px solid rgba(0,166,63,0.28)', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
                   <Clock size={16} /> Disponibilidade
                 </button>
               )}
-              {!isMedico && (
+              {canCreateAgendamento && (
                 <button onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '11px 20px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,166,63,0.20)' }}>
                   <Plus size={16} /> Novo Agendamento
                 </button>
@@ -779,13 +848,14 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     width: 40,
                     height: 40,
                     justifySelf: 'center',
-                    border: day.isSelected ? 'none' : '1px solid transparent',
+                    border: day.isSelected ? 'none' : day.isPast ? '1px solid #e5e7eb' : '1px solid transparent',
                     borderRadius: day.isSelected ? 10 : 8,
-                    background: day.isSelected ? 'var(--primary)' : day.isToday ? '#e8faef' : 'transparent',
-                    color: day.isSelected ? '#fff' : day.inMonth ? '#071327' : '#94a3b8',
+                    background: day.isSelected ? 'var(--primary)' : day.isToday ? '#e8faef' : day.isPast ? '#f1f5f9' : 'transparent',
+                    color: day.isSelected ? '#fff' : day.isPast ? '#94a3b8' : day.inMonth ? '#071327' : '#94a3b8',
                     fontSize: 15,
                     fontWeight: day.isSelected || day.count ? 900 : 700,
                     cursor: 'pointer',
+                    opacity: day.isPast && !day.isSelected ? 0.68 : 1,
                     position: 'relative',
                   }}
                   title={`${formatDateBR(day.iso)}${day.count ? ` - ${day.count} consulta(s)` : ''}`}
@@ -800,7 +870,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                       height: 5,
                       borderRadius: 999,
                       transform: 'translateX(-50%)',
-                      background: day.isSelected ? '#fff' : 'var(--primary)',
+                      background: day.isSelected ? '#fff' : day.isPast ? '#94a3b8' : 'var(--primary)',
                     }} />
                   )}
                 </button>
@@ -831,9 +901,12 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   <label htmlFor="agenda-doctor-filter-visual" style={labelStyle}>Agenda</label>
                   <select id="agenda-doctor-filter-visual" value={filterDoctorId} onChange={e => setFilterDoctorId(e.target.value)}
                     style={{ minWidth: 210, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
-                    <option value="">Todos os medicos</option>
-                    {doctors.map(d => <option key={d.id} value={d.id}>{d.full_name}{d.specialty ? ` - ${d.specialty}` : ''}</option>)}
+                    <option value="">Todos os medicos disponiveis</option>
+                    {visibleDoctors.map(d => <option key={d.id} value={d.id}>{d.full_name}{d.specialty ? ` - ${d.specialty}` : ''}</option>)}
                   </select>
+                  {canPatientSchedule && !dayAvailabilityLoading && visibleDoctors.length === 0 && (
+                    <span style={{ display: 'block', marginTop: 5, fontSize: 11, color: 'var(--gray-400)' }}>Nenhum medico disponivel nesta data.</span>
+                  )}
                 </div>
               )}
               <div>
@@ -873,20 +946,21 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                 </div>
               )}
 
-              {!dayAvailabilityLoading && selectedDaySlots.map(({ slot, appointments, isAvailable }) => (
+              {!dayAvailabilityLoading && visibleSelectedDaySlots.map(({ slot, appointments, isAvailable, isPast }) => (
                 <div key={slot} style={{
                   minHeight: 76,
-                  border: appointments.length ? '1px solid #86efac' : isAvailable ? '1px solid #dbe7e2' : '1px solid #f8d7da',
+                  border: isPast ? '1px solid #e5e7eb' : appointments.length ? '1px solid #86efac' : isAvailable ? '1px solid #dbe7e2' : '1px solid #f8d7da',
                   borderRadius: 9,
-                  background: appointments.length ? '#ecfdf3' : isAvailable ? '#fff' : '#fff7f7',
+                  background: isPast ? '#f8fafc' : appointments.length ? '#ecfdf3' : isAvailable ? '#fff' : '#fff7f7',
                   display: 'grid',
                   gridTemplateColumns: '78px 1fr auto',
                   alignItems: 'center',
                   gap: 16,
                   padding: '14px 16px',
+                  opacity: isPast ? 0.7 : 1,
                 }}>
                   <div style={{ borderRight: '1px solid #d1d5db', paddingRight: 14 }}>
-                    <div style={{ fontSize: 19, fontWeight: 900, color: '#071327', lineHeight: 1 }}>{slot}</div>
+                    <div style={{ fontSize: 19, fontWeight: 900, color: isPast ? '#64748b' : '#071327', lineHeight: 1 }}>{slot}</div>
                     <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>30min</div>
                   </div>
 
@@ -910,11 +984,15 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   </div>
 
                   {appointments.length === 0 ? (
-                    canCreateAgendamento && isAvailable && (
+                    canCreateAgendamento && isAvailable && !isPast && (
                       <button type="button" onClick={() => openModal(undefined, selectedDate, slot)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
                         Agendar
                       </button>
                     )
+                  ) : canPatientSchedule ? (
+                    <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', border: '1px solid var(--red-100)', borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', fontSize: 12, fontWeight: 700 }}>
+                      <AlertCircle size={15} /> Seu perfil nao esta vinculado a um cadastro de paciente.
+                    </div>
                   ) : (
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       {appointments.slice(0, 1).map(appt => (
@@ -925,7 +1003,12 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                               Ver Detalhes
                             </button>
                           )}
-                          {canCreateAgendamento && isAvailable && (
+                          {canPatientSchedule && canCancelAppointment(appt) && (
+                            <button type="button" onClick={() => setConfirmDelete(appt.id)} style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                              Cancelar
+                            </button>
+                          )}
+                          {canCreateAgendamento && isAvailable && !isPast && (
                             <button type="button" onClick={() => openModal(undefined, selectedDate, slot)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                               Agendar
                             </button>
@@ -937,11 +1020,13 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                 </div>
               ))}
 
-              {!dayAvailabilityLoading && selectedDaySlots.length === 0 && (
+              {!dayAvailabilityLoading && visibleSelectedDaySlots.length === 0 && (
                 <div style={{ padding: '20px 10px 4px', textAlign: 'center', color: 'var(--gray-400)' }}>
                   <Calendar size={30} style={{ display: 'block', margin: '0 auto 8px' }} />
-                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-600)' }}>Nenhum horario disponivel</div>
-                  <div style={{ fontSize: 12, marginTop: 4 }}>{isPaciente ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerao aqui.' : 'Cadastre a disponibilidade do medico para liberar horarios na agenda.'}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-600)' }}>
+                    {selectedDate < today ? 'Dia encerrado' : 'Nenhum horario disponivel'}
+                  </div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>{selectedDate < today ? 'Os horarios deste dia ja ficaram no historico.' : isPaciente ? 'Quando houver consultas vinculadas ao seu perfil, elas aparecerao aqui.' : 'Cadastre a disponibilidade do medico para liberar horarios na agenda.'}</div>
                 </div>
               )}
             </div>
@@ -1108,7 +1193,12 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     <td style={{ ...tdStyle, color: 'var(--gray-500)' }}>{appt.observacoes || '—'}</td>
                     <td style={tdStyle}>
                       {isPaciente ? (
-                        <StatusBadge status={appt.status} />
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <StatusBadge status={appt.status} />
+                          {canPatientSchedule && canCancelAppointment(appt) && (
+                            <IconButton title="Cancelar" icon={Trash2} color="var(--red-500)" onClick={() => setConfirmDelete(appt.id)} />
+                          )}
+                        </div>
                       ) : (
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                         <IconButton title="Editar" icon={Pencil} color="var(--amber-600)" onClick={() => openModal(appt)} />
@@ -1150,8 +1240,14 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   <AlertCircle size={15} /> {apiError}
                 </div>
               )}
+              {canPatientSchedule && errors.paciente && (
+                <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', border: '1px solid var(--red-100)', marginBottom: 14, fontSize: 13, fontWeight: 600 }}>
+                  <AlertCircle size={15} /> {errors.paciente}
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+                {!canPatientSchedule && (
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label htmlFor="agenda-paciente-search" style={labelStyle}>Paciente <span style={{ color: 'var(--red-500)' }}>*</span></label>
                   {selectedPatient ? (
@@ -1161,7 +1257,9 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                         <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--dark)' }}>{selectedPatient.nome}</div>
                         <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{selectedPatient.cpf || '—'} · {selectedPatient.telefone || '—'}</div>
                       </div>
-                      <button onClick={() => setField('pacienteId', '')} style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}><X size={13} /></button>
+                      {!canPatientSchedule && (
+                        <button onClick={() => setField('pacienteId', '')} style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}><X size={13} /></button>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -1189,16 +1287,25 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   )}
                   {errors.paciente && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{errors.paciente}</span>}
                 </div>
+                )}
 
                 {!isMedico && (
                   <div>
                     <label htmlFor="agenda-medico" style={labelStyle}>Médico <span style={{ color: 'var(--red-500)' }}>*</span></label>
                     <select id="agenda-medico" value={modal.data.medicoId || ''} onChange={e => setModal(m => ({ ...m, data: { ...m.data, medicoId: e.target.value, hora: '' } }))}
+                      disabled={canPatientSchedule && (modalDoctorAvailabilityLoading || Boolean(modalDoctorAvailabilityError) || modalDoctorOptions.length === 0)}
                       style={{ width: '100%', padding: '10px 12px', border: `1px solid ${errors.medico ? 'var(--red-500)' : 'var(--gray-200)'}`, borderRadius: 10, fontSize: 13, background: 'var(--gray-50)' }}>
-                      <option value="">Selecione o médico</option>
-                      {doctors.map(d => <option key={d.id} value={d.id}>{d.full_name}{d.specialty ? ` - ${d.specialty}` : ''}</option>)}
+                      <option value="">{modalDoctorAvailabilityLoading ? 'Carregando médicos disponíveis...' : 'Selecione o médico'}</option>
+                      {modalDoctorOptions.map(d => <option key={d.id} value={d.id}>{d.full_name}{d.specialty ? ` - ${d.specialty}` : ''}</option>)}
                     </select>
                     {errors.medico && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{errors.medico}</span>}
+                    {!errors.medico && modalDoctorAvailabilityError && <span style={{ fontSize: 11, color: 'var(--red-500)' }}>{modalDoctorAvailabilityError}</span>}
+                    {!errors.medico && !modalDoctorAvailabilityError && canPatientSchedule && modal.data.data && !modalDoctorAvailabilityLoading && doctors.length === 0 && (
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Nenhum medico ativo encontrado.</span>
+                    )}
+                    {!errors.medico && !modalDoctorAvailabilityError && canPatientSchedule && modal.data.data && !modalDoctorAvailabilityLoading && doctors.length > 0 && !hasModalAvailabilityForDate && (
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Ainda nao ha disponibilidade ativa cadastrada para esta data.</span>
+                    )}
                   </div>
                 )}
 
@@ -1248,7 +1355,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, background: 'var(--gray-50)', resize: 'vertical', fontFamily: 'inherit' }} />
                 </div>
 
-                {selectedPatient && (
+                {selectedPatient && !canPatientSchedule && (
                   <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
                     <InfoPill icon={Phone} label="Telefone" value={selectedPatient.telefone || '—'} />
                     <InfoPill icon={Mail} label="E-mail" value={selectedPatient.email || '—'} />
@@ -1437,11 +1544,11 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: 16 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 380, width: '100%', boxShadow: '0 12px 32px rgba(0,0,0,0.15)' }}>
             <AlertCircle size={24} color="var(--red-500)" />
-            <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)', margin: '12px 0 6px' }}>Excluir agendamento?</h3>
-            <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.5 }}>Esta ação removerá a consulta da agenda.</p>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)', margin: '12px 0 6px' }}>{isPaciente || isSecretaria ? 'Cancelar agendamento?' : 'Excluir agendamento?'}</h3>
+            <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.5 }}>{isPaciente || isSecretaria ? 'Esta acao marcara a consulta como cancelada.' : 'Esta acao removera a consulta da agenda.'}</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
               <button onClick={() => setConfirmDelete(null)} style={{ padding: '9px 16px', border: '1px solid var(--gray-200)', borderRadius: 9, background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={handleDelete} style={{ padding: '9px 16px', border: 'none', borderRadius: 9, background: 'var(--red-500)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Excluir</button>
+              <button onClick={handleDelete} style={{ padding: '9px 16px', border: 'none', borderRadius: 9, background: 'var(--red-500)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{isPaciente || isSecretaria ? 'Cancelar consulta' : 'Excluir'}</button>
             </div>
           </div>
         </div>

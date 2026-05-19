@@ -1,5 +1,6 @@
 ﻿// â”€â”€â”€ ConfiguraÃ§Ã£o Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import { request } from './httpClient';
+import type { ChatbotSupportRequest } from '../types';
 
 // â”€â”€â”€ Tipos da API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ApiUser {
@@ -406,6 +407,12 @@ export interface ApiSmsLog {
   created_at?: string;
 }
 
+export interface PatientSupportRequestResponse extends ChatbotSupportRequest {
+  id?: string;
+  assigned_to?: string | null;
+  updated_at?: string;
+}
+
 export interface ApiPatient {
   id: string;
   full_name: string;
@@ -463,6 +470,13 @@ export interface ApiAppointment {
   notes?: string;
 }
 
+export interface CreateMyAppointmentPayload {
+  p_doctor_id: string;
+  p_scheduled_at: string;
+  p_duration_minutes?: number;
+  p_notes?: string;
+}
+
 export interface ApiReport {
   id: string;
   order_number?: string;
@@ -483,7 +497,7 @@ export interface ApiReport {
   updated_at?: string;
 }
 
-const RELEASED_REPORT_STATUS_CANDIDATES = ['liberado', 'finalizado', 'released', 'signed'];
+const RELEASED_REPORT_STATUS_CANDIDATES = ['released', 'completed', 'finalized', 'liberado', 'finalizado', 'signed'];
 
 function shouldRetryReleasedReportStatus(err: unknown, status: unknown) {
   if (!status || status === 'draft') return false;
@@ -844,6 +858,12 @@ export const appointmentsApi = {
       body: JSON.stringify(data),
     }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'agendamento criado')),
 
+  createForCurrentPatient: (data: CreateMyAppointmentPayload) =>
+    request<ApiAppointment | ApiAppointment[]>('/rest/v1/rpc/create_my_appointment', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }).then(response => Array.isArray(response) ? expectOne(response, 'agendamento criado') : response),
+
   update: (id: string, data: Partial<ApiAppointment>) =>
     request<ApiAppointment[]>(`/rest/v1/appointments?id=eq.${id}`, {
       method: 'PATCH',
@@ -956,6 +976,12 @@ export const reportsApi = {
   listForPatient: (patientId: string, status?: ApiReport['status']) =>
     reportsApi.list({ patient_id: patientId, status }),
 
+  listReleasedForCurrentPatient: () =>
+    request<ApiReport[]>('/rest/v1/rpc/get_my_released_reports', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
   listByCreators: (creatorIds: string[]) => {
     const uniqueIds = Array.from(new Set(creatorIds.filter(Boolean)));
     if (uniqueIds.length === 0) return Promise.resolve([] as ApiReport[]);
@@ -1002,4 +1028,12 @@ export const smsApi = {
     });
     return request<ApiSmsLog[]>(`/rest/v1/sms_logs?${q.toString()}`);
   },
+};
+
+export const supportApi = {
+  createPatientSupportRequest: (data: ChatbotSupportRequest) =>
+    request<PatientSupportRequestResponse[]>('/rest/v1/patient_support_requests', {
+      method: 'POST',
+      body: JSON.stringify(cleanPayload({ ...data })),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'solicitacao de suporte')),
 };

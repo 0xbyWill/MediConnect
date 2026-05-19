@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, FileText, Settings, MessageSquare, BarChart2, UserCog, Activity, LogOut, Headset, Bot } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, FileText, Settings, MessageSquare, BarChart2, UserCog, Activity, LogOut, Headset, Bot, ClipboardList } from 'lucide-react';
 import type { PageType } from '../types';
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,6 +12,7 @@ const ALL_NAV: { id: PageType; label: string; icon: React.ElementType; group: 'p
   { id: 'dashboard',     label: 'Dashboard',        icon: LayoutDashboard, group: 'principal' },
   { id: 'pacientes',     label: 'Pacientes',         icon: Users,           group: 'clinico' },
   { id: 'agenda',        label: 'Agenda',            icon: Calendar,        group: 'clinico' },
+  { id: 'registro',      label: 'Registro',          icon: ClipboardList,   group: 'clinico' },
   { id: 'laudos',        label: 'Laudos',            icon: FileText,        group: 'clinico' },
   { id: 'comunicacao',   label: 'Comunicacao',       icon: Headset,         group: 'clinico' },
   { id: 'mensagens',     label: 'Mensagens',         icon: MessageSquare,   group: 'clinico' },
