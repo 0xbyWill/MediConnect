@@ -22,9 +22,11 @@ import Login         from './pages/Login';
 import CadastroPaciente from './pages/CadastroPaciente';
 import Sidebar       from './components/Sidebar';
 import Topbar        from './components/Topbar';
+import PatientChatbot from './components/PatientChatbot';
 import Dashboard     from './pages/Dashboard';
 import Pacientes     from './pages/Pacientes';
 import Agenda        from './pages/Agenda';
+import Registro      from './pages/Registro';
 import Laudos        from './pages/Laudos';
 import Configuracoes from './pages/Configuracoes';
 import Comunicacao   from './pages/Comunicacao';
@@ -39,6 +41,19 @@ const onlyActiveAppointments = (appointments: ApiAppointment[]) =>
 
 const toVisibleAgendamentos = (appointments: ApiAppointment[]) =>
   onlyActiveAppointments(appointments).map(apiAppointmentToAgendamento);
+
+function isPermissionError(err: unknown) {
+  const message = err instanceof Error ? err.message.toLowerCase() : '';
+  return message.includes('row-level security') || message.includes('403') || message.includes('forbidden');
+}
+
+function isMissingPatientAppointmentRpc(err: unknown) {
+  const message = err instanceof Error ? err.message.toLowerCase() : '';
+  return (
+    message.includes('create_my_appointment') &&
+    (message.includes('schema cache') || message.includes('404') || message.includes('could not find the function'))
+  );
+}
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -181,13 +196,28 @@ export default function App() {
         setDoctors(apiDoctors);
 
       } else if (user.role === 'paciente') {
-        const ownPatients = user.patient_id
+        const ownPatientsById = user.patient_id
           ? await patientsApi.listByIds([user.patient_id]).catch(err => { capture('paciente', err); return [] as ApiPatient[]; })
-          : await patientsApi.list({ email: user.email, limit: 1 }).catch(err => { capture('paciente', err); return [] as ApiPatient[]; });
-        const patientId = user.patient_id ?? ownPatients[0]?.id;
-        const [apiAgendamentos, apiLaudos, apiDoctors] = patientId ? await Promise.all([
-          appointmentsApi.listForPatient(patientId).catch(err => { capture('agendamentos', err); return [] as ApiAppointment[]; }),
-          reportsApi.listForPatient(patientId).catch(err => { capture('laudos', err); return [] as ApiReport[]; }),
+          : [];
+        const ownPatientsByEmail = await patientsApi
+          .list({ email: user.email.toLowerCase().trim(), limit: 5 })
+          .catch(err => { capture('paciente por e-mail', err); return [] as ApiPatient[]; });
+        const ownPatients = mergeById(ownPatientsById, ownPatientsByEmail);
+        const patientIds = Array.from(new Set([
+          ...ownPatients.map(patient => patient.id),
+          user.patient_id,
+          user.id,
+        ].filter((id): id is string => Boolean(id))));
+        const [apiAgendamentos, apiLaudos, apiDoctors] = patientIds.length > 0 ? await Promise.all([
+          Promise.all(patientIds.map(patientId =>
+            appointmentsApi.listForPatient(patientId).catch(err => { capture(`agendamentos ${patientId}`, err); return [] as ApiAppointment[]; })
+          )).then(groups => mergeById(...groups)),
+          Promise.all([
+            reportsApi.listReleasedForCurrentPatient().catch(() => [] as ApiReport[]),
+            Promise.all(patientIds.map(patientId =>
+              reportsApi.listForPatient(patientId).catch(err => { capture(`laudos ${patientId}`, err); return [] as ApiReport[]; })
+            )).then(groups => mergeById(...groups)),
+          ]).then(groups => mergeById(...groups)),
           doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return [] as ApiDoctor[]; }),
         ]) : [[] as ApiAppointment[], [] as ApiReport[], [] as ApiDoctor[]];
         setPacientes(ownPatients.map(apiPatientToPaciente));
@@ -291,15 +321,41 @@ export default function App() {
     if (!user) return;
     // Para médico: usa doctor_id do perfil se não informado
     const medicoId = a.medicoId || (user.role === 'medico' ? user.doctor_id : undefined);
+    const pacienteId = user.role === 'paciente' ? a.pacienteId || user.patient_id || pacientes[0]?.id || user.id : a.pacienteId;
     if (!medicoId) {
       setApiError('Selecione um médico para criar o agendamento.');
       return;
     }
-    await appointmentsApi.create(
-      agendamentoToApiAppointment({ ...a, medicoId }, user.id)
-    );
+    if (!pacienteId) {
+      setApiError('Seu perfil de paciente nao esta vinculado a um cadastro de paciente.');
+      return;
+    }
+    const payload = agendamentoToApiAppointment({ ...a, pacienteId, medicoId }, user.id);
+    try {
+      if (user.role === 'paciente') {
+        try {
+          await appointmentsApi.createForCurrentPatient({
+            p_doctor_id: payload.doctor_id,
+            p_scheduled_at: payload.scheduled_at,
+            p_duration_minutes: payload.duration_minutes,
+            p_notes: payload.notes,
+          });
+        } catch (rpcErr) {
+          if (!isMissingPatientAppointmentRpc(rpcErr)) throw rpcErr;
+          await appointmentsApi.create(payload);
+        }
+      } else {
+        await appointmentsApi.create(payload);
+      }
+    } catch (err) {
+      if (user.role !== 'paciente') throw err;
+      if (isPermissionError(err) || isMissingPatientAppointmentRpc(err)) {
+        throw new Error('O Supabase ainda nao liberou o agendamento pelo paciente. Aplique a migration 202605190002_appointments_patient_self_schedule.sql e recarregue o schema da API.');
+      }
+      throw err;
+    }
     await refresh();
-  }, [refresh, user]);
+  }, [pacientes, refresh, user]);
 
   const updateAgendamento = useCallback(async (a: Agendamento) => {
     if (!user) return;
@@ -317,18 +373,18 @@ export default function App() {
 
   const deleteAgendamento = useCallback(async (id: string) => {
     try {
-      if (user?.role === 'secretaria') {
+      if (user?.role === 'secretaria' || user?.role === 'paciente') {
         await appointmentsApi.cancel(id);
       } else {
         await appointmentsApi.delete(id);
       }
       await refresh();
     } catch (err) {
-      const rawMsg = err instanceof Error ? err.message : 'Erro ao excluir agendamento.';
+      const rawMsg = err instanceof Error ? err.message : 'Erro ao alterar agendamento.';
       const lowerMsg = rawMsg.toLowerCase();
       const msg =
         rawMsg.includes('403') || lowerMsg.includes('forbidden')
-          ? 'A API nao permitiu excluir este agendamento para o perfil logado.'
+          ? 'A API nao permitiu alterar este agendamento para o perfil logado.'
           : rawMsg;
       setApiError(msg);
       throw new Error(msg);
@@ -496,8 +552,11 @@ export default function App() {
             <Agenda
               agendamentos={agendamentos} pacientes={pacientes} doctors={doctors}
               onAdd={addAgendamento} onUpdate={updateAgendamento}
-              onDelete={deleteAgendamento} initialOpen={openAgendaModal} initialPatientId={agendaPatientId} readOnly={user.role === 'paciente'}
+              onDelete={deleteAgendamento} initialOpen={openAgendaModal} initialPatientId={agendaPatientId}
             />
+          )}
+          {currentPage === 'registro' && user.role === 'paciente' && allowedPages.includes('registro') && (
+            <Registro pacientes={pacientes} agendamentos={agendamentos} laudos={laudos} doctors={doctors} />
           )}
           {currentPage === 'laudos' && allowedPages.includes('laudos') && (
             <Laudos laudos={laudos} pacientes={pacientes}
@@ -522,6 +581,16 @@ export default function App() {
           )}
         </main>
       </div>
+      {user.role === 'paciente' && (
+        <PatientChatbot
+          onOpenSecretaryChat={() => {
+            setPage('mensagens');
+            setOpenAgendaModal(false);
+            setOpenPacienteModal(false);
+            setAgendaPatientId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

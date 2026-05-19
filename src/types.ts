@@ -1,6 +1,6 @@
 import type { ApiPatient, ApiAppointment, ApiReport } from './lib/api';
 import type { UserRole } from './shared/constants/roles';
-import { splitApiDateTime } from './shared/utils/date';
+import { dateToISO, splitApiDateTime, timeToHHMM } from './shared/utils/date';
 import { digitsOnly } from './shared/utils/cpf';
 import { normalizeCep, normalizeDecimalText, normalizeEmail, normalizePhoneBR } from './shared/utils/validation';
 export type { PageType, UserRole } from './shared/constants/roles';
@@ -17,6 +17,39 @@ export interface AuthUser {
   avatar_url?: string;
   doctor_id?: string;
   patient_id?: string;
+}
+
+export type ChatbotIntent =
+  | 'appointments'
+  | 'reschedule'
+  | 'cancel'
+  | 'reports'
+  | 'update-data'
+  | 'login-issues'
+  | 'secretary';
+
+export interface ChatbotOption {
+  id: ChatbotIntent;
+  label: string;
+  response: string;
+  opensSupport?: boolean;
+}
+
+export interface ChatbotMessage {
+  id: string;
+  sender: 'bot' | 'patient' | 'system';
+  text: string;
+  createdAt: string;
+  kind?: 'initial' | 'answer' | 'safety' | 'support' | 'success';
+}
+
+export interface ChatbotSupportRequest {
+  patient_id?: string;
+  subject: string;
+  message: string;
+  contact_preference?: 'email' | 'phone' | 'whatsapp';
+  created_at: string;
+  status: 'open';
 }
 
 // ─── Páginas disponíveis ──────────────────────────────────────────────────────
@@ -343,13 +376,16 @@ export function agendamentoToApiAppointment(
   createdBy: string
 ): Omit<ApiAppointment, 'id'> {
   const today = new Date();
-  const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayISO = dateToISO(today);
   if (a.data < todayISO) {
     throw new Error('A consulta não pode ser agendada para data anterior a hoje.');
   }
   if (!a.pacienteId) throw new Error('Selecione um paciente para o agendamento.');
   if (!a.medicoId) throw new Error('Selecione um medico para o agendamento.');
   if (!a.hora) throw new Error('Informe o horario do agendamento.');
+  if (a.data === todayISO && a.hora <= timeToHHMM(today)) {
+    throw new Error('A consulta não pode ser agendada para horário que já passou.');
+  }
   if (!createdBy) throw new Error('Usuario autenticado nao identificado para criar o agendamento.');
   const statusMap: Record<StatusAgendamento, ApiAppointment['status']> = {
     pendente: 'requested', confirmado: 'confirmed',
@@ -367,7 +403,11 @@ export function agendamentoToApiAppointment(
 }
 
 export function apiReportToLaudo(r: ApiReport): Laudo {
-  const releasedStatuses = new Set(['completed', 'released', 'liberado', 'finalized', 'signed']);
+  const releasedStatuses = new Set(['completed', 'released', 'liberado', 'finalized', 'finalizado', 'signed']);
+  const normalizedStatus = r.status.toLowerCase().trim();
+  const mediconnectStatus = typeof r.content_json?.mediconnect_status === 'string'
+    ? r.content_json.mediconnect_status.toLowerCase().trim()
+    : '';
   return {
     id:                r.id,
     pacienteId:        r.patient_id,
@@ -377,7 +417,7 @@ export function apiReportToLaudo(r: ApiReport): Laudo {
     diagnostico:       r.diagnosis ?? '',
     tecnica:           r.exam,
     impressao:         r.conclusion,
-    status:            releasedStatuses.has(r.status) ? 'liberado' : 'rascunho',
+    status:            mediconnectStatus === 'liberado' || releasedStatuses.has(normalizedStatus) ? 'liberado' : 'rascunho',
     exame:             r.exam,
     solicitante:       r.requested_by,
     conteudoHtml:      r.content_html,
@@ -394,9 +434,14 @@ export function laudoToApiReport(
   l: Omit<Laudo, 'id'>,
   createdBy: string
 ): Omit<ApiReport, 'id' | 'order_number' | 'created_at' | 'updated_at'> {
+  const contentJson: Record<string, unknown> = {
+    mediconnect_status: l.status,
+  };
+  if (l.templateId) contentJson.templateId = l.templateId;
+
   return {
     patient_id:     l.pacienteId,
-    status:         l.status === 'liberado' ? 'released' : 'draft',
+    status:         'draft',
     cid_code:       l.cid,
     diagnosis:      l.diagnostico,
     conclusion:     l.impressao,
@@ -405,7 +450,7 @@ export function laudoToApiReport(
     content_html:   l.conteudoHtml,
     hide_date:      l.ocultarData,
     hide_signature: l.ocultarAssinatura,
-    content_json:   l.templateId ? { templateId: l.templateId } : undefined,
+    content_json:   contentJson,
     created_by:     createdBy,
   };
 }

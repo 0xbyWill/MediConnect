@@ -53,6 +53,34 @@ const UF_OPTIONS = [
   'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
 ];
 
+const OTHER_SPECIALTY_VALUE = '__other';
+
+const SPECIALTY_OPTIONS = [
+  'Clínico Geral',
+  'Neurologista',
+  'Cardiologista',
+  'Pediatra',
+  'Ortopedista',
+  'Dermatologista',
+  'Ginecologista',
+  'Psiquiatra',
+  'Oftalmologista',
+  'Endocrinologista',
+  'Gastroenterologista',
+  'Urologista',
+  'Otorrinolaringologista',
+  'Reumatologista',
+  'Pneumologista',
+  'Oncologista',
+  'Radiologista',
+  'Anestesiologista',
+  'Infectologista',
+  'Nefrologista',
+  'Hematologista',
+  'Geriatra',
+  'Médico do Trabalho',
+];
+
 const emptyForm: UsuarioForm = {
   nome: '',
   email: '',
@@ -151,6 +179,16 @@ function normalizeStaffRole(role?: string): StaffRole | null {
   if (r === 'secretaria' || r === 'secretary' || r === 'receptionist') return 'secretaria';
   if (r === 'paciente' || r === 'patient') return null;
   return 'gestao';
+}
+
+function isKnownSpecialty(value?: string) {
+  const normalized = value?.trim().toLowerCase();
+  return Boolean(normalized && SPECIALTY_OPTIONS.some(option => option.toLowerCase() === normalized));
+}
+
+function normalizedSpecialty(value?: string) {
+  const specialty = value?.trim() ?? '';
+  return specialty === OTHER_SPECIALTY_VALUE ? '' : specialty;
 }
 
 function doctorToUsuario(doctor: ApiDoctor): UsuarioItem {
@@ -315,7 +353,7 @@ export default function Usuarios() {
       if (digitsOnly(d.cpf).length !== 11) return 'Informe um CPF válido com 11 dígitos.';
       if (!d.crm?.trim()) return 'Informe o CRM.';
       if (!d.crmUf?.trim()) return 'Informe a UF do CRM.';
-      if (!d.especialidade?.trim()) return 'Informe a especialidade.';
+      if (!normalizedSpecialty(d.especialidade)) return 'Selecione ou informe a especialidade.';
     }
     return null;
   };
@@ -343,7 +381,7 @@ export default function Usuarios() {
             cpf: digitsOnly(data.cpf),
             crm: data.crm?.trim() ?? '',
             crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
-            specialty: data.especialidade?.trim() ?? '',
+            specialty: normalizedSpecialty(data.especialidade),
             phone_mobile: digitsOnly(data.telefone),
             active: data.status !== 'inativo',
           });
@@ -375,7 +413,7 @@ export default function Usuarios() {
           cpf: digitsOnly(data.cpf),
           crm: data.crm?.trim() ?? '',
           crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
-          specialty: data.especialidade?.trim() ?? '',
+          specialty: normalizedSpecialty(data.especialidade),
           phone_mobile: digitsOnly(data.telefone),
         };
 
@@ -729,7 +767,22 @@ export default function Usuarios() {
                       </select>
                     </div>
                   </div>
-                  <FormInput label="Especialidade" value={modal.data.especialidade || ''} onChange={value => set('especialidade', value)} placeholder="Ex: Cardiologia" />
+                  <div>
+                    <label htmlFor="usuario-especialidade" style={labelStyle}>Especialidade</label>
+                    <select
+                      id="usuario-especialidade"
+                      value={isKnownSpecialty(modal.data.especialidade) ? modal.data.especialidade : modal.data.especialidade ? OTHER_SPECIALTY_VALUE : ''}
+                      onChange={e => set('especialidade', e.target.value)}
+                      style={fieldStyle}
+                    >
+                      <option value="">Selecione uma especialidade</option>
+                      {SPECIALTY_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                      <option value={OTHER_SPECIALTY_VALUE}>Outra</option>
+                    </select>
+                  </div>
+                  {Boolean(modal.data.especialidade && !isKnownSpecialty(modal.data.especialidade)) && (
+                    <FormInput label="Outra especialidade" value={modal.data.especialidade === OTHER_SPECIALTY_VALUE ? '' : modal.data.especialidade || ''} onChange={value => set('especialidade', value)} placeholder="Informe a especialidade" maxLength={80} />
+                  )}
                 </>
               )}
 
