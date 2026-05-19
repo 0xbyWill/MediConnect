@@ -1,4 +1,5 @@
 import { request } from './httpClient';
+import type { ManagerSearchAssistantRequest, ManagerSearchAssistantResponse } from '../types';
 
 export type AiTone = 'professional' | 'friendly' | 'simple';
 export type AiMessageType = 'welcome' | 'warning' | 'support_initial' | 'payment_reminder' | 'custom';
@@ -173,4 +174,12 @@ export const adminAiApi = {
     request<{ items: AiConversationItem[] }>(`/functions/v1/admin-ai/conversations?${qs(filters)}`),
 
   listLogs: () => request<{ items: AiLogItem[] }>('/functions/v1/admin-ai/logs'),
+};
+
+export const managerSearchAssistantApi = {
+  ask: (data: ManagerSearchAssistantRequest) =>
+    request<ManagerSearchAssistantResponse>('/functions/v1/manager-search-assistant', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };

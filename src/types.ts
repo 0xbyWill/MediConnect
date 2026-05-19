@@ -52,6 +52,125 @@ export interface ChatbotSupportRequest {
   status: 'open';
 }
 
+export interface SendSmsRequest {
+  patient_id: string;
+  phone_number: string;
+  message: string;
+}
+
+export interface SendSmsResponse {
+  success: boolean;
+  message?: string;
+  provider_message_id?: string;
+  sid?: string;
+  error?: string;
+}
+
+export type ManagerSearchAssistantAction =
+  | 'general_search'
+  | 'daily_summary'
+  | 'weekly_summary'
+  | 'monthly_summary'
+  | 'missed_appointments'
+  | 'financial_summary'
+  | 'doctor_performance'
+  | 'message_draft'
+  | 'admin_pending_tasks';
+
+export type ManagerSearchAssistantSource =
+  | 'appointments'
+  | 'reports'
+  | 'patients'
+  | 'doctors'
+  | 'financial'
+  | 'mixed';
+
+export interface ManagerSearchAssistantRequest {
+  action: ManagerSearchAssistantAction;
+  prompt: string;
+  period?: {
+    startDate: string;
+    endDate: string;
+  };
+  context?: Record<string, unknown>;
+}
+
+export interface ManagerSearchAssistantResponse {
+  answer: string;
+  dataSummary?: string;
+  warnings?: string[];
+  source?: ManagerSearchAssistantSource;
+}
+
+export type PatientPriorityLevel = 'P1' | 'P2' | 'P3' | 'P4' | 'P5';
+
+export type PatientMobilityInput =
+  | 'normal'
+  | 'mild_limitation'
+  | 'uses_support'
+  | 'wheelchair'
+  | 'bedridden'
+  | 'unknown';
+
+export type PatientAccessDifficultyInput =
+  | 'none'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'special_transport_required'
+  | 'unknown';
+
+export type PatientDependencyInput =
+  | 'none'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'total'
+  | 'unknown';
+
+export type PatientHealthConditionInput =
+  | 'none'
+  | 'stable_chronic'
+  | 'frequent_followup'
+  | 'postoperative_or_functional_limitation'
+  | 'alert'
+  | 'unknown';
+
+export interface NormalizedPatientPriorityInput {
+  age: number | null;
+  mobility: PatientMobilityInput;
+  accessDifficulty: PatientAccessDifficultyInput;
+  dependency: PatientDependencyInput;
+  healthCondition: PatientHealthConditionInput;
+  hasLegalPriority: boolean;
+  hasCriticalAlert: boolean;
+  hasIncompleteData: boolean;
+  locationKey: string;
+}
+
+export interface PatientPriorityResult {
+  level: PatientPriorityLevel;
+  score: number;
+  reasons: string[];
+  requiresHumanReview: boolean;
+}
+
+export interface PatientPriorityMetrics {
+  totalPatients: number;
+  p1Count: number;
+  p2Count: number;
+  p3Count: number;
+  p4Count: number;
+  p5Count: number;
+  highPriorityCount: number;
+  averagePriorityScore: number;
+  mobilityRiskCount: number;
+  accessDifficultyCount: number;
+  elderlyPriorityCount: number;
+  childPriorityCount: number;
+  humanReviewRequiredCount: number;
+}
+
 // ─── Páginas disponíveis ──────────────────────────────────────────────────────
 // ─── Permissões por perfil ────────────────────────────────────────────────────
 // ─── Convênios ────────────────────────────────────────────────────────────────
@@ -84,8 +203,8 @@ export interface Paciente {
   profissao?: string;
   estadoCivil?: string;
   // Filiação
-  nomeResponsavel?: string;
-  cpfResponsavel?: string;
+  nomeResponsável?: string;
+  cpfResponsável?: string;
   vip?: boolean;
   urlRedirecionamento?: string;
   // Contato
@@ -170,8 +289,8 @@ function buildPatientNotes(p: Omit<Paciente, 'id'>): string | undefined {
     nacionalidade: p.nacionalidade,
     profissao: p.profissao?.trim(),
     estadoCivil: p.estadoCivil,
-    nomeResponsavel: p.nomeResponsavel?.trim(),
-    cpfResponsavel: p.cpfResponsavel ? digitsOnly(p.cpfResponsavel) : undefined,
+    nomeResponsável: p.nomeResponsável?.trim(),
+    cpfResponsável: p.cpfResponsável ? digitsOnly(p.cpfResponsável) : undefined,
     vip: p.vip,
     urlRedirecionamento: p.urlRedirecionamento?.trim(),
     telefone2: p.telefone2 ? normalizePhoneBR(p.telefone2) : undefined,
@@ -289,8 +408,8 @@ export function apiPatientToPaciente(p: ApiPatient): Paciente {
     nacionalidade: p.nationality ?? extra.nacionalidade,
     profissao:   p.profession ?? extra.profissao,
     estadoCivil: p.marital_status ?? extra.estadoCivil,
-    nomeResponsavel: p.guardian_name ?? extra.nomeResponsavel,
-    cpfResponsavel: p.guardian_cpf ?? extra.cpfResponsavel,
+    nomeResponsável: p.guardian_name ?? extra.nomeResponsável,
+    cpfResponsável: p.guardian_cpf ?? extra.cpfResponsável,
     cep:         p.cep ?? extra.cep,
     logradouro:  p.street ?? extra.logradouro,
     numero:      p.number ?? extra.numero,
@@ -330,8 +449,8 @@ export function pacienteToApiPatient(p: Omit<Paciente, 'id'>): Omit<ApiPatient, 
     naturality:       p.naturalidade?.trim(),
     profession:       p.profissao?.trim(),
     marital_status:   p.estadoCivil,
-    guardian_name:    p.nomeResponsavel?.trim(),
-    guardian_cpf:     p.cpfResponsavel ? digitsOnly(p.cpfResponsavel) : undefined,
+    guardian_name:    p.nomeResponsável?.trim(),
+    guardian_cpf:     p.cpfResponsável ? digitsOnly(p.cpfResponsável) : undefined,
     cep:              p.cep ? normalizeCep(p.cep) : undefined,
     street:           p.logradouro?.trim(),
     number:           p.numero?.trim(),
@@ -381,12 +500,12 @@ export function agendamentoToApiAppointment(
     throw new Error('A consulta não pode ser agendada para data anterior a hoje.');
   }
   if (!a.pacienteId) throw new Error('Selecione um paciente para o agendamento.');
-  if (!a.medicoId) throw new Error('Selecione um medico para o agendamento.');
-  if (!a.hora) throw new Error('Informe o horario do agendamento.');
+  if (!a.medicoId) throw new Error('Selecione um médico para o agendamento.');
+  if (!a.hora) throw new Error('Informe o horário do agendamento.');
   if (a.data === todayISO && a.hora <= timeToHHMM(today)) {
     throw new Error('A consulta não pode ser agendada para horário que já passou.');
   }
-  if (!createdBy) throw new Error('Usuario autenticado nao identificado para criar o agendamento.');
+  if (!createdBy) throw new Error('Usuário autenticado não identificado para criar o agendamento.');
   const statusMap: Record<StatusAgendamento, ApiAppointment['status']> = {
     pendente: 'requested', confirmado: 'confirmed',
     realizado: 'completed', cancelado: 'cancelled',

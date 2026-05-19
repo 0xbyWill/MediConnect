@@ -1,6 +1,6 @@
-﻿// â”€â”€â”€ ConfiguraÃ§Ã£o Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ ConfiguraÃ§Ã£o Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import { request } from './httpClient';
-import type { ChatbotSupportRequest } from '../types';
+import type { ChatbotSupportRequest, SendSmsRequest, SendSmsResponse as AppSendSmsResponse } from '../types';
 
 // â”€â”€â”€ Tipos da API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ApiUser {
@@ -197,7 +197,7 @@ type ApiUserListResponse =
 
 function expectOne<T>(rows: T[], entity: string): T {
   const row = rows[0];
-  if (!row) throw new Error(`A API nao retornou ${entity}. Verifique permissoes e dados enviados.`);
+  if (!row) throw new Error(`A API não retornou ${entity}. Verifique permissões e dados enviados.`);
   return row;
 }
 
@@ -206,7 +206,7 @@ function normalizeCreatedPatient(response: CreatePatientResponse, fallback: Omit
 
   const source = response.patient ?? response.data ?? response;
   const id = source.id ?? response.patient_id ?? '';
-  if (!id) throw new Error('A API criou o paciente, mas nao retornou o identificador.');
+  if (!id) throw new Error('A API criou o paciente, mas não retornou o identificador.');
 
   return {
     ...fallback,
@@ -383,17 +383,8 @@ export interface AvailableSlotsResponse {
   data?: string[] | { slots?: string[]; available_slots?: string[] };
 }
 
-export interface SendSmsPayload {
-  phone_number: string;
-  message: string;
-  patient_id?: string;
-}
-
-export interface SendSmsResponse {
-  success?: boolean;
-  message?: string;
-  sid?: string;
-}
+export type SendSmsPayload = SendSmsRequest;
+export type SendSmsResponse = AppSendSmsResponse;
 
 export interface ApiSmsLog {
   id: string;
@@ -644,7 +635,7 @@ export const usersApi = {
       }
     }
 
-    throw new Error('Endpoint de criacao de usuario com senha nao encontrado.');
+    throw new Error('Endpoint de criação de usuário com senha não encontrado.');
   },
 
   createPatientAccount: (data: PatientCreatePayload) =>
@@ -708,7 +699,7 @@ export const usersApi = {
       try {
         const response = await request<DeleteUserResponse>(path, { method: 'POST', body });
         if (response.success !== true) {
-          throw new Error(response.message || 'A API nao confirmou a exclusao do usuario.');
+          throw new Error(response.message || 'A API não confirmou a exclusão do usuário.');
         }
         return response;
       } catch (err) {
@@ -729,7 +720,7 @@ export const usersApi = {
       }
     }
 
-    throw new Error('Endpoint de exclusao de usuario nao encontrado. Faca o deploy da Supabase Edge Function delete-user.');
+    throw new Error('Endpoint de exclusão de usuário não encontrado. Faça o deploy da Supabase Edge Function delete-user.');
   },
 };
 
@@ -817,7 +808,7 @@ export const patientsApi = {
       );
 
       if (deletedRows.length === 0) {
-        throw new Error('A API nao excluiu nenhum paciente. Verifique se o perfil logado tem permissao de admin/gestao e se o id existe.');
+        throw new Error('A API não excluiu nenhum paciente. Verifique se o perfil logado tem permissão de admin/gestão e se o id existe.');
       }
     };
 
@@ -880,7 +871,7 @@ export const appointmentsApi = {
     }, { Prefer: 'return=representation' });
 
     if (rows.length === 0) {
-      throw new Error('A API nao cancelou nenhum agendamento. Verifique permissao do perfil logado e se o agendamento existe.');
+      throw new Error('A API não cancelou nenhum agendamento. Verifique permissão do perfil logado e se o agendamento existe.');
     }
 
     return rows[0];
@@ -1015,6 +1006,12 @@ export const reportsApi = {
 // â”€â”€â”€ SMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const smsApi = {
   send: (data: SendSmsPayload) =>
+    request<SendSmsResponse>('/functions/v1/send-sms', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  sendSms: (data: SendSmsPayload) =>
     request<SendSmsResponse>('/functions/v1/send-sms', {
       method: 'POST',
       body: JSON.stringify(data),

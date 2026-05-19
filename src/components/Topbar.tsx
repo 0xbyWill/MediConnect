@@ -38,13 +38,13 @@ const pageLabels: Record<PageType, string> = {
   agenda: 'Agenda',
   registro: 'Registro',
   laudos: 'Laudos',
-  comunicacao: 'Comunicacao',
+  comunicacao: 'Comunicação',
   mensagens: 'Mensagens',
-  relatorios: 'Relatorios',
-  usuarios: 'Usuarios',
-  metricas: 'Metricas',
+  relatorios: 'Relatórios',
+  usuarios: 'Usuários',
+  metricas: 'Métricas',
   ia: 'Assistente IA',
-  configuracoes: 'Configuracoes',
+  configuracoes: 'Configurações',
 };
 
 const pageIcons: Record<PageType, React.ElementType> = {
@@ -63,8 +63,8 @@ const pageIcons: Record<PageType, React.ElementType> = {
 };
 
 const ROLE_LABEL: Record<UserRole, string> = {
-  medico: 'Medico',
-  gestao: 'Gestao / Coord.',
+  medico: 'Médico',
+  gestao: 'Gestão / Coord.',
   secretaria: 'Secretaria',
   paciente: 'Paciente',
 };
@@ -167,16 +167,16 @@ export default function Topbar({ currentPage, notifications = [], onMarkNotifica
           {open && (
             <div style={{ position: 'absolute', top: 48, right: 0, width: 'min(360px, calc(100vw - 24px))', background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', zIndex: 1000, overflow: 'hidden' }}>
               <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, background: '#fff' }}>
-                <strong style={{ fontSize: 13, color: 'var(--gray-800)' }}>Notificacoes</strong>
+                <strong style={{ fontSize: 13, color: 'var(--gray-800)' }}>Notificações</strong>
                 {notifications.length > 0 && (
-                  <button onClick={onClearNotifications} title="Limpar notificacoes" style={{ border: 'none', background: 'none', color: 'var(--gray-400)', cursor: 'pointer', display: 'flex' }}>
+                  <button onClick={onClearNotifications} title="Limpar notificações" style={{ border: 'none', background: 'none', color: 'var(--gray-400)', cursor: 'pointer', display: 'flex' }}>
                     <Trash2 size={14} />
                   </button>
                 )}
               </div>
               <div style={{ maxHeight: 320, overflow: 'auto' }}>
                 {notifications.length === 0 ? (
-                  <div style={{ padding: 18, fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>Nenhuma notificacao recente.</div>
+                  <div style={{ padding: 18, fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>Nenhuma notificação recente.</div>
                 ) : notifications.map(notification => (
                   <button
                     key={notification.id}

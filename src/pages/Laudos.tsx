@@ -481,8 +481,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       ? 'Abra o laudo para revisar antes de liberar.'
       : 'Revise os pontos indicados antes de liberar.';
     return details
-      ? `A liberacao foi bloqueada: ${details}. ${action}`
-      : `A liberacao foi bloqueada pela validacao final. ${action}`;
+      ? `A liberação foi bloqueada: ${details}. ${action}`
+      : `A liberação foi bloqueada pela validação final. ${action}`;
   };
 
   const execCmd = (cmd: string, val?: string) => {
@@ -577,14 +577,14 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       data: formatDateBR(editingLaudo.data || today),
       idade: pac ? calcIdade(pac.dataNasc) : undefined,
       sexo: pac?.sexo,
-      nomeMedico: user?.full_name,
+      nomeMédico: user?.full_name,
       crm: user?.crm,
-      especialidadeMedico: user?.specialty,
+      especialidadeMédico: user?.specialty,
       cid: editingLaudo.cid || template.cid,
       diagnostico: editingLaudo.diagnostico,
       conduta: editingLaudo.impressao,
       exames: editingLaudo.tecnica || editingLaudo.exame,
-      observacoes: editingLaudo.solicitante,
+      observações: editingLaudo.solicitante,
       peso: pac?.peso,
       altura: pac?.altura,
       imc: pac?.peso && pac?.altura
@@ -611,7 +611,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const handleSave = async (novoStatus?: StatusLaudo) => {
     if (saving) return;
     if (novoStatus === 'liberado' && !isMedico) {
-      setSaveError('Apenas medico ou gestor pode liberar laudo para o paciente.');
+      setSaveError('Apenas médico ou gestor pode liberar laudo para o paciente.');
       return;
     }
     const e = validate();
@@ -666,7 +666,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const handleReleaseFromList = async () => {
     if (saving || !confirmLiberar) return;
     if (!isMedico) {
-      setSaveError('Apenas medico ou gestor pode liberar laudo para o paciente.');
+      setSaveError('Apenas médico ou gestor pode liberar laudo para o paciente.');
       setConfirmLiberar(null);
       return;
     }
@@ -714,8 +714,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     const content = sanitizeHtml(current.conteudoHtml || current.diagnostico || editorContent || '');
     const controlCode = current.orderNumber || '202605/000';
     const validationToken = `MC-${(current.id || 'XXXXX').slice(0, 8).toUpperCase()}`;
-    const doctorName = user?.full_name || 'Dr. Medico Exemplo';
-    const doctorInfo = `${user?.crm || 'CRM 0000 - UF'}${user?.specialty ? ` - ${user.specialty}` : ' - Especialidade medica'}`;
+    const doctorName = user?.full_name || 'Dr. Médico Exemplo';
+    const doctorInfo = `${user?.crm || 'CRM 0000 - UF'}${user?.specialty ? ` - ${user.specialty}` : ' - Especialidade médica'}`;
     const patientBirth = pac?.dataNasc ? `${formatDateBR(pac.dataNasc)} (${calcIdade(pac.dataNasc)})` : '-';
     const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1100');
     if (!win) return;
@@ -765,14 +765,14 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                 Telefones: (00) 0000-0000 / (00) 90000-0000<br>
                 Documento demonstrativo, sem validade oficial
               </div>
-              <div class="qr"><div class="qrbox"></div>Codigo validador:<br>${validationToken}</div>
+              <div class="qr"><div class="qrbox"></div>Código validador:<br>${validationToken}</div>
             </header>
-            <div class="titlebar"><h1>${current.exame || 'Relatorio Medico'}</h1><span class="control">Controle: ${controlCode}</span></div>
+            <div class="titlebar"><h1>${current.exame || 'Relatorio Médico'}</h1><span class="control">Controle: ${controlCode}</span></div>
             <section class="patient">
-              <div class="field"><span>Nome</span>${pac?.nome || 'Paciente nao selecionado'}</div>
+              <div class="field"><span>Nome</span>${pac?.nome || 'Paciente não selecionado'}</div>
               <div class="field"><span>Data de nascimento</span>${patientBirth}</div>
               <div class="field"><span>Sexo</span>${pac?.sexo || '-'}</div>
-              <div class="field"><span>Indicacao</span>${current.solicitante || 'Avaliacao medica'}</div>
+              <div class="field"><span>Indicação</span>${current.solicitante || 'Avaliação médica'}</div>
               <div class="field"><span>Data do exame</span>${formatDateBR(current.data || today)}</div>
               <div class="field"><span>Convenio</span>${pac?.convenio || '-'}</div>
             </section>
@@ -815,7 +815,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       return;
     }
     const reader = new FileReader();
-    reader.onerror = () => setSaveError('Nao foi possivel ler a imagem selecionada.');
+    reader.onerror = () => setSaveError('Não foi possível ler a imagem selecionada.');
     reader.onload = ev => {
       editorRef.current?.focus();
       document.execCommand('insertImage', false, ev.target?.result as string);
@@ -887,7 +887,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         )}
         {abaLista === 'todos' && (
           <span style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--gray-50)', color: 'var(--gray-500)', fontSize: 12, fontWeight: 700 }}>
-            Historico completo, sem filtro por dia
+            Histórico completo, sem filtro por dia
           </span>
         )}
         <button onClick={clearFilters}
@@ -1359,7 +1359,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
               </div>
               <div style={{ textAlign: 'center', fontSize: 9, color: '#475467' }}>
                 <div style={{ width: 78, height: 78, margin: '0 auto 4px', border: '1px solid #667085', background: 'repeating-linear-gradient(45deg,#111 0 2px,#fff 2px 4px)', opacity: 0.8 }} />
-                Codigo validador:<br />MC-000000
+                Código validador:<br />MC-000000
               </div>
             </div>
 
@@ -1407,7 +1407,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                 <DocField label="Nome" value={pac.nome} />
                 <DocField label="Data de nascimento" value={`${formatDateBR(pac.dataNasc)} (${calcIdade(pac.dataNasc)})`} />
                 <DocField label="Sexo" value={pac.sexo || '-'} />
-                <DocField label="Indicacao" value={editingLaudo.solicitante || 'Avaliacao medica'} />
+                <DocField label="Indicação" value={editingLaudo.solicitante || 'Avaliação médica'} />
                 <DocField label="Data do exame" value={editingLaudo.data ? formatDateBR(editingLaudo.data) : formatDateBR(today)} />
                 <DocField label="Convenio" value={pac.convenio || '-'} />
               </div>

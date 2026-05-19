@@ -33,7 +33,7 @@ export function buildRoleNotifications(params: {
       .map(a => ({
         id: `medico-${a.id}`,
         title: 'Paciente de hoje',
-        message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} as ${a.hora}.`,
+        message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} às ${a.hora}.`,
       }));
   }
 
@@ -45,7 +45,7 @@ export function buildRoleNotifications(params: {
       .map(a => ({
         id: `paciente-consulta-${a.id}`,
         title: a.data === todayISO ? 'Consulta hoje' : 'Consulta próxima',
-        message: `${formatDateBR(a.data)} as ${a.hora} com ${getDoctorName(a.medicoId)}.`,
+        message: `${formatDateBR(a.data)} às ${a.hora} com ${getDoctorName(a.medicoId)}.`,
       }));
     const exames = laudos
       .filter(l => !ownPatientId || l.pacienteId === ownPatientId)
@@ -65,7 +65,7 @@ export function buildRoleNotifications(params: {
     const reminders = todaysAppointments.slice(0, 5).map(a => ({
       id: `secretaria-lembrete-${a.id}`,
       title: 'Lembrete de consulta',
-      message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} as ${a.hora}. Confirmar contato.`,
+      message: `${getPaciente(a.pacienteId)?.nome || 'Paciente'} às ${a.hora}. Confirmar contato.`,
     }));
     const confirmed = todaysAppointments
       .filter(a => a.status === 'confirmado')

@@ -143,7 +143,7 @@ export default function Mensagens({ pacientes }: MensagensProps) {
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Mensagens</h1>
         <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
-          {isPatient ? 'Canal direto para conversar com a secretaria.' : 'Ponte de comunicação entre paciente e secretaria. Estrutura local aguardando banco.'}
+          {isPatient ? 'Canal direto para conversar com a secretaria.' : 'Chat paciente-secretaria iniciado pelo assistente do paciente.'}
         </p>
       </div>
 
@@ -219,10 +219,10 @@ export default function Mensagens({ pacientes }: MensagensProps) {
               <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>
                 {isPatient
                   ? 'Envie mensagens para a equipe da secretaria.'
-                  : pacienteConversa ? `${formatPhoneBR(pacienteConversa.telefone)} - canal interno paciente/secretaria` : 'Estrutura local aguardando integração com banco.'}
+                  : pacienteConversa ? `${formatPhoneBR(pacienteConversa.telefone)} - chat interno paciente/secretaria` : 'Escolha um paciente para responder o chat.'}
               </p>
             </div>
-            <span style={{ background: 'var(--gray-100)', color: 'var(--gray-600)', borderRadius: 8, padding: '5px 8px', fontSize: 11, fontWeight: 700 }}>Sem banco</span>
+            <span style={{ background: 'var(--gray-100)', color: 'var(--gray-600)', borderRadius: 8, padding: '5px 8px', fontSize: 11, fontWeight: 700 }}>Chat</span>
           </div>
 
           <div style={{ flex: 1, border: '1px solid var(--gray-100)', borderRadius: 8, padding: 14, background: 'var(--gray-50)', overflow: 'auto', minHeight: 300 }}>
@@ -290,6 +290,7 @@ export default function Mensagens({ pacientes }: MensagensProps) {
               </button>
             </div>
           </form>
+
         </section>
       </div>
     </div>

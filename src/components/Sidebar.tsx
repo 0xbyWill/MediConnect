@@ -14,13 +14,13 @@ const ALL_NAV: { id: PageType; label: string; icon: React.ElementType; group: 'p
   { id: 'agenda',        label: 'Agenda',            icon: Calendar,        group: 'clinico' },
   { id: 'registro',      label: 'Registro',          icon: ClipboardList,   group: 'clinico' },
   { id: 'laudos',        label: 'Laudos',            icon: FileText,        group: 'clinico' },
-  { id: 'comunicacao',   label: 'Comunicacao',       icon: Headset,         group: 'clinico' },
+  { id: 'comunicacao',   label: 'Comunicação',       icon: Headset,         group: 'clinico' },
   { id: 'mensagens',     label: 'Mensagens',         icon: MessageSquare,   group: 'clinico' },
-  { id: 'relatorios',    label: 'Relatorios',        icon: BarChart2,       group: 'clinico' },
-  { id: 'usuarios',      label: 'Usuarios',          icon: UserCog,         group: 'gestao' },
-  { id: 'metricas',      label: 'Metricas',          icon: Activity,        group: 'gestao' },
+  { id: 'relatorios',    label: 'Relatórios',        icon: BarChart2,       group: 'clinico' },
+  { id: 'usuarios',      label: 'Usuários',          icon: UserCog,         group: 'gestao' },
+  { id: 'metricas',      label: 'Métricas',          icon: Activity,        group: 'gestao' },
   { id: 'ia',            label: 'Assistente IA',     icon: Bot,             group: 'gestao' },
-  { id: 'configuracoes', label: 'Configuracoes',     icon: Settings,        group: 'sistema' },
+  { id: 'configuracoes', label: 'Configurações',     icon: Settings,        group: 'sistema' },
 ];
 
 const PROJECT_MARK_SRC = '/mediconnect-mark.png';
@@ -33,8 +33,8 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
 
   const groups: { key: string; label: string; items: typeof ALL_NAV }[] = [
     { key: 'principal', label: 'Principal', items: visibleNav.filter(i => i.group === 'principal') },
-    { key: 'clinico', label: 'Clinico', items: visibleNav.filter(i => i.group === 'clinico') },
-    { key: 'gestao', label: 'Gestao', items: visibleNav.filter(i => i.group === 'gestao') },
+    { key: 'clinico', label: 'Clínico', items: visibleNav.filter(i => i.group === 'clinico') },
+    { key: 'gestao', label: 'Gestão', items: visibleNav.filter(i => i.group === 'gestao') },
     { key: 'sistema', label: 'Sistema', items: visibleNav.filter(i => i.group === 'sistema') },
   ].filter(g => g.items.length > 0);
 

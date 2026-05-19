@@ -23,6 +23,12 @@ export function normalizePhoneBRForSms(value = '') {
   return digits ? `+${digits}` : '';
 }
 
+export function isValidPhoneBRForSms(value: string, required = true) {
+  const normalized = normalizePhoneBRForSms(value);
+  if (!normalized) return !required;
+  return /^\+55\d{10,11}$/.test(normalized);
+}
+
 export function isValidPhoneBR(value: string, required = true) {
   const digits = normalizePhoneBR(value);
   if (!digits) return !required;

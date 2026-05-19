@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ElementType, FormEvent, ReactNode } from 'react';
-import { Bot, Brain, FileQuestion, FileText, History, ListChecks, MessageSquare, Plus, RefreshCw, Save, ShieldCheck } from 'lucide-react';
+import { Bot, Brain, FileQuestion, FileText, History, ListChecks, MessageSquare, Plus, RefreshCw, Save, Search, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAiApi } from '../lib/aiApi';
 import type { AiAdminItem, AiDashboardStats, AiInstructionVersion, AiLogItem, AiScope } from '../lib/aiApi';
+import GestaoSearchAssistant from './GestaoSearchAssistant';
 
-type Tab = 'dashboard' | 'chat' | 'knowledge' | 'instructions' | 'faqs' | 'history';
+type Tab = 'manager_search' | 'dashboard' | 'chat' | 'knowledge' | 'instructions' | 'faqs' | 'history';
 
 const inputStyle = {
   width: '100%',
@@ -43,7 +44,7 @@ const scopeOptions: AiScope[] = ['general', 'support', 'description', 'user_mess
 
 export default function AssistenteIA() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTab] = useState<Tab>('manager_search');
   const [dashboard, setDashboard] = useState<AiDashboardStats | null>(null);
   const [knowledge, setKnowledge] = useState<AiAdminItem[]>([]);
   const [instructions, setInstructions] = useState<AiAdminItem[]>([]);
@@ -94,7 +95,7 @@ export default function AssistenteIA() {
     { label: 'Respostas geradas', value: dashboard?.generatedOutputs ?? 0, icon: Bot },
     { label: 'Conhecimentos', value: dashboard?.knowledgeDocuments ?? knowledge.length, icon: FileText },
     { label: 'FAQs', value: dashboard?.faqs ?? faqs.length, icon: FileQuestion },
-    { label: 'Correcoes', value: dashboard?.corrections ?? 0, icon: ListChecks },
+    { label: 'Correções', value: dashboard?.corrections ?? 0, icon: ListChecks },
   ], [dashboard, faqs.length, knowledge.length]);
 
   const runAction = async (action: () => Promise<void>, success: string) => {
@@ -205,7 +206,7 @@ export default function AssistenteIA() {
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 18 }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--dark)' }}>Assistente IA</h1>
-            <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>Gestão de conhecimento, FAQs, instruções, correções e chat administrativo.</p>
+            <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>Busca gerencial, chat administrativo, conhecimento, FAQs, instruções e correções.</p>
           </div>
           <button type="button" onClick={() => void loadAll()} style={{ ...buttonBase, background: 'var(--primary)', color: '#fff' }}>
             <RefreshCw size={15} /> Atualizar
@@ -227,10 +228,11 @@ export default function AssistenteIA() {
 
         <nav style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
           {([
+            ['manager_search', 'Busca gerencial', Search],
             ['dashboard', 'Dashboard', Brain],
             ['chat', 'Chat admin', MessageSquare],
             ['knowledge', 'Conhecimento', FileText],
-            ['instructions', 'Instrucoes', ShieldCheck],
+            ['instructions', 'Instruções', ShieldCheck],
             ['faqs', 'FAQs', FileQuestion],
             ['history', 'Histórico', History],
           ] satisfies Array<[Tab, string, ElementType]>).map(([id, label, Icon]) => (
@@ -250,8 +252,18 @@ export default function AssistenteIA() {
           ))}
         </nav>
 
+        {tab === 'manager_search' && <GestaoSearchAssistant embedded />}
+
         {tab === 'dashboard' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+            <section style={{ ...panelStyle, gridColumn: '1 / -1' }}>
+              <h2 style={sectionTitleStyle}>Integração Gemini</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10 }}>
+                <StatusCard title="Provider seguro" text="Use AI_PROVIDER=gemini e GEMINI_API_KEY nas Edge Functions. Nenhuma chave fica no React." />
+                <StatusCard title="Busca gerencial" text="Endpoint /functions/v1/manager-search-assistant valida JWT, exige gestão e recebe contexto sanitizado." />
+                <StatusCard title="Somente leitura" text="O assistente usa APIs de listagem e não chama criação, edição, exclusão ou envio." />
+              </div>
+            </section>
             {stats.map(item => {
               const Icon = item.icon;
               return (
@@ -273,7 +285,7 @@ export default function AssistenteIA() {
           <section style={panelStyle}>
             <h2 style={sectionTitleStyle}>Chat administrativo</h2>
             <div style={{ border: '1px solid var(--gray-100)', borderRadius: 8, background: 'var(--gray-50)', minHeight: 280, padding: 14, marginBottom: 14, overflow: 'auto' }}>
-              {chatMessages.length === 0 && <p style={{ fontSize: 13, color: 'var(--gray-500)' }}>Converse com a IA para preparar FAQs, instrucoes e documentos de conhecimento.</p>}
+              {chatMessages.length === 0 && <p style={{ fontSize: 13, color: 'var(--gray-500)' }}>Converse com a IA para preparar FAQs, instruções e documentos de conhecimento.</p>}
               {chatMessages.map((message, index) => (
                 <div key={`${message.sender}-${index}`} style={{ display: 'flex', justifyContent: message.sender === 'admin' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
                   <div style={{ maxWidth: '78%', borderRadius: 8, padding: '10px 12px', background: message.sender === 'admin' ? 'var(--primary)' : '#fff', color: message.sender === 'admin' ? '#fff' : 'var(--gray-800)', border: '1px solid var(--gray-200)', fontSize: 13, lineHeight: 1.5, overflowWrap: 'anywhere' }}>
@@ -294,16 +306,16 @@ export default function AssistenteIA() {
 
         {tab === 'knowledge' && (
           <EditorPanel title="Base de conhecimento" onSubmit={createKnowledge} disabled={saving}>
-            <Field id="ai-knowledge-title" label="Titulo" value={knowledgeForm.title} onChange={value => setKnowledgeForm(prev => ({ ...prev, title: value }))} maxLength={120} />
+            <Field id="ai-knowledge-title" label="Título" value={knowledgeForm.title} onChange={value => setKnowledgeForm(prev => ({ ...prev, title: value }))} maxLength={120} />
             <Field id="ai-knowledge-category" label="Categoria" value={knowledgeForm.category} onChange={value => setKnowledgeForm(prev => ({ ...prev, category: value }))} maxLength={80} />
-            <TextField id="ai-knowledge-content" label="Conteudo" value={knowledgeForm.content} onChange={value => setKnowledgeForm(prev => ({ ...prev, content: value }))} maxLength={8000} />
+            <TextField id="ai-knowledge-content" label="Conteúdo" value={knowledgeForm.content} onChange={value => setKnowledgeForm(prev => ({ ...prev, content: value }))} maxLength={8000} />
             <ItemList items={knowledge.map(item => ({ id: item.id, title: item.title ?? 'Sem titulo', subtitle: `${item.category ?? 'geral'} - ${item.active === false ? 'inativo' : 'ativo'}` }))} empty="Nenhum documento cadastrado." />
           </EditorPanel>
         )}
 
         {tab === 'instructions' && (
-          <EditorPanel title="Instrucoes da IA" onSubmit={createInstruction} disabled={saving}>
-            <Field id="ai-instruction-title" label="Titulo" value={instructionForm.title} onChange={value => setInstructionForm(prev => ({ ...prev, title: value }))} maxLength={120} />
+          <EditorPanel title="Instruções da IA" onSubmit={createInstruction} disabled={saving}>
+            <Field id="ai-instruction-title" label="Título" value={instructionForm.title} onChange={value => setInstructionForm(prev => ({ ...prev, title: value }))} maxLength={120} />
             <label htmlFor="ai-instruction-scope" style={labelStyle}>Escopo</label>
             <select id="ai-instruction-scope" value={instructionForm.scope} onChange={e => setInstructionForm(prev => ({ ...prev, scope: e.target.value as AiScope }))} style={inputStyle}>
               {scopeOptions.map(scope => <option key={scope} value={scope}>{scope}</option>)}
@@ -420,6 +432,15 @@ function ItemList({ items, empty }: { items: Array<{ id: string; title: string; 
   );
 }
 
+function StatusCard({ title, text }: { title: string; text: string }) {
+  return (
+    <div style={{ border: '1px solid var(--gray-100)', borderRadius: 8, padding: 12, background: 'var(--gray-50)' }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 4 }}>{title}</div>
+      <p style={{ fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.5 }}>{text}</p>
+    </div>
+  );
+}
+
 function InstructionVersionEditor({
   instructions,
   versions,
@@ -438,7 +459,7 @@ function InstructionVersionEditor({
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, borderTop: '1px solid var(--gray-100)', paddingTop: 12, marginTop: 6 }}>
       <section>
-        <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-700)', marginBottom: 10 }}>Instrucoes cadastradas</h3>
+        <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-700)', marginBottom: 10 }}>Instruções cadastradas</h3>
         <div style={{ display: 'grid', gap: 8, maxHeight: 360, overflow: 'auto' }}>
           {instructions.length === 0 && <p style={{ fontSize: 13, color: 'var(--gray-500)' }}>Nenhuma instrução cadastrada.</p>}
           {instructions.map(item => {

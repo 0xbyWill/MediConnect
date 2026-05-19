@@ -83,8 +83,8 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
     add(issues, {
       agent: 'standardization',
       severity: 'info',
-      title: 'Titulo do exame ausente',
-      message: 'O sistema usara um titulo padrao se o exame nao for informado.',
+      title: 'Título do exame ausente',
+      message: 'O sistema usará um título padrão se o exame não for informado.',
     });
   }
 
@@ -92,8 +92,8 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
     add(issues, {
       agent: 'domain-specialist',
       severity: 'warning',
-      title: 'Conteudo insuficiente',
-      message: 'O texto esta curto. Revise se ha informacoes suficientes antes de liberar.',
+      title: 'Conteúdo insuficiente',
+      message: 'O texto está curto. Revise se há informações suficientes antes de liberar.',
     });
   }
 
@@ -102,7 +102,7 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
       agent: 'critical-reviewer',
       severity: 'warning',
       title: 'Campos pendentes no texto',
-      message: `Ainda existem placeholders editaveis no texto: ${unresolvedPlaceholders.slice(0, 6).join(', ')}.`,
+      message: `Ainda existem placeholders editáveis no texto: ${unresolvedPlaceholders.slice(0, 6).join(', ')}.`,
     });
   }
 
@@ -111,7 +111,7 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
       agent: 'standardization',
       severity: 'warning',
       title: 'Estrutura incompleta',
-      message: `Inclua ou renomeie secoes para manter o padrao: ${missingSections.join(', ')}.`,
+      message: `Inclua ou renomeie seções para manter o padrão: ${missingSections.join(', ')}.`,
     });
   }
 
@@ -121,8 +121,8 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
     add(issues, {
       agent: 'critical-reviewer',
       severity: 'warning',
-      title: 'Conclusao sem evidencia explicita',
-      message: 'Inclua achados, analise ou exames que sustentem a conclusao registrada.',
+      title: 'Conclusão sem evidência explícita',
+      message: 'Inclua achados, análise ou exames que sustentem a conclusão registrada.',
     });
   }
 
@@ -131,7 +131,7 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
       agent: 'professional-writing',
       severity: 'warning',
       title: 'Linguagem possivelmente vaga',
-      message: 'Termos como normal ou satisfatorio devem estar acompanhados de achados objetivos.',
+      message: 'Termos como normal ou satisfatório devem estar acompanhados de achados objetivos.',
     });
   }
 
@@ -140,7 +140,7 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
       agent: 'compliance-security',
       severity: 'warning',
       title: 'CID no corpo do laudo',
-      message: 'Confirme se ha consentimento ou justificativa legal antes de expor CID no documento.',
+      message: 'Confirme se há consentimento ou justificativa legal antes de expor CID no documento.',
     });
   }
 
@@ -148,8 +148,8 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
     add(issues, {
       agent: 'compliance-security',
       severity: 'warning',
-      title: 'Possivel dado sensivel indevido',
-      message: 'Revise se ha tokens, senhas, chaves ou dados financeiros no texto do laudo.',
+      title: 'Possível dado sensível indevido',
+      message: 'Revise se há tokens, senhas, chaves ou dados financeiros no texto do laudo.',
     });
   }
 
@@ -157,8 +157,8 @@ export function reviewLaudoQuality(input: ReviewInput): LaudoQualityReview {
     add(issues, {
       agent: 'final-validation',
       severity: 'info',
-      title: 'Nascimento nao informado',
-      message: 'A idade pode ficar ausente no documento se a data de nascimento nao estiver cadastrada.',
+      title: 'Nascimento não informado',
+      message: 'A idade pode ficar ausente no documento se a data de nascimento não estiver cadastrada.',
     });
   }
 

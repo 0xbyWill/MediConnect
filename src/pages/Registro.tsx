@@ -51,8 +51,8 @@ export default function Registro({ pacientes, agendamentos, laudos, doctors = []
   const doctorInfo = (doctorId?: string) => {
     const doctor = doctors.find(d => d.id === doctorId);
     return {
-      name: doctor?.full_name ?? 'Medico nao informado',
-      specialty: doctor?.specialty ?? 'Especialidade nao informada',
+      name: doctor?.full_name ?? 'Médico não informado',
+      specialty: doctor?.specialty ?? 'Especialidade não informada',
     };
   };
 
@@ -83,7 +83,7 @@ export default function Registro({ pacientes, agendamentos, laudos, doctors = []
               data: laudo.data || laudo.createdAt?.slice(0, 10) || '',
               medico: doctor.name,
               especialidade: doctor.specialty,
-              tipo: laudo.exame || 'Laudo medico',
+              tipo: laudo.exame || 'Laudo médico',
               resumo: laudo.impressao || laudo.diagnostico,
               status: laudo.status,
               source: 'laudo' as const,
@@ -98,7 +98,7 @@ export default function Registro({ pacientes, agendamentos, laudos, doctors = []
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--dark)' }}>Registro</h1>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>
-            Historico de atendimentos, consultas e laudos liberados do paciente.
+            Histórico de atendimentos, consultas e laudos liberados do paciente.
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 12, background: '#fff' }}>
@@ -117,7 +117,7 @@ export default function Registro({ pacientes, agendamentos, laudos, doctors = []
       </div>
 
       {patientIds.length === 0 ? (
-        <EmptyState title="Registro indisponivel" text="Nao foi possivel vincular sua conta a um paciente. Verifique seu cadastro com a unidade de saude." />
+        <EmptyState title="Registro indisponível" text="Não foi possível vincular sua conta a um paciente. Verifique seu cadastro com a unidade de saúde." />
       ) : registros.length === 0 ? (
         <EmptyState title="Nenhum registro encontrado" text="Quando houver atendimentos anteriores ou laudos liberados, eles aparecerao aqui." />
       ) : (
@@ -142,7 +142,7 @@ export default function Registro({ pacientes, agendamentos, laudos, doctors = []
                     <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--gray-800)' }}>{item.tipo}</h2>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: item.resumo ? 12 : 0 }}>
-                    <Info label="Medico responsavel" value={item.medico} />
+                    <Info label="Médico responsável" value={item.medico} />
                     <Info label="Especialidade" value={item.especialidade} />
                   </div>
                   {item.resumo && (

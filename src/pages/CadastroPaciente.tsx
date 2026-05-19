@@ -138,7 +138,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
             </span>
             <span className="patient-signup-brand-copy">
               <span className="patient-signup-brand-name">MediConnect</span>
-              <span className="patient-signup-brand-caption">Gestao Inteligente de Saude</span>
+              <span className="patient-signup-brand-caption">Gestão Inteligente de Saúde</span>
             </span>
           </header>
 
@@ -260,7 +260,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
         <aside className="patient-signup-hero" aria-label="Resumo da plataforma">
           <div className="patient-signup-copy">
             <h2>Seu cuidado conectado em um so lugar</h2>
-            <p>Acompanhe consultas, atendimentos e informacoes clinicas com acesso seguro por e-mail.</p>
+            <p>Acompanhe consultas, atendimentos e informações clínicas com acesso seguro por e-mail.</p>
           </div>
         </aside>
       </section>
