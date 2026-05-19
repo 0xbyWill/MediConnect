@@ -623,11 +623,6 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       html: conteudo,
     });
     if (novoStatus === 'liberado' && !review.canApprove) {
-      console.info('laudo_quality_blocked', {
-        score: review.score,
-        criticalIssues: review.issues.filter(issue => issue.severity === 'critical').length,
-        warningIssues: review.issues.filter(issue => issue.severity === 'warning').length,
-      });
       setSaveError(qualityBlockMessage(review, 'editor'));
       return;
     }

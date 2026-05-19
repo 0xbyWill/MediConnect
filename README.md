@@ -66,11 +66,7 @@ npm run preview
 
 ## 🔐 Perfis de acesso
 
-| Perfil | E-mail de teste | Senha |
-|---|---|---|
-| 🩺 Médico | `medico@mediconnect.com` | `medico123` |
-| 🏢 Gestão | `gestao@mediconnect.com` | `gestao123` |
-| 📋 Secretaria | `secretaria@mediconnect.com` | `secretaria123` |
+Os acessos rapidos de demonstracao sao configurados por variaveis `VITE_DEMO_*` no `.env` local. Nao versionar senhas ou credenciais reais.
 
 ---
 
@@ -172,9 +168,9 @@ export default defineConfig([
 
 ## 🌐 Integração com API
 
-O projeto se integra com o backend **Supabase** (`yuanqfswhberkoevtmfr.supabase.co`).
+O projeto se integra com o backend Supabase configurado em `VITE_SUPABASE_URL`.
 
-Documentação completa da API: [https://do5wegrct3.apidog.io](https://do5wegrct3.apidog.io)
+A documentacao completa da API deve ser mantida em canal interno ou documentacao privada.
 
 Endpoints disponíveis:
 

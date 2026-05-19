@@ -1,6 +1,7 @@
-const BASE_URL = 'https://yuanqfswhberkoevtmfr.supabase.co';
-const ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1YW5xZnN3aGJlcmtvZXZ0bWZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5NTQzNjksImV4cCI6MjA3MDUzMDM2OX0.g8Fm4XAvtX46zifBZnYVH4tVuQkqUH6Ia9CXQj4DztQ';
+import { appEnv } from '../config/env';
+
+const BASE_URL = appEnv.supabaseUrl;
+const ANON_KEY = appEnv.supabaseAnonKey;
 
 function getToken(): string | null {
   return localStorage.getItem('mc_access_token');
@@ -22,7 +23,7 @@ export async function request<T>(
   options: RequestInit = {},
   extraHeaders: Record<string, string> = {}
 ): Promise<T> {
-  const url = /^https?:\/\//i.test(path) ? path : `${BASE_URL}${path}`;
+  const url = buildUrl(path);
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -57,4 +58,13 @@ export async function request<T>(
 
   const text = await res.text();
   return text ? (JSON.parse(text) as T) : ({} as T);
+}
+
+function buildUrl(path: string): string {
+  const base = new URL(BASE_URL);
+  const url = new URL(path, `${BASE_URL}/`);
+  if (url.origin !== base.origin) {
+    throw new Error('Destino de API externo bloqueado para evitar vazamento de credenciais.');
+  }
+  return url.toString();
 }

@@ -15,6 +15,8 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react';
+import { demoLoginPresets } from '../config/env';
+import type { DemoLoginPreset, DemoLoginRole } from '../config/env';
 import { useAuth } from '../contexts/AuthContext';
 
 interface LoginProps {
@@ -48,11 +50,20 @@ export default function Login({ onCreateAccount }: LoginProps) {
     setPassword(value);
   };
 
-  const quickLogin = async (preset: { email: string; password: string }) => {
+  const quickLogin = async (preset: DemoLoginPreset) => {
     setEmail(preset.email);
     setPassword(preset.password);
     clearError();
     await login(preset.email, preset.password);
+  };
+
+  const getDemoLoginPreset = (role: DemoLoginRole) =>
+    demoLoginPresets.find(preset => preset.role === role);
+
+  const quickLoginByRole = async (role: DemoLoginRole) => {
+    const preset = getDemoLoginPreset(role);
+    if (!preset) return;
+    await quickLogin(preset);
   };
 
   return (
@@ -165,7 +176,7 @@ export default function Login({ onCreateAccount }: LoginProps) {
                   </>
                 ) : (
                   <>
-                    aazer Login
+                    Fazer Login
                     <ArrowRight size={19} aria-hidden="true" />
                   </>
                 )}
@@ -200,7 +211,8 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
       <footer className="login-footer">&copy; 2026 MediConnect. Todos os direitos reservados.</footer>
 
-      <aside className="login-quick-access" aria-label="Acessos rapidos">
+      {demoLoginPresets.length > 0 && (
+        <aside className="login-quick-access" aria-label="Acessos rapidos">
         <div className="login-quick-header">
           <h2>Acessos rapidos</h2>
           <p>Ambiente de teste</p>
@@ -211,24 +223,24 @@ export default function Login({ onCreateAccount }: LoginProps) {
           title="Médico"
           subtitle="Agenda, pacientes e laudos"
           color="var(--primary)"
-          disabled={loading}
-          onClick={() => void quickLogin({ email: 'francisco.squad04@gmail.com', password: 'Teste@123' })}
+          disabled={loading || !getDemoLoginPreset('doctor')}
+          onClick={() => void quickLoginByRole('doctor')}
         />
         <QuickAccessButton
           icon={ClipboardList}
           title="Secretaria"
           subtitle="Agenda e cadastro de pacientes"
           color="var(--amber-600)"
-          disabled={loading}
-          onClick={() => void quickLogin({ email: 'secretaria.squad04@gmail.com', password: 'Teste@123' })}
+          disabled={loading || !getDemoLoginPreset('secretary')}
+          onClick={() => void quickLoginByRole('secretary')}
         />
         <QuickAccessButton
           icon={Shield}
           title="Gestor"
           subtitle="Acesso administrativo"
           color="#7c3aed"
-          disabled={loading}
-          onClick={() => void quickLogin({ email: 'hugo@popcode.com.br', password: 'hdoria' })}
+          disabled={loading || !getDemoLoginPreset('manager')}
+          onClick={() => void quickLoginByRole('manager')}
         />
 
         <div className="login-quick-divider" />
@@ -238,10 +250,11 @@ export default function Login({ onCreateAccount }: LoginProps) {
           title="Paciente"
           subtitle="Visualizar perfil do paciente"
           color="#2563eb"
-          disabled={loading}
-          onClick={() => void quickLogin({ email: 'bobesponja@popcode.com', password: 'Teste@123' })}
+          disabled={loading || !getDemoLoginPreset('patient')}
+          onClick={() => void quickLoginByRole('patient')}
         />
-      </aside>
+        </aside>
+      )}
 
       <style>{`
         .login-page {
@@ -345,6 +358,8 @@ export default function Login({ onCreateAccount }: LoginProps) {
 
         .login-left {
           min-width: 0;
+          transform: translateZ(0);
+          backface-visibility: hidden;
         }
 
         .login-logo-row {
@@ -406,6 +421,8 @@ export default function Login({ onCreateAccount }: LoginProps) {
           background: transparent;
           box-shadow: none;
           backdrop-filter: none;
+          transform: translateZ(0);
+          backface-visibility: hidden;
         }
 
         .login-heading {
@@ -493,6 +510,8 @@ export default function Login({ onCreateAccount }: LoginProps) {
           font-weight: 600;
           box-shadow: 0 1px 0 rgba(16, 185, 129, 0.04);
           transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+          transform: translateZ(0);
+          backface-visibility: hidden;
         }
 
         .login-input-wrap input::placeholder {

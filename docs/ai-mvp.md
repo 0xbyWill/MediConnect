@@ -39,7 +39,7 @@ Aplicar a migration:
 
 ```bash
 npx supabase login
-npx supabase link --project-ref yuanqfswhberkoevtmfr
+npx supabase link --project-ref <seu-project-ref>
 supabase db push
 ```
 
