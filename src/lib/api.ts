@@ -186,15 +186,6 @@ type CreatePatientResponse =
       data?: Partial<ApiPatient>;
     });
 
-type ApiUserListResponse =
-  | ApiProfileRecord[]
-  | {
-      users?: ApiProfileRecord[];
-      profiles?: ApiProfileRecord[];
-      data?: ApiProfileRecord[];
-      items?: ApiProfileRecord[];
-    };
-
 function expectOne<T>(rows: T[], entity: string): T {
   const row = rows[0];
   if (!row) throw new Error(`A API não retornou ${entity}. Verifique permissões e dados enviados.`);
@@ -548,11 +539,6 @@ export const usersApi = {
       return r || 'admin';
     };
 
-    const rowsFromResponse = (response: ApiUserListResponse): ApiProfileRecord[] => {
-      if (Array.isArray(response)) return response;
-      return response.users ?? response.profiles ?? response.data ?? response.items ?? [];
-    };
-
     const toManagedUsers = (rows: ApiProfileRecord[], roles = new Map<string, string>()) =>
       rows
         .map(row => {
@@ -571,25 +557,6 @@ export const usersApi = {
           };
         })
         .filter(user => user.id && user.full_name);
-
-    const functionCandidates: Array<{ path: string; method: 'GET' | 'POST' }> = [
-      { path: '/functions/v1/list-users', method: 'GET' },
-      { path: '/functions/v1/list-users', method: 'POST' },
-      { path: '/functions/v1/users', method: 'GET' },
-      { path: '/functions/v1/users', method: 'POST' },
-      { path: '/functions/v1/admin-users', method: 'GET' },
-      { path: '/functions/v1/admin-users', method: 'POST' },
-    ];
-
-    for (const candidate of functionCandidates) {
-      try {
-        const response = await request<ApiUserListResponse>(candidate.path, { method: candidate.method });
-        const users = toManagedUsers(rowsFromResponse(response));
-        if (users.length > 0) return users;
-      } catch {
-        // Continua tentando os demais contratos conhecidos.
-      }
-    }
 
     const [profiles, userRoles] = await Promise.all([
       request<ApiProfileRecord[]>('/rest/v1/profiles?select=*').catch(() => [] as ApiProfileRecord[]),
@@ -617,7 +584,6 @@ export const usersApi = {
       body: JSON.stringify(data),
     };
     const candidates = [
-      '/create-user-with-password',
       '/functions/v1/create-user-with-password',
     ];
 
