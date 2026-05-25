@@ -61,10 +61,15 @@ function readApiRole(apiUser: ApiUser, info?: ApiUserInfo | null): UserRole | un
     info?.roles?.[0] ??
     info?.role ??
     info?.profile?.role ??
+    info?.profile?.user_role ??
+    info?.user?.role ??
+    info?.user?.user_role ??
     info?.user?.roles?.[0] ??
     apiUser.user_metadata?.role ??
+    apiUser.user_metadata?.user_role ??
     apiUser.user_metadata?.roles?.[0] ??
     apiUser.app_metadata?.role ??
+    apiUser.app_metadata?.user_role ??
     apiUser.app_metadata?.roles?.[0];
   return role ? normalizeRole(role) : undefined;
 }
