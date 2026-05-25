@@ -18,6 +18,79 @@ function buildHeaders(extra: Record<string, string> = {}): Record<string, string
   };
 }
 
+export interface ApiProblemDetails {
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  errors?: Record<string, string[]>;
+}
+
+export class ApiRequestError extends Error {
+  status: number;
+  problem?: ApiProblemDetails;
+
+  constructor(message: string, status: number, problem?: ApiProblemDetails) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.problem = problem;
+  }
+}
+
+function isStringRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeProblemErrors(value: unknown): Record<string, string[]> | undefined {
+  if (!isStringRecord(value)) return undefined;
+  const entries = Object.entries(value)
+    .map(([field, messages]) => {
+      if (Array.isArray(messages)) {
+        const normalized = messages.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+        return normalized.length ? [field, normalized] as const : null;
+      }
+      if (typeof messages === 'string' && messages.trim()) return [field, [messages.trim()]] as const;
+      return null;
+    })
+    .filter((entry): entry is readonly [string, string[]] => Boolean(entry));
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function toProblemDetails(body: unknown, fallbackStatus: number): ApiProblemDetails | undefined {
+  if (!isStringRecord(body)) return undefined;
+  const problem: ApiProblemDetails = {
+    type: typeof body.type === 'string' ? body.type : undefined,
+    title: typeof body.title === 'string' ? body.title : undefined,
+    status: typeof body.status === 'number' ? body.status : fallbackStatus,
+    detail: typeof body.detail === 'string' ? body.detail : undefined,
+    errors: normalizeProblemErrors(body.errors),
+  };
+  return problem.type || problem.title || problem.detail || problem.errors ? problem : undefined;
+}
+
+function legacyErrorMessage(body: unknown): string | undefined {
+  if (!isStringRecord(body)) return undefined;
+  return [
+    body.message,
+    body.msg,
+    body.error_description,
+    body.error,
+    body.detail,
+    body.details,
+    body.hint,
+  ].find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function problemMessage(problem: ApiProblemDetails, fallback: string) {
+  const fieldMessages = problem.errors
+    ? Object.entries(problem.errors)
+        .flatMap(([field, messages]) => messages.map(message => `${field}: ${message}`))
+        .join(' ')
+    : '';
+  return [problem.title, problem.detail, fieldMessages].filter(Boolean).join(' - ') || fallback;
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -33,27 +106,11 @@ export async function request<T>(
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    const apiError = err as {
-      message?: string;
-      msg?: string;
-      error?: string;
-      error_description?: string;
-      detail?: string;
-      details?: string;
-      hint?: string;
-    };
-    const message =
-      apiError.message ||
-      apiError.msg ||
-      apiError.error_description ||
-      apiError.error ||
-      apiError.detail ||
-      apiError.details ||
-      apiError.hint ||
-      res.statusText ||
-      'Erro na requisição';
-    throw new Error(`${message} (${res.status})`);
+    const body = await res.json().catch(() => ({ message: res.statusText }));
+    const problem = toProblemDetails(body, res.status);
+    const fallback = legacyErrorMessage(body) || res.statusText || 'Erro na requisicao';
+    const message = problem ? problemMessage(problem, fallback) : fallback;
+    throw new ApiRequestError(`${message} (${res.status})`, res.status, problem);
   }
 
   const text = await res.text();
