@@ -583,6 +583,7 @@ export default function App() {
       </div>
       {user.role === 'paciente' && (
         <PatientChatbot
+          onNavigate={handleNavigate}
           onOpenSecretaryChat={() => {
             setPage('mensagens');
             setOpenAgendaModal(false);

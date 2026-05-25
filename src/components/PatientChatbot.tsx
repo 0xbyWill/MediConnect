@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { HelpCircle, MessageCircle, X } from 'lucide-react';
-import type { ChatbotMessage } from '../types';
+import type { FormEvent } from 'react';
+import { HelpCircle, Loader2, MessageCircle, Send, X } from 'lucide-react';
+import type { ChatbotMessage, PageType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { patientChatbotAiApi } from '../lib/aiApi';
 import {
+  CHATBOT_EMERGENCY_KEYWORDS,
+  CHATBOT_EMERGENCY_MESSAGE,
   CHATBOT_INITIAL_MESSAGE,
+  CHATBOT_MEDICAL_BLOCK_MESSAGE,
+  CHATBOT_MEDICAL_KEYWORDS,
   CHATBOT_OPTIONS,
   CHATBOT_RESOLUTION_PROMPT,
 } from '../shared/constants/chatbot';
@@ -12,6 +18,7 @@ const PANACEIA_AVATAR_SRC = '/WhatsApp Image 2026-05-07 at 19.38.48.jpeg';
 
 interface PatientChatbotProps {
   onOpenSecretaryChat: () => void;
+  onNavigate: (page: PageType) => void;
 }
 
 function nowISO() {
@@ -28,7 +35,7 @@ function createMessage(sender: ChatbotMessage['sender'], text: string, kind?: Ch
   };
 }
 
-export default function PatientChatbot({ onOpenSecretaryChat }: PatientChatbotProps) {
+export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: PatientChatbotProps) {
   const { user } = useAuth();
   const isPatient = user?.role === 'paciente';
   const [open, setOpen] = useState(false);
@@ -36,6 +43,8 @@ export default function PatientChatbot({ onOpenSecretaryChat }: PatientChatbotPr
     createMessage('bot', CHATBOT_INITIAL_MESSAGE, 'initial'),
   ]);
   const [awaitingResolution, setAwaitingResolution] = useState(false);
+  const [freeText, setFreeText] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const patientName = useMemo(() => user?.full_name?.split(' ')[0] || 'paciente', [user?.full_name]);
 
@@ -72,6 +81,82 @@ export default function PatientChatbot({ onOpenSecretaryChat }: PatientChatbotPr
       createMessage('bot', option.response, 'answer')
     );
     setAwaitingResolution(true);
+  };
+
+  const handleFreeText = async (event: FormEvent) => {
+    event.preventDefault();
+    const message = freeText.trim();
+    if (!message || aiLoading) return;
+
+    const normalized = message.toLowerCase();
+    setFreeText('');
+    setAwaitingResolution(false);
+    pushMessages(createMessage('patient', message));
+
+    if (isCurrentDateTimeQuestion(message)) {
+      pushMessages(createMessage('bot', currentDateTimeAnswer(), 'answer'));
+      setAwaitingResolution(true);
+      return;
+    }
+
+    if (!isSystemRelatedQuestion(message)) {
+      pushMessages(createMessage('bot', 'Posso ajudar apenas com assuntos do MediConnect: consultas, laudos liberados, cadastro, login, mensagens e contato com a secretaria.', 'safety'));
+      setAwaitingResolution(true);
+      return;
+    }
+
+    const navigationIntent = getNavigationIntent(message);
+    if (navigationIntent) {
+      pushMessages(createMessage('bot', navigationIntent.message, 'answer'));
+      setAwaitingResolution(false);
+      window.setTimeout(() => {
+        setOpen(false);
+        onNavigate(navigationIntent.page);
+      }, 550);
+      return;
+    }
+
+    if (CHATBOT_EMERGENCY_KEYWORDS.some(keyword => normalized.includes(keyword))) {
+      pushMessages(createMessage('bot', CHATBOT_EMERGENCY_MESSAGE, 'safety'));
+      setAwaitingResolution(true);
+      return;
+    }
+
+    if (CHATBOT_MEDICAL_KEYWORDS.some(keyword => normalized.includes(keyword))) {
+      pushMessages(createMessage('bot', CHATBOT_MEDICAL_BLOCK_MESSAGE, 'safety'));
+      setAwaitingResolution(true);
+      return;
+    }
+
+    if (needsSecretary(message)) {
+      pushMessages(createMessage('bot', 'Esse pedido precisa da secretaria para confirmar dados e registrar a solicitação. Posso abrir a conversa direta para você continuar por lá.', 'support'));
+      setAwaitingResolution(true);
+      return;
+    }
+
+    setAiLoading(true);
+    try {
+      const response = await patientChatbotAiApi.ask({
+        message,
+        patientName,
+        history: messages.slice(-8).map(item => ({ sender: item.sender, text: item.text })),
+      });
+      pushMessages(createMessage('bot', response.answer, 'answer'));
+      setAwaitingResolution(true);
+    } catch (err) {
+      pushMessages(
+        createMessage(
+          'bot',
+          err instanceof Error && err.message.includes('VITE_GEMINI_API_KEY')
+            ? 'A IA ainda não está configurada neste ambiente. A secretaria pode te ajudar pelo atendimento direto.'
+            : 'Não consegui responder com IA agora. A secretaria pode te ajudar pelo atendimento direto.',
+          'support'
+        )
+      );
+      setAwaitingResolution(true);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleResolved = () => {
@@ -154,6 +239,24 @@ export default function PatientChatbot({ onOpenSecretaryChat }: PatientChatbotPr
           </div>
 
           <footer className="patient-chatbot-footer">
+            <form className="patient-chatbot-compose" onSubmit={handleFreeText}>
+              <label htmlFor="patient-chatbot-message">Mensagem para a Panaceia</label>
+              <div>
+                <textarea
+                  id="patient-chatbot-message"
+                  value={freeText}
+                  onChange={event => setFreeText(event.target.value.slice(0, 600))}
+                  disabled={aiLoading}
+                  maxLength={600}
+                  rows={2}
+                  placeholder="Digite sua dúvida..."
+                />
+                <button type="submit" disabled={aiLoading || !freeText.trim()} aria-label="Enviar mensagem para a Panaceia">
+                  {aiLoading ? <Loader2 size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+                </button>
+              </div>
+            </form>
+
             {!awaitingResolution ? (
               <div className="patient-chatbot-options" aria-label="Escolha uma opção de atendimento">
                 {CHATBOT_OPTIONS.map(option => (
@@ -358,6 +461,59 @@ export default function PatientChatbot({ onOpenSecretaryChat }: PatientChatbotPr
               background: #fff;
             }
 
+            .patient-chatbot-compose {
+              display: grid;
+              gap: 6px;
+              margin-bottom: 10px;
+            }
+
+            .patient-chatbot-compose label {
+              font-size: 11px;
+              font-weight: 800;
+              color: var(--gray-600);
+              text-transform: uppercase;
+              letter-spacing: 0;
+            }
+
+            .patient-chatbot-compose > div {
+              display: grid;
+              grid-template-columns: 1fr 42px;
+              gap: 8px;
+              align-items: stretch;
+            }
+
+            .patient-chatbot-compose textarea {
+              width: 100%;
+              min-height: 42px;
+              max-height: 92px;
+              resize: vertical;
+              border: 1px solid var(--gray-200);
+              border-radius: 10px;
+              padding: 9px 10px;
+              color: var(--gray-800);
+              font: inherit;
+              font-size: 13px;
+              line-height: 1.35;
+              outline: none;
+            }
+
+            .patient-chatbot-compose button {
+              width: 42px;
+              min-height: 42px;
+              border: 0;
+              border-radius: 10px;
+              background: var(--primary);
+              color: #fff;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            .patient-chatbot-compose button:disabled {
+              background: var(--gray-300);
+              cursor: not-allowed;
+            }
+
             .patient-chatbot-options {
               display: grid;
               grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -413,4 +569,139 @@ export default function PatientChatbot({ onOpenSecretaryChat }: PatientChatbotPr
       )}
     </>
   );
+}
+
+function needsSecretary(message: string) {
+  const normalized = message.toLowerCase();
+  return [
+    'agendar',
+    'marcar consulta',
+    'remarcar',
+    'cancelar',
+    'alterar meus dados',
+    'atualizar meus dados',
+    'trocar telefone',
+    'trocar email',
+    'mudar email',
+    'falar com secretaria',
+    'secretaria',
+  ].some(term => normalized.includes(term));
+}
+
+function getNavigationIntent(message: string): { page: PageType; message: string } | null {
+  const normalized = message.toLowerCase();
+
+  if (matchesAny(normalized, ['secretaria', 'mensagem', 'mensagens', 'suporte', 'atendimento', 'falar com alguem', 'falar com alguém'])) {
+    return {
+      page: 'mensagens',
+      message: 'Vou abrir a área de mensagens para você falar com a secretaria.',
+    };
+  }
+
+  if (matchesAny(normalized, ['laudo', 'laudos', 'resultado', 'resultados', 'exame', 'exames'])) {
+    return {
+      page: 'laudos',
+      message: 'Vou levar você para a área de laudos liberados.',
+    };
+  }
+
+  if (matchesAny(normalized, ['registro', 'histórico', 'historico', 'meu cadastro', 'meus dados', 'perfil', 'minha conta'])) {
+    return {
+      page: 'registro',
+      message: 'Vou abrir seu registro para você conferir seus dados e histórico.',
+    };
+  }
+
+  if (matchesAny(normalized, ['agenda', 'agendamento', 'agendar', 'consulta', 'consultas', 'marcar consulta', 'minhas consultas'])) {
+    return {
+      page: 'agenda',
+      message: 'Vou abrir a agenda para você consultar seus horários.',
+    };
+  }
+
+  if (matchesAny(normalized, ['inicio', 'início', 'dashboard', 'home', 'principal'])) {
+    return {
+      page: 'dashboard',
+      message: 'Vou levar você para a página inicial.',
+    };
+  }
+
+  return null;
+}
+
+function matchesAny(text: string, terms: string[]) {
+  return terms.some(term => text.includes(term));
+}
+
+function isCurrentDateTimeQuestion(message: string) {
+  const normalized = message.toLowerCase();
+  const asksToday = [
+    'que dia e hoje',
+    'que dia é hoje',
+    'qual dia e hoje',
+    'qual dia é hoje',
+    'data de hoje',
+    'hora atual',
+    'horario atual',
+    'horário atual',
+    'agora',
+  ].some(term => normalized.includes(term));
+  const asksClock = ['que horas', 'qual horario', 'qual horário'].some(term => normalized.includes(term));
+  return asksToday || asksClock;
+}
+
+function currentDateTimeAnswer() {
+  const now = new Date();
+  const date = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'full',
+    timeZone: 'America/Sao_Paulo',
+  }).format(now);
+  const time = new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  }).format(now);
+  return `Hoje é ${date}. Agora são ${time}, no horário de São Paulo.`;
+}
+
+function isSystemRelatedQuestion(message: string) {
+  const normalized = message.toLowerCase();
+  return [
+    'mediconnect',
+    'panaceia',
+    'sistema',
+    'consulta',
+    'consultas',
+    'agendamento',
+    'agendar',
+    'agenda',
+    'remarcar',
+    'cancelar',
+    'laudo',
+    'laudos',
+    'resultado',
+    'exame',
+    'registro',
+    'cadastro',
+    'dados',
+    'email',
+    'e-mail',
+    'telefone',
+    'senha',
+    'login',
+    'acesso',
+    'entrar',
+    'secretaria',
+    'mensagem',
+    'mensagens',
+    'suporte',
+    'perfil',
+    'minha conta',
+    'meu perfil',
+    'paciente',
+    'médico',
+    'medico',
+    'clínica',
+    'clinica',
+  ].some(term => normalized.includes(term));
 }

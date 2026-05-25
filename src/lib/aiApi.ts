@@ -77,6 +77,77 @@ export interface AiDashboardStats {
   reviewItems: AiAdminItem[];
 }
 
+export interface PatientChatbotAiRequest {
+  message: string;
+  patientName?: string;
+  history?: Array<{ sender: 'bot' | 'patient' | 'system'; text: string }>;
+}
+
+export interface PatientChatbotAiResponse {
+  answer: string;
+}
+
+export type ChatRole = 'system' | 'user' | 'assistant';
+
+export interface ChatMessage {
+  role: ChatRole;
+  content: string;
+}
+
+export type AIMode = 'groq' | 'gemini' | 'direct' | 'none';
+
+export interface ChatRequestOptions {
+  signal?: AbortSignal;
+  temperature?: number;
+  maxTokens?: number;
+  model?: string;
+}
+
+interface OpenAICompatibleResponse {
+  choices?: Array<{ message?: { content?: string | null } }>;
+  error?: { message?: string };
+}
+
+interface GeminiResponse {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  promptFeedback?: { blockReason?: string };
+  error?: { message?: string; status?: string; code?: number };
+}
+
+export class AIError extends Error {
+  readonly cause?: unknown;
+
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = 'AIError';
+    this.cause = cause;
+  }
+}
+
+const DEFAULT_OPENAI_MODEL = String(import.meta.env.VITE_OPENAI_MODEL ?? 'gpt-4o-mini');
+const DEFAULT_MAX_TOKENS = Number(import.meta.env.VITE_AI_MAX_TOKENS ?? import.meta.env.VITE_OPENAI_MAX_TOKENS ?? 700);
+const DIRECT_OPENAI_KEY = String(import.meta.env.VITE_OPENAI_API_KEY ?? '').trim();
+const GEMINI_KEY = String(import.meta.env.VITE_GEMINI_API_KEY ?? '').trim();
+const GEMINI_MODEL = String(import.meta.env.VITE_GEMINI_MODEL ?? 'gemini-1.5-flash').trim();
+const GROQ_KEY = String(import.meta.env.VITE_GROQ_API_KEY ?? '').trim();
+const GROQ_MODEL = String(import.meta.env.VITE_GROQ_MODEL ?? 'llama-3.3-70b-versatile').trim();
+const FORCED_PROVIDER = String(import.meta.env.VITE_AI_PROVIDER ?? 'auto').trim().toLowerCase();
+
+const GROQ_MODEL_FALLBACKS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'llama3-70b-8192',
+  'llama3-8b-8192',
+] as const;
+
+const GEMINI_MODEL_FALLBACKS = [
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash-8b-latest',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+] as const;
+
 function qs(params: Record<string, string | undefined>) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -176,10 +247,300 @@ export const adminAiApi = {
   listLogs: () => request<{ items: AiLogItem[] }>('/functions/v1/admin-ai/logs'),
 };
 
-export const managerSearchAssistantApi = {
-  ask: (data: ManagerSearchAssistantRequest) =>
-    request<ManagerSearchAssistantResponse>('/functions/v1/manager-search-assistant', {
+export function getAIMode(): AIMode {
+  if (FORCED_PROVIDER === 'groq') return GROQ_KEY ? 'groq' : 'none';
+  if (FORCED_PROVIDER === 'gemini') return GEMINI_KEY ? 'gemini' : 'none';
+  if (FORCED_PROVIDER === 'direct') return DIRECT_OPENAI_KEY ? 'direct' : 'none';
+  if (FORCED_PROVIDER !== 'auto' && FORCED_PROVIDER !== '') return 'none';
+  if (GROQ_KEY) return 'groq';
+  if (GEMINI_KEY) return 'gemini';
+  if (DIRECT_OPENAI_KEY) return 'direct';
+  return 'none';
+}
+
+export function isAIConfigured() {
+  return getAIMode() !== 'none';
+}
+
+export function getAIModel() {
+  const mode = getAIMode();
+  if (mode === 'groq') return GROQ_MODEL;
+  if (mode === 'gemini') return GEMINI_MODEL;
+  if (mode === 'direct') return DEFAULT_OPENAI_MODEL;
+  return '';
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<{ raw: string; parsed: T | null }> {
+  const raw = await response.text().catch(() => '');
+  try {
+    return { raw, parsed: raw ? JSON.parse(raw) as T : null };
+  } catch {
+    return { raw, parsed: null };
+  }
+}
+
+function isAbortError(err: unknown) {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
+
+async function chatCompleteOpenAICompatible(
+  url: string,
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  options: ChatRequestOptions,
+  providerLabel: 'Groq' | 'OpenAI',
+): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: options.temperature ?? 0.2,
+        max_tokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+      }),
+      signal: options.signal,
+    });
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new AIError(`Falha de rede ao chamar ${providerLabel}: ${message}`, err);
+  }
+
+  const { raw, parsed } = await parseJsonResponse<OpenAICompatibleResponse>(response);
+  if (!response.ok) {
+    const message = parsed?.error?.message
+      ?? (response.status === 401 ? `Chave ${providerLabel} invalida.`
+        : response.status === 429 ? `Limite de uso do ${providerLabel} atingido. Aguarde e tente novamente.`
+        : `Erro ${response.status} ao consultar ${providerLabel}.`);
+    throw new AIError(message || raw);
+  }
+
+  const content = parsed?.choices?.[0]?.message?.content?.trim() ?? '';
+  if (!content) throw new AIError(`${providerLabel} nao retornou conteudo.`);
+  return content;
+}
+
+async function chatCompleteGroq(messages: ChatMessage[], options: ChatRequestOptions) {
+  const requested = options.model ?? GROQ_MODEL;
+  const models = [...new Set([requested, ...GROQ_MODEL_FALLBACKS])];
+  let lastError = '';
+
+  for (const model of models) {
+    try {
+      return await chatCompleteOpenAICompatible(
+        'https://api.groq.com/openai/v1/chat/completions',
+        GROQ_KEY,
+        model,
+        messages,
+        options,
+        'Groq',
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/model|decommission|not found|does not exist|invalid model/i.test(message)) {
+        lastError = message;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new AIError(lastError || 'Nenhum modelo Groq configurado respondeu.');
+}
+
+async function chatCompleteDirect(messages: ChatMessage[], options: ChatRequestOptions) {
+  return chatCompleteOpenAICompatible(
+    'https://api.openai.com/v1/chat/completions',
+    DIRECT_OPENAI_KEY,
+    options.model ?? DEFAULT_OPENAI_MODEL,
+    messages,
+    options,
+    'OpenAI',
+  );
+}
+
+async function chatCompleteGemini(messages: ChatMessage[], options: ChatRequestOptions) {
+  const systemInstruction = messages
+    .filter(message => message.role === 'system')
+    .map(message => message.content.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  const contents = messages
+    .filter(message => message.role !== 'system')
+    .map(message => ({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: message.content }],
+    }));
+
+  if (!contents.length) throw new AIError('Nenhuma mensagem de usuario para enviar ao Gemini.');
+
+  const requested = options.model ?? GEMINI_MODEL;
+  const models = [...new Set([requested, ...GEMINI_MODEL_FALLBACKS])];
+  let lastError = '';
+
+  for (const model of models) {
+    let response: Response;
+    try {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': GEMINI_KEY,
+        },
+        body: JSON.stringify({
+          ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
+          contents,
+          generationConfig: {
+            temperature: options.temperature ?? 0.2,
+            maxOutputTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+          },
+        }),
+        signal: options.signal,
+      });
+    } catch (err) {
+      if (isAbortError(err)) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw new AIError(`Falha de rede ao chamar Gemini: ${message}`, err);
+    }
+
+    const { raw, parsed } = await parseJsonResponse<GeminiResponse>(response);
+    if (response.status === 404) {
+      lastError = parsed?.error?.message ?? `Modelo Gemini nao encontrado: ${model}`;
+      continue;
+    }
+    if (response.status === 429) {
+      const message = parsed?.error?.message ?? raw;
+      const noFreeTier = /free[_ ]tier[\s\S]*limit:\s*0|limit:\s*0[\s\S]*free[_ ]tier/i.test(message);
+      if (noFreeTier) {
+        lastError = `Modelo ${model} indisponivel no tier free desta chave.`;
+        continue;
+      }
+      throw new AIError('Cota do Gemini atingida temporariamente. Aguarde alguns segundos e tente de novo.');
+    }
+    if (!response.ok) {
+      const message = parsed?.error?.message
+        ?? (response.status === 400 ? 'Requisicao invalida para a API do Gemini.'
+          : response.status === 401 || response.status === 403 ? 'Chave do Gemini invalida ou sem permissao.'
+          : `Erro ${response.status} ao consultar Gemini.`);
+      throw new AIError(message);
+    }
+    if (parsed?.promptFeedback?.blockReason) {
+      throw new AIError(`Resposta bloqueada pelo Gemini (${parsed.promptFeedback.blockReason}).`);
+    }
+
+    const content = parsed?.candidates?.[0]?.content?.parts
+      ?.map(part => part.text ?? '')
+      .join('')
+      .trim() ?? '';
+    if (!content) throw new AIError('Gemini nao retornou conteudo.');
+    return content;
+  }
+
+  throw new AIError(lastError || 'Nenhum modelo Gemini configurado respondeu.');
+}
+
+export async function chatComplete(messages: ChatMessage[], options: ChatRequestOptions = {}) {
+  if (!messages.length) throw new AIError('Nenhuma mensagem para enviar.');
+  const mode = getAIMode();
+  if (mode === 'groq') return chatCompleteGroq(messages, options);
+  if (mode === 'gemini') return chatCompleteGemini(messages, options);
+  if (mode === 'direct') return chatCompleteDirect(messages, options);
+  throw new AIError('Assistente indisponivel: configure VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENAI_API_KEY.');
+}
+
+export const patientChatbotAiApi = {
+  ask: async (data: PatientChatbotAiRequest): Promise<PatientChatbotAiResponse> => {
+    const now = new Date();
+    const currentDate = new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'full',
+      timeZone: 'America/Sao_Paulo',
+    }).format(now);
+    const currentTime = new Intl.DateTimeFormat('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    }).format(now);
+    const system = [
+      'Voce e a Panaceia, atendente virtual do MediConnect para pacientes.',
+      'Responda sempre em portugues do Brasil, com tom acolhedor, objetivo e administrativo.',
+      'Ajude apenas com navegacao do sistema, consultas, laudos liberados, cadastro, acesso/login e contato com secretaria.',
+      'Se a pergunta nao for sobre o sistema MediConnect, recuse de forma breve e redirecione para consultas, laudos, cadastro, login ou secretaria.',
+      'Use a data e hora atuais informadas no contexto. Nunca invente datas, horarios, consultas, laudos ou status.',
+      'Nao afirme ter consultado banco de dados. Voce nao tem permissao nem token do Supabase.',
+      'Nao execute, prometa ou confirme agendamento, remarcacao, cancelamento, envio de mensagem ou alteracao cadastral.',
+      'Quando o pedido exigir acao humana, oriente a falar com a secretaria pelo botao da conversa.',
+      'Nao faca diagnostico, prescricao, triagem, interpretacao de laudos, orientacao sobre sintomas, medicamentos ou tratamento.',
+      'Se houver urgencia ou emergencia, oriente procurar atendimento medico imediato.',
+      'Responda em no maximo 4 frases curtas.',
+    ].join('\n');
+
+    const history = (data.history ?? [])
+      .slice(-8)
+      .map(item => `${item.sender}: ${item.text}`)
+      .join('\n');
+
+    const userText = [
+      `Paciente: ${data.patientName ?? 'paciente'}`,
+      `Data atual em Sao Paulo: ${currentDate}`,
+      `Hora atual em Sao Paulo: ${currentTime}`,
+      history ? `Historico recente:\n${history}` : '',
+      `Mensagem do paciente:\n${data.message}`,
+    ].filter(Boolean).join('\n\n');
+
+    const answer = await chatComplete([
+      { role: 'system', content: system },
+      { role: 'user', content: userText },
+    ], { maxTokens: 450, temperature: 0.2 });
+    return {
+      answer: answer || 'Nao consegui responder agora. A secretaria pode te ajudar pelo atendimento direto.',
+    };
+  },
+};
+
+export const managerSearchAssistantApi = {
+  ask: async (data: ManagerSearchAssistantRequest): Promise<ManagerSearchAssistantResponse> => {
+    const now = new Date();
+    const currentDate = new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'full',
+      timeZone: 'America/Sao_Paulo',
+    }).format(now);
+    const system = [
+      'Voce e o Assistente de Busca Gerencial do MediConnect.',
+      'Responda sempre em portugues do Brasil, de forma objetiva, clara e profissional.',
+      'Use somente os dados no contexto recebido. Se faltar informacao, diga que nao ha informacao suficiente.',
+      'Use a data atual informada no contexto. Nunca invente datas, horarios, consultas, laudos ou status.',
+      'Nao diga que consultou banco de dados; o contexto ja foi fornecido pela tela usando as permissoes existentes do usuario.',
+      'Nao execute, prometa ou confirme criacao, edicao, exclusao, cancelamento, envio de mensagem ou acao financeira.',
+      'Nao faca diagnostico, prescricao, orientacao medica ou interpretacao clinica de laudos.',
+      'Para mensagens, gere apenas rascunhos para revisao humana.',
+    ].join('\n');
+
+    const userText = [
+      `Data atual em Sao Paulo: ${currentDate}`,
+      `Acao solicitada: ${data.action}`,
+      `Pergunta do gestor: ${data.prompt}`,
+      'Periodo:',
+      JSON.stringify(data.period ?? {}),
+      'Contexto administrativo sanitizado em JSON:',
+      JSON.stringify(data.context ?? {}).slice(0, 14000),
+    ].join('\n\n');
+
+    const answer = await chatComplete([
+      { role: 'system', content: system },
+      { role: 'user', content: userText },
+    ], { maxTokens: 900, temperature: 0.2 });
+
+    return {
+      answer: answer || 'Nao foi possivel gerar uma resposta com os dados fornecidos.',
+      warnings: [],
+      source: data.context?.fonteSolicitada as ManagerSearchAssistantResponse['source'],
+    };
+  },
 };

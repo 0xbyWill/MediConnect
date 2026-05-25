@@ -151,8 +151,6 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
       const built = buildAssistantContext(action, data, { startDate, endDate }, source);
       setLastSummary(built.dataSummary);
 
-      // A chamada ao Gemini deve ocorrer somente nesta Edge Function segura.
-      // Nunca coloque GEMINI_API_KEY no frontend nem chame o Gemini direto do navegador.
       const response = await managerSearchAssistantApi.ask({
         action,
         prompt: activePrompt,

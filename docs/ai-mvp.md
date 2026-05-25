@@ -23,6 +23,8 @@ AI_EMBEDDING_MODEL=text-embedding-3-small
 AI_PROVIDER=openai
 AI_TEMPERATURE=0.2
 AI_MAX_TOKENS=700
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-1.5-flash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
@@ -31,6 +33,12 @@ Nunca coloque `AI_API_KEY` no frontend. Configure secrets no Supabase:
 
 ```bash
 supabase secrets set AI_API_KEY=... AI_MODEL=gpt-4o-mini AI_EMBEDDING_MODEL=text-embedding-3-small AI_PROVIDER=openai AI_TEMPERATURE=0.2 AI_MAX_TOKENS=700
+```
+
+Para usar Gemini:
+
+```bash
+supabase secrets set AI_PROVIDER=gemini GEMINI_API_KEY=... GEMINI_MODEL=gemini-1.5-flash AI_TEMPERATURE=0.2 AI_MAX_TOKENS=700
 ```
 
 ## Banco

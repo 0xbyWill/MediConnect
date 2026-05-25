@@ -206,7 +206,11 @@ AI_EMBEDDING_MODEL=text-embedding-3-small
 AI_PROVIDER=openai
 AI_TEMPERATURE=0.2
 AI_MAX_TOKENS=700
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-1.5-flash
 ```
+
+Para Gemini, configure `AI_PROVIDER=gemini`, `GEMINI_API_KEY` e `GEMINI_MODEL` nos secrets das Edge Functions. Nao exponha chaves de IA como variaveis `VITE_*`.
 
 Endpoints:
 

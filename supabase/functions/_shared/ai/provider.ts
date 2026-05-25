@@ -5,12 +5,20 @@ export interface AiProviderMessage {
   content: string;
 }
 
+function resolveProvider() {
+  const configuredProvider = Deno.env.get('AI_PROVIDER')?.trim().toLowerCase();
+  if (configuredProvider) return configuredProvider;
+  return Deno.env.get('GEMINI_API_KEY') && !Deno.env.get('AI_API_KEY') ? 'gemini' : 'openai';
+}
+
 export class AiProviderService {
-  private provider = (Deno.env.get('AI_PROVIDER') ?? 'openai').toLowerCase();
+  private provider = resolveProvider();
   private apiKey = this.provider === 'gemini'
     ? Deno.env.get('GEMINI_API_KEY') ?? Deno.env.get('AI_API_KEY') ?? ''
     : Deno.env.get('AI_API_KEY') ?? '';
-  private model = Deno.env.get('AI_MODEL') ?? (this.provider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
+  private model = this.provider === 'gemini'
+    ? Deno.env.get('GEMINI_MODEL') ?? Deno.env.get('AI_MODEL') ?? 'gemini-1.5-flash'
+    : Deno.env.get('AI_MODEL') ?? 'gpt-4o-mini';
   private embeddingModel = Deno.env.get('AI_EMBEDDING_MODEL') ?? 'text-embedding-3-small';
   private temperature = Number(Deno.env.get('AI_TEMPERATURE') ?? '0.2');
   private maxTokens = Number(Deno.env.get('AI_MAX_TOKENS') ?? '700');
@@ -103,7 +111,7 @@ export class AiProviderService {
         parts: [{ text: maskSensitive(message.content).slice(0, 12000) }],
       }));
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
