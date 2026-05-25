@@ -18,7 +18,7 @@ export default function AssistenteIA() {
     return (
       <div style={{ flex: 1, padding: 24 }}>
         <h1 style={{ fontSize: 24, color: 'var(--dark)' }}>Assistente IA</h1>
-        <p role="alert" style={{ color: 'var(--red-600)', marginTop: 12 }}>Apenas usuarios de gestao podem acessar esta area.</p>
+        <p role="alert" style={{ color: 'var(--red-600)', marginTop: 12 }}>Apenas usuários de gestão podem acessar esta área.</p>
       </div>
     );
   }
@@ -30,20 +30,20 @@ export default function AssistenteIA() {
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--dark)' }}>Assistente IA</h1>
             <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>
-              Verificacoes gerenciais com Gemini usando somente os dados que a tela ja pode ler.
+              Verificações gerenciais com IA usando somente os dados que a tela já pode ler.
             </p>
           </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gray-600)', background: '#fff', border: '1px solid var(--gray-100)', borderRadius: 8, padding: '9px 12px', fontSize: 12, fontWeight: 800 }}>
-            <ShieldCheck size={16} color="var(--primary)" /> Sem permissao Supabase para IA
+            <ShieldCheck size={16} color="var(--primary)" /> Sem permissão Supabase para IA
           </div>
         </header>
 
         <section style={{ ...panelStyle, marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 14 }}>Integração Gemini</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10 }}>
-            <StatusCard icon={Bot} title="Gemini direto" text="A chamada usa VITE_GEMINI_API_KEY no navegador e nao passa por Edge Function." />
-            <StatusCard icon={Search} title="Permissoes existentes" text="Os dados sao carregados pelas APIs normais do app antes da IA receber o contexto." />
-            <StatusCard icon={ShieldCheck} title="Somente leitura" text="O assistente analisa os dados recebidos e nao cria, edita, exclui ou envia nada." />
+            <StatusCard icon={Bot} title="IA direta" text="A chamada usa o provider configurado no navegador e não passa por Edge Function." />
+            <StatusCard icon={Search} title="Permissões existentes" text="Os dados são carregados pelas APIs normais do app antes de a IA receber o contexto." />
+            <StatusCard icon={ShieldCheck} title="Somente leitura" text="O assistente analisa os dados recebidos e não cria, edita, exclui ou envia nada." />
           </div>
         </section>
 

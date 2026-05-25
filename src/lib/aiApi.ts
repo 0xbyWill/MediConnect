@@ -316,14 +316,14 @@ async function chatCompleteOpenAICompatible(
   const { raw, parsed } = await parseJsonResponse<OpenAICompatibleResponse>(response);
   if (!response.ok) {
     const message = parsed?.error?.message
-      ?? (response.status === 401 ? `Chave ${providerLabel} invalida.`
+      ?? (response.status === 401 ? `Chave ${providerLabel} inválida.`
         : response.status === 429 ? `Limite de uso do ${providerLabel} atingido. Aguarde e tente novamente.`
         : `Erro ${response.status} ao consultar ${providerLabel}.`);
     throw new AIError(message || raw);
   }
 
   const content = parsed?.choices?.[0]?.message?.content?.trim() ?? '';
-  if (!content) throw new AIError(`${providerLabel} nao retornou conteudo.`);
+  if (!content) throw new AIError(`${providerLabel} não retornou conteúdo.`);
   return content;
 }
 
@@ -379,7 +379,7 @@ async function chatCompleteGemini(messages: ChatMessage[], options: ChatRequestO
       parts: [{ text: message.content }],
     }));
 
-  if (!contents.length) throw new AIError('Nenhuma mensagem de usuario para enviar ao Gemini.');
+  if (!contents.length) throw new AIError('Nenhuma mensagem de usuário para enviar ao Gemini.');
 
   const requested = options.model ?? GEMINI_MODEL;
   const models = [...new Set([requested, ...GEMINI_MODEL_FALLBACKS])];
@@ -419,15 +419,15 @@ async function chatCompleteGemini(messages: ChatMessage[], options: ChatRequestO
       const message = parsed?.error?.message ?? raw;
       const noFreeTier = /free[_ ]tier[\s\S]*limit:\s*0|limit:\s*0[\s\S]*free[_ ]tier/i.test(message);
       if (noFreeTier) {
-        lastError = `Modelo ${model} indisponivel no tier free desta chave.`;
+        lastError = `Modelo ${model} indisponível no tier free desta chave.`;
         continue;
       }
       throw new AIError('Cota do Gemini atingida temporariamente. Aguarde alguns segundos e tente de novo.');
     }
     if (!response.ok) {
       const message = parsed?.error?.message
-        ?? (response.status === 400 ? 'Requisicao invalida para a API do Gemini.'
-          : response.status === 401 || response.status === 403 ? 'Chave do Gemini invalida ou sem permissao.'
+        ?? (response.status === 400 ? 'Requisição inválida para a API do Gemini.'
+          : response.status === 401 || response.status === 403 ? 'Chave do Gemini inválida ou sem permissão.'
           : `Erro ${response.status} ao consultar Gemini.`);
       throw new AIError(message);
     }
@@ -439,7 +439,7 @@ async function chatCompleteGemini(messages: ChatMessage[], options: ChatRequestO
       ?.map(part => part.text ?? '')
       .join('')
       .trim() ?? '';
-    if (!content) throw new AIError('Gemini nao retornou conteudo.');
+    if (!content) throw new AIError('Gemini não retornou conteúdo.');
     return content;
   }
 
@@ -452,7 +452,7 @@ export async function chatComplete(messages: ChatMessage[], options: ChatRequest
   if (mode === 'groq') return chatCompleteGroq(messages, options);
   if (mode === 'gemini') return chatCompleteGemini(messages, options);
   if (mode === 'direct') return chatCompleteDirect(messages, options);
-  throw new AIError('Assistente indisponivel: configure VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENAI_API_KEY.');
+  throw new AIError('Assistente indisponível: configure VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENAI_API_KEY.');
 }
 
 export const patientChatbotAiApi = {
@@ -468,17 +468,17 @@ export const patientChatbotAiApi = {
       timeZone: 'America/Sao_Paulo',
     }).format(now);
     const system = [
-      'Voce e a Panaceia, atendente virtual do MediConnect para pacientes.',
-      'Responda sempre em portugues do Brasil, com tom acolhedor, objetivo e administrativo.',
-      'Ajude apenas com navegacao do sistema, consultas, laudos liberados, cadastro, acesso/login e contato com secretaria.',
-      'Se a pergunta nao for sobre o sistema MediConnect, recuse de forma breve e redirecione para consultas, laudos, cadastro, login ou secretaria.',
-      'Use a data e hora atuais informadas no contexto. Nunca invente datas, horarios, consultas, laudos ou status.',
-      'Nao afirme ter consultado banco de dados. Voce nao tem permissao nem token do Supabase.',
-      'Nao execute, prometa ou confirme agendamento, remarcacao, cancelamento, envio de mensagem ou alteracao cadastral.',
-      'Quando o pedido exigir acao humana, oriente a falar com a secretaria pelo botao da conversa.',
-      'Nao faca diagnostico, prescricao, triagem, interpretacao de laudos, orientacao sobre sintomas, medicamentos ou tratamento.',
-      'Se houver urgencia ou emergencia, oriente procurar atendimento medico imediato.',
-      'Responda em no maximo 4 frases curtas.',
+      'Você é a Panaceia, atendente virtual do MediConnect para pacientes.',
+      'Responda sempre em português do Brasil, com tom acolhedor, objetivo e administrativo.',
+      'Ajude apenas com navegação do sistema, consultas, laudos liberados, cadastro, acesso/login e contato com a secretaria.',
+      'Se a pergunta não for sobre o sistema MediConnect, recuse de forma breve e redirecione para consultas, laudos, cadastro, login ou secretaria.',
+      'Use a data e hora atuais informadas no contexto. Nunca invente datas, horários, consultas, laudos ou status.',
+      'Não afirme ter consultado banco de dados. Você não tem permissão nem token do Supabase.',
+      'Não execute, prometa ou confirme agendamento, remarcação, cancelamento, envio de mensagem ou alteração cadastral.',
+      'Quando o pedido exigir ação humana, oriente a falar com a secretaria pelo botão da conversa.',
+      'Não faça diagnóstico, prescrição, triagem, interpretação de laudos, orientação sobre sintomas, medicamentos ou tratamento.',
+      'Se houver urgência ou emergência, oriente procurar atendimento médico imediato.',
+      'Responda em no máximo 4 frases curtas.',
     ].join('\n');
 
     const history = (data.history ?? [])
@@ -488,9 +488,9 @@ export const patientChatbotAiApi = {
 
     const userText = [
       `Paciente: ${data.patientName ?? 'paciente'}`,
-      `Data atual em Sao Paulo: ${currentDate}`,
-      `Hora atual em Sao Paulo: ${currentTime}`,
-      history ? `Historico recente:\n${history}` : '',
+      `Data atual em São Paulo: ${currentDate}`,
+      `Hora atual em São Paulo: ${currentTime}`,
+      history ? `Histórico recente:\n${history}` : '',
       `Mensagem do paciente:\n${data.message}`,
     ].filter(Boolean).join('\n\n');
 
@@ -499,7 +499,7 @@ export const patientChatbotAiApi = {
       { role: 'user', content: userText },
     ], { maxTokens: 450, temperature: 0.2 });
     return {
-      answer: answer || 'Nao consegui responder agora. A secretaria pode te ajudar pelo atendimento direto.',
+      answer: answer || 'Não consegui responder agora. A secretaria pode te ajudar pelo atendimento direto.',
     };
   },
 };
@@ -512,19 +512,19 @@ export const managerSearchAssistantApi = {
       timeZone: 'America/Sao_Paulo',
     }).format(now);
     const system = [
-      'Voce e o Assistente de Busca Gerencial do MediConnect.',
-      'Responda sempre em portugues do Brasil, de forma objetiva, clara e profissional.',
-      'Use somente os dados no contexto recebido. Se faltar informacao, diga que nao ha informacao suficiente.',
-      'Use a data atual informada no contexto. Nunca invente datas, horarios, consultas, laudos ou status.',
-      'Nao diga que consultou banco de dados; o contexto ja foi fornecido pela tela usando as permissoes existentes do usuario.',
-      'Nao execute, prometa ou confirme criacao, edicao, exclusao, cancelamento, envio de mensagem ou acao financeira.',
-      'Nao faca diagnostico, prescricao, orientacao medica ou interpretacao clinica de laudos.',
+      'Você é o Assistente de Busca Gerencial do MediConnect.',
+      'Responda sempre em português do Brasil, de forma objetiva, clara e profissional.',
+      'Use somente os dados no contexto recebido. Se faltar informação, diga que não há informação suficiente.',
+      'Use a data atual informada no contexto. Nunca invente datas, horários, consultas, laudos ou status.',
+      'Não diga que consultou banco de dados; o contexto já foi fornecido pela tela usando as permissões existentes do usuário.',
+      'Não execute, prometa ou confirme criação, edição, exclusão, cancelamento, envio de mensagem ou ação financeira.',
+      'Não faça diagnóstico, prescrição, orientação médica ou interpretação clínica de laudos.',
       'Para mensagens, gere apenas rascunhos para revisao humana.',
     ].join('\n');
 
     const userText = [
-      `Data atual em Sao Paulo: ${currentDate}`,
-      `Acao solicitada: ${data.action}`,
+      `Data atual em São Paulo: ${currentDate}`,
+      `Ação solicitada: ${data.action}`,
       `Pergunta do gestor: ${data.prompt}`,
       'Periodo:',
       JSON.stringify(data.period ?? {}),
@@ -538,7 +538,7 @@ export const managerSearchAssistantApi = {
     ], { maxTokens: 900, temperature: 0.2 });
 
     return {
-      answer: answer || 'Nao foi possivel gerar uma resposta com os dados fornecidos.',
+      answer: answer || 'Não foi possível gerar uma resposta com os dados fornecidos.',
       warnings: [],
       source: data.context?.fonteSolicitada as ManagerSearchAssistantResponse['source'],
     };
