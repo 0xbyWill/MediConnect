@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ElementType, FormEvent } from 'react';
-import { Bell, CheckCircle2, Clock, Mail, MessageSquare, Phone, Plus, Search, Send, XCircle } from 'lucide-react';
+import {
+  Bell,
+  CheckCircle2,
+  Clock,
+  Copy,
+  ExternalLink,
+  Mail,
+  MessageSquare,
+  Phone,
+  Search,
+  Send,
+  User,
+  XCircle,
+} from 'lucide-react';
 import type { Paciente } from '../types';
 import { smsApi, type ApiSmsLog } from '../lib/api';
 import { SMS_MESSAGE_MAX_LENGTH, SMS_TEMPLATES } from '../shared/constants/smsTemplates';
-import { formatPhoneBR, isValidPhoneBRForSms, normalizePhoneBRForSms } from '../shared/utils/validation';
+import { formatPhoneBR, isValidEmail, isValidPhoneBRForSms, normalizePhoneBRForSms } from '../shared/utils/validation';
 import { digitsOnly, formatCpf } from '../shared/utils/cpf';
 
 interface ComunicacaoProps {
@@ -13,12 +26,13 @@ interface ComunicacaoProps {
 
 type Canal = 'whatsapp' | 'email' | 'sms';
 type StatusMsg = 'enviado' | 'pendente' | 'falhou';
+type HistoryFilter = 'todos' | Canal;
 
 interface Mensagem {
   id: string;
   pacienteId?: string;
   canal: Canal;
-  telefone: string;
+  destino: string;
   texto: string;
   status: StatusMsg;
   data: string;
@@ -36,7 +50,7 @@ const CANAL_ICON: Record<Canal, ElementType> = {
 };
 
 const CANAL_COLOR: Record<Canal, string> = {
-  whatsapp: '#25d366',
+  whatsapp: '#16a34a',
   email: '#2563eb',
   sms: '#d97706',
 };
@@ -61,6 +75,7 @@ const fieldStyle = {
   fontSize: 13,
   outline: 'none',
   background: 'var(--gray-50)',
+  color: 'var(--gray-800)',
 } satisfies CSSProperties;
 
 const labelStyle = {
@@ -71,6 +86,14 @@ const labelStyle = {
   letterSpacing: 0,
   display: 'block',
   marginBottom: 6,
+} satisfies CSSProperties;
+
+const cardStyle = {
+  background: '#fff',
+  borderRadius: 8,
+  padding: 20,
+  boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+  border: '1px solid var(--gray-100)',
 } satisfies CSSProperties;
 
 function readStoredMessages(): Mensagem[] {
@@ -104,7 +127,7 @@ function smsLogToMensagem(log: ApiSmsLog): Mensagem {
     id: log.id,
     pacienteId: log.patient_id ?? undefined,
     canal: 'sms',
-    telefone: log.phone_number,
+    destino: log.phone_number,
     texto: log.message,
     status: toStatus(log.status),
     sid: log.sid ?? log.twilio_sid ?? undefined,
@@ -115,16 +138,30 @@ function smsLogToMensagem(log: ApiSmsLog): Mensagem {
 function getProblemMessage(err: unknown) {
   const msg = err instanceof Error ? err.message : 'Erro ao enviar SMS.';
   const lower = msg.toLowerCase();
-  if (msg.includes('503') || lower.includes('service-disabled') || lower.includes('serviço desabilitado') || lower.includes('serviço de SMS está temporariamente desabilitado')) {
+  if (msg.includes('503') || lower.includes('service-disabled') || lower.includes('serviço desabilitado') || lower.includes('serviço de sms está temporariamente desabilitado')) {
     return 'O serviço de SMS está temporariamente desabilitado no servidor.';
   }
   return msg;
 }
 
+function formatDateBR(date: string) {
+  if (!date) return 'DD/MM/AAAA';
+  return date.split('-').reverse().join('/');
+}
+
+function encodeWhatsAppMessage(text: string) {
+  return encodeURIComponent(text).replace(/%20/g, '+');
+}
+
 export default function Comunicacao({ pacientes }: ComunicacaoProps) {
+  const [canal, setCanal] = useState<Canal>('sms');
   const [pacienteId, setPacienteId] = useState('');
   const [texto, setTexto] = useState('');
   const [search, setSearch] = useState('');
+  const [templateDate, setTemplateDate] = useState('');
+  const [templateTime, setTemplateTime] = useState('');
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('todos');
+  const [historySearch, setHistorySearch] = useState('');
   const [mensagens, setMensagens] = useState<Mensagem[]>(readStoredMessages);
   const [enviando, setEnviando] = useState(false);
   const [carregandoHistorico, setCarregandoHistorico] = useState(true);
@@ -146,11 +183,36 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
       const cpfDigits = digitsOnly(p.cpf);
       return (
         p.nome.toLowerCase().includes(query) ||
+        p.email.toLowerCase().includes(query) ||
         formatPhoneBR(p.telefone).includes(query) ||
         Boolean(queryDigits && (phoneDigits.includes(queryDigits) || cpfDigits.includes(queryDigits)))
       );
-    });
+    }).slice(0, 12);
   }, [pacientes, search]);
+
+  const filteredMessages = useMemo(() => {
+    const query = historySearch.trim().toLowerCase();
+    return mensagens.filter(msg => {
+      const pac = pacientes.find(p => p.id === msg.pacienteId);
+      if (historyFilter !== 'todos' && msg.canal !== historyFilter) return false;
+      if (!query) return true;
+      return (
+        msg.texto.toLowerCase().includes(query) ||
+        msg.destino.toLowerCase().includes(query) ||
+        Boolean(pac?.nome.toLowerCase().includes(query))
+      );
+    });
+  }, [historyFilter, historySearch, mensagens, pacientes]);
+
+  const stats = useMemo(() => ({
+    total: mensagens.length,
+    enviados: mensagens.filter(msg => msg.status === 'enviado').length,
+    pendentes: mensagens.filter(msg => msg.status === 'pendente').length,
+    falhas: mensagens.filter(msg => msg.status === 'falhou').length,
+  }), [mensagens]);
+
+  const previewDestino = canal === 'email' ? paciente?.email : formatPhoneBR(paciente?.telefone ?? '');
+  const canSend = Boolean(pacienteId && texto.trim() && !enviando);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,7 +220,10 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
 
     smsApi.logs()
       .then(logs => {
-        if (!cancelled) setMensagens(logs.map(smsLogToMensagem));
+        if (!cancelled) {
+          const local = readStoredMessages().filter(msg => msg.canal !== 'sms');
+          setMensagens([...logs.map(smsLogToMensagem), ...local]);
+        }
       })
       .catch(() => {
         if (!cancelled) setMensagens(readStoredMessages());
@@ -181,8 +246,12 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     const message = texto.trim();
 
     if (!pacienteId) errors.pacienteId = 'Selecione um paciente.';
-    if (pacienteId && !paciente?.telefone) errors.pacienteId = 'Paciente sem telefone cadastrado.';
-    if (paciente?.telefone && !isValidPhoneBRForSms(paciente.telefone)) errors.pacienteId = 'Paciente sem telefone com DDD válido para SMS.';
+    if (canal === 'email' && paciente?.email && !isValidEmail(paciente.email)) errors.pacienteId = 'Paciente sem e-mail válido.';
+    if (canal === 'email' && !paciente?.email) errors.pacienteId = 'Paciente sem e-mail cadastrado.';
+    if ((canal === 'sms' || canal === 'whatsapp') && !paciente?.telefone) errors.pacienteId = 'Paciente sem telefone cadastrado.';
+    if ((canal === 'sms' || canal === 'whatsapp') && paciente?.telefone && !isValidPhoneBRForSms(paciente.telefone)) {
+      errors.pacienteId = 'Paciente sem telefone com DDD válido.';
+    }
     if (!message) errors.texto = 'Informe a mensagem.';
     if (message.length > MESSAGE_MAX_LENGTH) errors.texto = `A mensagem deve ter no máximo ${MESSAGE_MAX_LENGTH} caracteres.`;
 
@@ -190,16 +259,36 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     return Object.keys(errors).length === 0;
   };
 
+  const addHistory = (message: Omit<Mensagem, 'id' | 'data' | 'hora'> & { id?: string }) => {
+    const now = splitDateTime();
+    setMensagens(prev => [{
+      id: message.id || `${message.canal}-${Date.now()}`,
+      ...message,
+      ...now,
+    }, ...prev]);
+  };
+
   const handleTemplate = (template: string) => {
     const name = paciente?.nome || '[Paciente]';
     setTexto(
       template
-        .replace('{nome}', name)
-        .replace('{data}', 'DD/MM/AAAA')
-        .replace('{hora}', 'HH:mm')
+        .replaceAll('{nome}', name)
+        .replaceAll('{data}', templateDate ? formatDateBR(templateDate) : 'DD/MM/AAAA')
+        .replaceAll('{hora}', templateTime || 'HH:mm')
         .slice(0, MESSAGE_MAX_LENGTH)
     );
     setFieldErrors(prev => ({ ...prev, texto: undefined }));
+  };
+
+  const handleCopy = async () => {
+    if (!texto.trim()) return;
+    try {
+      await navigator.clipboard.writeText(texto.trim());
+      setSucesso('Mensagem copiada para a área de transferência.');
+      window.setTimeout(() => setSucesso(''), 2500);
+    } catch {
+      setErro('Não foi possível copiar a mensagem neste navegador.');
+    }
   };
 
   const handleEnviar = async (event: FormEvent) => {
@@ -209,48 +298,57 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     if (!validate() || !paciente) return;
 
     const message = texto.trim();
-    const phoneNumber = normalizePhoneBRForSms(paciente.telefone);
-
     setEnviando(true);
-    try {
-      const response = await smsApi.send({
-        patient_id: paciente.id,
-        phone_number: phoneNumber,
-        message,
-      });
 
-      if (response.success === false) {
-        throw new Error(response.message || 'A API não confirmou o envio do SMS.');
+    try {
+      if (canal === 'whatsapp') {
+        const phoneNumber = normalizePhoneBRForSms(paciente.telefone);
+        window.open(`https://wa.me/${phoneNumber}?text=${encodeWhatsAppMessage(message)}`, '_blank', 'noopener,noreferrer');
+        addHistory({ pacienteId: paciente.id, canal, destino: phoneNumber, texto: message, status: 'pendente' });
+        setSucesso('WhatsApp aberto com a mensagem pronta para envio.');
+      } else if (canal === 'email') {
+        const subject = encodeURIComponent('Comunicado MediConnect');
+        const body = encodeURIComponent(message);
+        window.location.href = `mailto:${paciente.email}?subject=${subject}&body=${body}`;
+        addHistory({ pacienteId: paciente.id, canal, destino: paciente.email, texto: message, status: 'pendente' });
+        setSucesso('Cliente de e-mail aberto com a mensagem pronta.');
+      } else {
+        const phoneNumber = normalizePhoneBRForSms(paciente.telefone);
+        const response = await smsApi.send({
+          patient_id: paciente.id,
+          phone_number: phoneNumber,
+          message,
+        });
+
+        if (response.success === false) {
+          throw new Error(response.message || 'A API não confirmou o envio do SMS.');
+        }
+
+        addHistory({
+          id: response.sid,
+          pacienteId: paciente.id,
+          canal,
+          destino: phoneNumber,
+          texto: message,
+          status: 'enviado',
+          sid: response.sid,
+        });
+        setSucesso(response.message || 'SMS enviado e registrado em sms_logs.');
       }
 
-      const now = splitDateTime();
-      setMensagens(prev => [{
-        id: response.sid || String(Date.now()),
-        pacienteId: paciente.id,
-        canal: 'sms',
-        telefone: phoneNumber,
-        texto: message,
-        status: 'enviado',
-        sid: response.sid,
-        ...now,
-      }, ...prev]);
-      setSucesso(response.message || 'SMS enviado e registrado em sms_logs.');
       setTexto('');
       setFieldErrors({});
       window.setTimeout(() => setSucesso(''), 3000);
     } catch (err) {
       const msg = getProblemMessage(err);
       setErro(msg);
-      const now = splitDateTime();
-      setMensagens(prev => [{
-        id: `failed-${Date.now()}`,
+      addHistory({
         pacienteId: paciente.id,
-        canal: 'sms',
-        telefone: phoneNumber,
+        canal,
+        destino: canal === 'email' ? paciente.email : normalizePhoneBRForSms(paciente.telefone),
         texto: message,
         status: 'falhou',
-        ...now,
-      }, ...prev]);
+      });
     } finally {
       setEnviando(false);
     }
@@ -258,44 +356,45 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
 
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Comunicação</h1>
-        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
-          Confirme consultas e envie comunicados administrativos por SMS. WhatsApp e e-mail ficam separados como canais de comunicação.
-        </p>
-      </div>
+      <header style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Comunicação</h1>
+          <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
+            Prepare comunicados administrativos por SMS, WhatsApp ou e-mail sem sair do fluxo de pacientes.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <StatCard label="Total" value={stats.total} />
+          <StatCard label="Enviados" value={stats.enviados} />
+          <StatCard label="Pendentes" value={stats.pendentes} />
+          <StatCard label="Falhas" value={stats.falhas} danger={stats.falhas > 0} />
+        </div>
+      </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'start' }}>
-        <form onSubmit={handleEnviar} style={{ background: '#fff', borderRadius: 8, padding: 24, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Plus size={16} color="var(--primary)" />
-            </div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Confirmação de consulta</h2>
-          </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min(420px, 100%), 0.9fr) minmax(min(480px, 100%), 1.1fr)', gap: 18, alignItems: 'start' }}>
+        <form onSubmit={handleEnviar} style={cardStyle}>
+          <SectionTitle icon={Send} title="Nova comunicação" />
 
           <div style={{ marginBottom: 16 }}>
             <span style={labelStyle}>Canal</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {(['whatsapp', 'email', 'sms'] as Canal[]).map(c => {
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+              {(['sms', 'whatsapp', 'email'] as Canal[]).map(c => {
                 const Icon = CANAL_ICON[c];
-                const active = c === 'sms';
+                const active = c === canal;
                 return (
-                  <button key={c} type="button" disabled={!active} title={!active ? 'Canal preparado para integração futura' : 'Enviar SMS'} style={{
-                    flex: 1,
-                    padding: '8px 6px',
+                  <button key={c} type="button" onClick={() => setCanal(c)} disabled={enviando} style={{
+                    padding: '9px 6px',
                     borderRadius: 8,
-                    border: active ? `2px solid ${CANAL_COLOR[c]}` : '2px solid var(--gray-200)',
-                    background: active ? `${CANAL_COLOR[c]}15` : 'var(--gray-50)',
-                    opacity: active ? 1 : 0.55,
+                    border: active ? `2px solid ${CANAL_COLOR[c]}` : '1px solid var(--gray-200)',
+                    background: active ? `${CANAL_COLOR[c]}15` : '#fff',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: 4,
-                    cursor: active ? 'default' : 'not-allowed',
+                    gap: 5,
+                    cursor: enviando ? 'not-allowed' : 'pointer',
                   }}>
-                    <Icon size={16} color={active ? CANAL_COLOR[c] : 'var(--gray-400)'} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: active ? CANAL_COLOR[c] : 'var(--gray-400)' }}>{CANAL_LABEL[c]}</span>
+                    <Icon size={16} color={active ? CANAL_COLOR[c] : 'var(--gray-500)'} />
+                    <span style={{ fontSize: 11, fontWeight: 800, color: active ? CANAL_COLOR[c] : 'var(--gray-600)' }}>{CANAL_LABEL[c]}</span>
                   </button>
                 );
               })}
@@ -308,7 +407,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
               <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
               <input
                 id="communication-patient-search"
-                placeholder="Ex.: Maria, CPF ou (11) 99999-9999"
+                placeholder="Buscar por nome, CPF, e-mail ou telefone"
                 value={search}
                 onChange={e => {
                   setSearch(e.target.value);
@@ -323,7 +422,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
               />
             </div>
             {search.trim() && (
-              <div style={{ border: '1px solid var(--gray-200)', borderRadius: 8, marginBottom: 10, maxHeight: 180, overflow: 'auto', background: '#fff' }}>
+              <div style={{ border: '1px solid var(--gray-200)', borderRadius: 8, marginBottom: 10, maxHeight: 188, overflow: 'auto', background: '#fff' }}>
                 {filteredPacientes.length === 0 && (
                   <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--gray-500)' }}>Nenhum paciente encontrado.</div>
                 )}
@@ -350,7 +449,9 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
                       }}
                     >
                       <span style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>{p.nome}</span>
-                      <span style={{ display: 'block', fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{formatPhoneBR(p.telefone)} - CPF {formatCpf(p.cpf) || 'não informado'}</span>
+                      <span style={{ display: 'block', fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
+                        {formatPhoneBR(p.telefone) || 'Sem telefone'} · {p.email || 'Sem e-mail'} · CPF {formatCpf(p.cpf) || 'não informado'}
+                      </span>
                     </button>
                   );
                 })}
@@ -359,17 +460,41 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
             {fieldErrors.pacienteId && <div id="communication-patient-error" role="alert" style={{ fontSize: 12, color: 'var(--red-600)', marginTop: 6 }}>{fieldErrors.pacienteId}</div>}
           </div>
 
+          {paciente && (
+            <div style={{ display: 'grid', gap: 7, padding: 12, border: '1px solid var(--gray-100)', borderRadius: 8, background: 'var(--gray-50)', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 800, color: 'var(--gray-800)' }}>
+                <User size={15} color="var(--primary)" /> {paciente.nome}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, color: 'var(--gray-600)' }}>
+                <span>{formatPhoneBR(paciente.telefone) || 'Sem telefone'}</span>
+                <span>{paciente.email || 'Sem e-mail'}</span>
+                <span>{previewDestino ? `Destino: ${previewDestino}` : 'Destino indisponível'}</span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div>
+              <label htmlFor="communication-template-date" style={labelStyle}>Data do modelo</label>
+              <input id="communication-template-date" type="date" value={templateDate} onChange={e => setTemplateDate(e.target.value)} style={fieldStyle} />
+            </div>
+            <div>
+              <label htmlFor="communication-template-time" style={labelStyle}>Hora do modelo</label>
+              <input id="communication-template-time" type="time" value={templateTime} onChange={e => setTemplateTime(e.target.value)} style={fieldStyle} />
+            </div>
+          </div>
+
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Modelos de mensagem</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {SMS_TEMPLATES.map(t => (
                 <button key={t.id} type="button" onClick={() => handleTemplate(t.message)} disabled={enviando} style={{
-                  padding: '5px 10px',
+                  padding: '6px 10px',
                   background: 'var(--gray-50)',
                   border: '1px solid var(--gray-200)',
                   borderRadius: 8,
                   fontSize: 11,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   color: 'var(--gray-600)',
                   cursor: enviando ? 'not-allowed' : 'pointer',
                 }}>
@@ -389,98 +514,147 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
                 setFieldErrors(prev => ({ ...prev, texto: undefined }));
               }}
               rows={5}
-              placeholder="Ex.: Lembrete: consulta amanhã às 14h"
+              placeholder="Ex.: Lembrete: consulta amanhã às 14h."
               disabled={enviando}
               maxLength={MESSAGE_MAX_LENGTH}
               aria-invalid={Boolean(fieldErrors.texto)}
               aria-describedby={fieldErrors.texto ? 'communication-message-error' : 'communication-message-count'}
               style={{ ...fieldStyle, resize: 'vertical', fontFamily: 'Montserrat, sans-serif' }}
             />
-            <div id="communication-message-count" style={{ fontSize: 11, color: texto.length > 900 ? 'var(--amber-600)' : 'var(--gray-400)', textAlign: 'right' }}>
-              {texto.length}/{MESSAGE_MAX_LENGTH} caracteres
+            <div id="communication-message-count" style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 5, fontSize: 11, color: texto.length > 280 ? 'var(--amber-600)' : 'var(--gray-400)' }}>
+              <span>{canal === 'sms' ? 'SMS curto ajuda a evitar divisão em várias mensagens.' : 'O texto será aberto no aplicativo escolhido.'}</span>
+              <span>{texto.length}/{MESSAGE_MAX_LENGTH}</span>
             </div>
             {fieldErrors.texto && <div id="communication-message-error" role="alert" style={{ fontSize: 12, color: 'var(--red-600)', marginTop: 6 }}>{fieldErrors.texto}</div>}
           </div>
 
-          {sucesso && (
-            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--mint)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-              <CheckCircle2 size={15} color="var(--primary)" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark)' }}>{sucesso}</span>
-            </div>
-          )}
+          {sucesso && <AlertMessage type="success" text={sucesso} />}
+          {erro && <AlertMessage type="error" text={erro} />}
 
-          {erro && (
-            <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--red-50)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-              <XCircle size={15} color="var(--red-500)" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--red-600)' }}>{erro}</span>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={enviando || !pacienteId || !texto.trim()}
-            style={{
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 8 }}>
+            <button type="button" onClick={() => void handleCopy()} disabled={!texto.trim()} style={{
+              padding: '11px 13px',
+              border: '1px solid var(--gray-200)',
+              background: '#fff',
+              borderRadius: 8,
+              color: 'var(--gray-700)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 7,
+              fontWeight: 800,
+              cursor: texto.trim() ? 'pointer' : 'not-allowed',
+            }}>
+              <Copy size={15} /> Copiar
+            </button>
+            <button type="submit" disabled={!canSend} style={{
               width: '100%',
               padding: '11px',
-              background: enviando || !pacienteId || !texto.trim() ? 'var(--gray-200)' : 'var(--primary)',
+              background: canSend ? 'var(--primary)' : 'var(--gray-200)',
               color: '#fff',
               border: 'none',
               borderRadius: 8,
               fontSize: 13,
-              fontWeight: 700,
-              cursor: enviando || !pacienteId || !texto.trim() ? 'not-allowed' : 'pointer',
+              fontWeight: 800,
+              cursor: canSend ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
-            }}
-          >
-            <Send size={15} />
-            {enviando ? 'Enviando...' : 'Enviar SMS'}
-          </button>
+            }}>
+              {canal === 'sms' ? <Send size={15} /> : <ExternalLink size={15} />}
+              {enviando ? 'Enviando...' : canal === 'sms' ? 'Enviar SMS' : `Abrir ${CANAL_LABEL[canal]}`}
+            </button>
+          </div>
         </form>
 
-        <section style={{ background: '#fff', borderRadius: 8, padding: 24, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid var(--gray-100)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Bell size={16} color="var(--primary)" />
+        <section style={cardStyle}>
+          <SectionTitle icon={Bell} title="Histórico de comunicação" />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, marginBottom: 14 }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)' }} />
+              <input
+                value={historySearch}
+                onChange={e => setHistorySearch(e.target.value)}
+                placeholder="Filtrar histórico"
+                style={{ ...fieldStyle, paddingLeft: 30 }}
+              />
             </div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Histórico de Comunicação</h2>
+            <select value={historyFilter} onChange={e => setHistoryFilter(e.target.value as HistoryFilter)} style={{ ...fieldStyle, minWidth: 132 }}>
+              <option value="todos">Todos</option>
+              <option value="sms">SMS</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="email">E-mail</option>
+            </select>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {carregandoHistorico && <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>Carregando histórico...</div>}
-            {!carregandoHistorico && mensagens.length === 0 && <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>Nenhum SMS registrado ainda.</div>}
+            {!carregandoHistorico && filteredMessages.length === 0 && <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>Nenhuma comunicação encontrada.</div>}
 
-            {mensagens.map(msg => {
+            {filteredMessages.map(msg => {
               const pac = pacientes.find(p => p.id === msg.pacienteId);
               const Icon = CANAL_ICON[msg.canal];
               const st = STATUS_STYLE[msg.status];
               const StIcon = st.icon;
               return (
-                <article key={msg.id} style={{ border: '1px solid var(--gray-100)', borderRadius: 8, padding: '14px 16px' }}>
+                <article key={msg.id} style={{ border: '1px solid var(--gray-100)', borderRadius: 8, padding: '13px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                       <div style={{ width: 28, height: 28, borderRadius: 8, background: `${CANAL_COLOR[msg.canal]}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
                         <Icon size={13} color={CANAL_COLOR[msg.canal]} />
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pac?.nome || msg.telefone || 'Paciente'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{CANAL_LABEL[msg.canal]} - {msg.data.split('-').reverse().join('/')} às {msg.hora}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pac?.nome || msg.destino || 'Paciente'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{CANAL_LABEL[msg.canal]} · {msg.data.split('-').reverse().join('/')} às {msg.hora}</div>
                       </div>
                     </div>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: st.bg, color: st.color, fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 8, flex: '0 0 auto' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: st.bg, color: st.color, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8, flex: '0 0 auto' }}>
                       <StIcon size={11} /> {st.label}
                     </span>
                   </div>
                   <p style={{ fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{msg.texto}</p>
-                  {msg.sid && <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 8 }}>SID: {msg.sid}</div>}
+                  <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 8 }}>
+                    Destino: {msg.destino}{msg.sid ? ` · SID: ${msg.sid}` : ''}
+                  </div>
                 </article>
               );
             })}
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function SectionTitle({ icon: Icon, title }: { icon: ElementType; title: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={16} color="var(--primary)" />
+      </div>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>{title}</h2>
+    </div>
+  );
+}
+
+function StatCard({ label, value, danger = false }: { label: string; value: number; danger?: boolean }) {
+  return (
+    <div style={{ minWidth: 86, padding: '9px 11px', borderRadius: 8, background: '#fff', border: `1px solid ${danger ? 'var(--red-100)' : 'var(--gray-100)'}` }}>
+      <div style={{ fontSize: 11, color: 'var(--gray-500)', fontWeight: 800 }}>{label}</div>
+      <div style={{ fontSize: 18, color: danger ? 'var(--red-600)' : 'var(--dark)', fontWeight: 800 }}>{value}</div>
+    </div>
+  );
+}
+
+function AlertMessage({ type, text }: { type: 'success' | 'error'; text: string }) {
+  const success = type === 'success';
+  const Icon = success ? CheckCircle2 : XCircle;
+  return (
+    <div role={success ? 'status' : 'alert'} style={{ display: 'flex', alignItems: 'center', gap: 8, background: success ? 'var(--mint)' : 'var(--red-50)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+      <Icon size={15} color={success ? 'var(--primary)' : 'var(--red-500)'} />
+      <span style={{ fontSize: 13, fontWeight: 600, color: success ? 'var(--dark)' : 'var(--red-600)' }}>{text}</span>
     </div>
   );
 }
