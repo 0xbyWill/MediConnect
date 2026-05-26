@@ -30,7 +30,10 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
   const { user, logout } = useAuth();
   const role = user?.role ?? 'secretaria';
   const allowed = ROLE_PAGES[role];
-  const visibleNav = ALL_NAV.filter(item => allowed.includes(item.id));
+  const visibleNav = ALL_NAV.filter(item =>
+    allowed.includes(item.id) &&
+    (item.id !== 'fila-prioridade' || role === 'gestao')
+  );
 
   const groups: { key: string; label: string; items: typeof ALL_NAV }[] = [
     { key: 'principal', label: 'Principal', items: visibleNav.filter(i => i.group === 'principal') },

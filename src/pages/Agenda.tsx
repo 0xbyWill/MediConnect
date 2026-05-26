@@ -83,6 +83,14 @@ function isPastAppointmentSlot(date: string, time: string, now = new Date()) {
   return slotMinutes <= now.getHours() * 60 + now.getMinutes();
 }
 
+function isElapsedAppointment(appt: Pick<Agendamento, 'data' | 'hora' | 'status'>) {
+  return appt.status !== 'cancelado' && isPastAppointmentSlot(appt.data, appt.hora);
+}
+
+function effectiveAppointmentStatus(appt: Agendamento): Agendamento['status'] {
+  return isElapsedAppointment(appt) ? 'realizado' : appt.status;
+}
+
 function minutesToTime(value: number) {
   const hour = Math.floor(value / 60);
   const minute = value % 60;
@@ -169,7 +177,7 @@ const STATUS_LABEL: Record<Agendamento['status'], { label: string; bg: string; c
   confirmado: { label: 'Confirmada', bg: 'var(--mint)', color: 'var(--dark)' },
   pendente: { label: 'Pendente', bg: 'var(--amber-100)', color: 'var(--amber-600)' },
   cancelado: { label: 'Cancelada', bg: 'var(--red-100)', color: 'var(--red-600)' },
-  realizado: { label: 'Realizada', bg: '#ede9fe', color: '#5b21b6' },
+  realizado: { label: 'Atendido', bg: '#ede9fe', color: '#5b21b6' },
 };
 
 export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, initialPatientId, readOnly = false }: AgendaProps) {
@@ -201,6 +209,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const [saving, setSaving] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [detailsSlot, setDetailsSlot] = useState<{ date: string; slot: string } | null>(null);
   const [availability, setAvailability] = useState<ApiDoctorAvailability[]>([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState('');
@@ -223,8 +232,9 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const [availabilityDeletingId, setAvailabilityDeletingId] = useState<string | null>(null);
   const initialOpenKeyRef = useRef('');
 
-  const openModal = useCallback((appt?: Agendamento, dateOverride = selectedDate, timeOverride = '', pacienteId = '') => {
+  const openModal = useCallback((appt?: Agendamento, dateOverride = selectedDate, timeOverride = '', pacienteId = '', doctorIdOverride = '') => {
     if (isPaciente && appt) return;
+    if (appt && isElapsedAppointment(appt)) return;
     if (!appt && !canCreateAgendamento) return;
     setErrors({});
     setApiError('');
@@ -249,7 +259,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       return;
     }
     const ownPatientId = canPatientSchedule ? user?.patient_id || pacientes[0]?.id || user?.id || '' : pacienteId;
-    setModal({ open: true, mode: 'add', data: { ...emptyForm(dateOverride), pacienteId: ownPatientId, medicoId: filterDoctorId, hora: timeOverride } });
+    setModal({ open: true, mode: 'add', data: { ...emptyForm(dateOverride), pacienteId: ownPatientId, medicoId: doctorIdOverride || filterDoctorId, hora: timeOverride } });
     setPatientSearch('');
   }, [canCreateAgendamento, canPatientSchedule, filterDoctorId, isPaciente, pacientes, selectedDate, user?.id, user?.patient_id]);
 
@@ -337,7 +347,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       const q = filterPatient.toLowerCase().trim();
       const matchDoctor = !activeDoctorId || a.medicoId === activeDoctorId;
       const matchPatient = !q || patient?.nome.toLowerCase().includes(q) || patient?.cpf.includes(q);
-      const matchStatus = !statusFilter || a.status === statusFilter;
+      const matchStatus = !statusFilter || effectiveAppointmentStatus(a) === statusFilter;
       const matchPeriod =
         period === 'todos' ||
         (period === 'dia' && a.data === selectedDate) ||
@@ -424,17 +434,17 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const ownPatientId = user?.role === 'paciente' ? user.patient_id || pacientes[0]?.id || user.id : '';
   const canCancelAppointment = (appt: Agendamento) =>
     canCancelAgendamento &&
-    appt.status !== 'cancelado' &&
-    appt.status !== 'realizado' &&
-    appt.data >= today &&
+    effectiveAppointmentStatus(appt) !== 'cancelado' &&
+    effectiveAppointmentStatus(appt) !== 'realizado' &&
+    !isElapsedAppointment(appt) &&
     (
       isSecretaria ||
       (canPatientSchedule && appt.pacienteId === ownPatientId) ||
       (isMedico && Boolean(user?.doctor_id) && appt.medicoId === user?.doctor_id)
     );
   const canConfirmAppointment = (appt: Agendamento) =>
-    appt.status === 'pendente' &&
-    appt.data >= today &&
+    effectiveAppointmentStatus(appt) === 'pendente' &&
+    !isElapsedAppointment(appt) &&
     (
       user?.role === 'gestao' ||
       user?.role === 'secretaria' ||
@@ -448,9 +458,10 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     const appointments = selectedDayAppointments.filter(appt => normalizeTime(appt.hora) === slot);
     const availableDoctorIds = daySlotDoctors[slot] ?? new Set<string>();
     const busyDoctorIds = new Set(appointments.filter(appt => appt.status !== 'cancelado').map(appt => appt.medicoId).filter((id): id is string => Boolean(id)));
-    const isAvailable = availableDoctorIds.size > 0 && Array.from(availableDoctorIds).some(doctorId => !busyDoctorIds.has(doctorId));
+    const availableDoctorId = Array.from(availableDoctorIds).find(doctorId => !busyDoctorIds.has(doctorId)) || '';
+    const isAvailable = Boolean(availableDoctorId);
     const isPast = isPastAppointmentSlot(selectedDate, slot);
-    return { slot, appointments, isAvailable, isPast };
+    return { slot, appointments, isAvailable, isPast, availableDoctorId };
   });
   const visibleSelectedDaySlots = selectedDaySlots.filter(item => !(item.isPast && item.appointments.length === 0));
   const calendarSlots = selectedDaySlots.map(item => item.slot);
@@ -725,6 +736,13 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
 
   const handleSave = async () => {
     if (isPaciente && modal.mode !== 'add') return;
+    if (modal.mode === 'edit' && modal.data.id) {
+      const original = agendamentos.find(appt => appt.id === modal.data.id);
+      if (original && isElapsedAppointment(original)) {
+        setApiError('Consultas com horário já passado ficam como atendidas e não podem ser alteradas.');
+        return;
+      }
+    }
     const nextErrors = validate();
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
@@ -760,6 +778,12 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const handleDelete = async () => {
     if (!canCancelAgendamento) return;
     if (!confirmDelete) return;
+    const appointment = agendamentos.find(appt => appt.id === confirmDelete);
+    if (appointment && isElapsedAppointment(appointment)) {
+      setApiError('Consultas com horário já passado ficam como atendidas e não podem ser canceladas.');
+      setConfirmDelete(null);
+      return;
+    }
     try {
       await onDelete(confirmDelete);
       setConfirmDelete(null);
@@ -781,6 +805,12 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       setConfirmingId(null);
     }
   };
+
+  const detailsSlotAppointments = detailsSlot
+    ? agendamentos
+        .filter(appt => appt.data === detailsSlot.date && normalizeTime(appt.hora) === detailsSlot.slot)
+        .sort(byChronology)
+    : [];
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'transparent', overflow: 'hidden' }}>
@@ -848,7 +878,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               <option value="">Todos os status</option>
               <option value="pendente">Pendente</option>
               <option value="confirmado">Confirmada</option>
-              <option value="realizado">Realizada</option>
+              <option value="realizado">Atendido</option>
               <option value="cancelado">Cancelada</option>
             </select>
           </div>
@@ -985,7 +1015,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   <option value="">Todos</option>
                   <option value="pendente">Pendente</option>
                   <option value="confirmado">Confirmada</option>
-                  <option value="realizado">Realizada</option>
+                  <option value="realizado">Atendido</option>
                   <option value="cancelado">Cancelada</option>
                 </select>
               </div>
@@ -1010,8 +1040,23 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                 </div>
               )}
 
-              {!dayAvailabilityLoading && visibleSelectedDaySlots.map(({ slot, appointments, isAvailable, isPast }) => (
-                <div key={slot} style={{
+              {!dayAvailabilityLoading && visibleSelectedDaySlots.map(({ slot, appointments, isAvailable, isPast, availableDoctorId }) => {
+                const canClickSlotToSchedule = canCreateAgendamento && isAvailable && !isPast && appointments.length === 0;
+                const openSlotSchedule = () => openModal(undefined, selectedDate, slot, '', availableDoctorId);
+                return (
+                <div
+                  key={slot}
+                  role={canClickSlotToSchedule ? 'button' : undefined}
+                  tabIndex={canClickSlotToSchedule ? 0 : undefined}
+                  onClick={canClickSlotToSchedule ? openSlotSchedule : undefined}
+                  onKeyDown={event => {
+                    if (!canClickSlotToSchedule) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openSlotSchedule();
+                    }
+                  }}
+                  style={{
                   minHeight: 76,
                   border: isPast ? '1px solid #e5e7eb' : appointments.length ? '1px solid #86efac' : isAvailable ? '1px solid #dbe7e2' : '1px solid #f8d7da',
                   borderRadius: 9,
@@ -1022,6 +1067,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   gap: 16,
                   padding: '14px 16px',
                   opacity: isPast ? 0.7 : 1,
+                  cursor: canClickSlotToSchedule ? 'pointer' : 'default',
                 }}>
                   <div style={{ borderRight: '1px solid #d1d5db', paddingRight: 14 }}>
                     <div style={{ fontSize: 19, fontWeight: 900, color: isPast ? '#64748b' : '#071327', lineHeight: 1 }}>{slot}</div>
@@ -1049,7 +1095,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
 
                   {appointments.length === 0 ? (
                     canCreateAgendamento && isAvailable && !isPast && (
-                      <button type="button" onClick={() => openModal(undefined, selectedDate, slot)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                      <button type="button" onClick={event => { event.stopPropagation(); openSlotSchedule(); }} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
                         Agendar
                       </button>
                     )
@@ -1057,7 +1103,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       {appointments.slice(0, 1).map(appt => (
                         <React.Fragment key={appt.id}>
-                          <StatusBadge status={appt.status} />
+                          <StatusBadge status={effectiveAppointmentStatus(appt)} />
                           {canConfirmAppointment(appt) && (
                             <button type="button" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: confirmingId === appt.id ? 'not-allowed' : 'pointer' }}>
                               {confirmingId === appt.id ? 'Confirmando...' : 'Confirmar'}
@@ -1070,19 +1116,14 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                           )}
                         </React.Fragment>
                       ))}
-                      {canCreateAgendamento && isAvailable && !isPast && (
-                        <button type="button" onClick={() => openModal(undefined, selectedDate, slot)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                          Agendar
-                        </button>
-                      )}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       {appointments.slice(0, 1).map(appt => (
                         <React.Fragment key={appt.id}>
-                          <StatusBadge status={appt.status} />
+                          <StatusBadge status={effectiveAppointmentStatus(appt)} />
                           {!isPaciente && (
-                            <button type="button" onClick={() => openModal(appt)} style={{ border: 'none', background: 'transparent', color: 'var(--primary)', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                            <button type="button" onClick={() => setDetailsSlot({ date: selectedDate, slot })} style={{ border: 'none', background: 'transparent', color: 'var(--primary)', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
                               Ver Detalhes
                             </button>
                           )}
@@ -1091,13 +1132,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                               {confirmingId === appt.id ? 'Confirmando...' : 'Confirmar'}
                             </button>
                           )}
-                          {canPatientSchedule && canCancelAppointment(appt) && (
-                            <button type="button" onClick={() => setConfirmDelete(appt.id)} style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                              Cancelar
-                            </button>
-                          )}
                           {canCreateAgendamento && isAvailable && !isPast && (
-                            <button type="button" onClick={() => openModal(undefined, selectedDate, slot)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                            <button type="button" onClick={() => openModal(undefined, selectedDate, slot, '', availableDoctorId)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                               Agendar
                             </button>
                           )}
@@ -1106,7 +1142,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
 
               {!dayAvailabilityLoading && visibleSelectedDaySlots.length === 0 && (
                 <div style={{ padding: '20px 10px 4px', textAlign: 'center', color: 'var(--gray-400)' }}>
@@ -1203,8 +1240,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                             const patient = pacientes.find(p => p.id === appt.pacienteId);
                             const doctor = doctors.find(d => d.id === appt.medicoId);
                             return (
-                              <button key={appt.id} type="button" onClick={() => !isPaciente && openModal(appt)}
-                                style={{ width: '100%', border: '1px solid #fbbf24', background: '#fffbeb', borderRadius: 10, padding: 8, marginBottom: 5, textAlign: 'left', boxShadow: '0 6px 14px rgba(245, 158, 11, 0.12)', cursor: isPaciente ? 'default' : 'pointer' }}>
+                              <button key={appt.id} type="button" onClick={() => !isPaciente && !isElapsedAppointment(appt) && openModal(appt)}
+                                style={{ width: '100%', border: '1px solid #fbbf24', background: '#fffbeb', borderRadius: 10, padding: 8, marginBottom: 5, textAlign: 'left', boxShadow: '0 6px 14px rgba(245, 158, 11, 0.12)', cursor: isPaciente || isElapsedAppointment(appt) ? 'default' : 'pointer' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                                   <span style={{ width: 7, height: 7, borderRadius: 999, background: '#f59e0b', flexShrink: 0 }} />
                                   <span title={patient?.nome || ''} style={{ fontSize: 12, fontWeight: 900, color: 'var(--gray-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{patient?.nome || 'Paciente não encontrado'}</span>
@@ -1213,7 +1250,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                                 <div title={doctor?.full_name || ''} style={{ fontSize: 10, color: 'var(--gray-500)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doctor?.full_name || user?.full_name || 'Médico não informado'}</div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 7 }}>
                                   <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--gray-600)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.tipo}</span>
-                                  <StatusBadge status={appt.status} />
+                                  <StatusBadge status={effectiveAppointmentStatus(appt)} />
                                 </div>
                               </button>
                             );
@@ -1282,7 +1319,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     <td style={tdStyle}>
                       {isPaciente ? (
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
-                          <StatusBadge status={appt.status} />
+                          <StatusBadge status={effectiveAppointmentStatus(appt)} />
                           {canConfirmAppointment(appt) && (
                             <IconButton title="Confirmar consulta" icon={CalendarCheck} color="var(--primary)" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} />
                           )}
@@ -1295,8 +1332,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                         {canConfirmAppointment(appt) && (
                           <IconButton title="Confirmar consulta" icon={CalendarCheck} color="var(--primary)" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} />
                         )}
-                        <IconButton title="Editar" icon={Pencil} color="var(--amber-600)" onClick={() => openModal(appt)} />
-                        <IconButton title="Excluir" icon={Trash2} color="var(--red-500)" onClick={() => setConfirmDelete(appt.id)} />
+                        {!isElapsedAppointment(appt) && <IconButton title="Editar" icon={Pencil} color="var(--amber-600)" onClick={() => openModal(appt)} />}
+                        {canCancelAppointment(appt) && <IconButton title="Cancelar" icon={Trash2} color="var(--red-500)" onClick={() => setConfirmDelete(appt.id)} />}
                       </div>
                       )}
                     </td>
@@ -1316,6 +1353,76 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           </table>
         </div>
       </div>
+
+      {detailsSlot && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>
+          <div style={{ background: '#fff', borderRadius: 18, width: 'min(680px, calc(100vw - 16px))', maxHeight: 'calc(100dvh - 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--gray-800)', margin: 0 }}>Detalhes do horário</h2>
+                <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3 }}>
+                  {formatDateBR(detailsSlot.date)} às {detailsSlot.slot} - {detailsSlotAppointments.length} consulta{detailsSlotAppointments.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <button onClick={() => setDetailsSlot(null)} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: 'var(--gray-100)', cursor: 'pointer' }}><X size={15} /></button>
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)', display: 'grid', gap: 12 }}>
+              {detailsSlotAppointments.map(appt => {
+                const patient = pacientes.find(p => p.id === appt.pacienteId);
+                const doctor = doctors.find(d => d.id === appt.medicoId);
+                return (
+                  <article key={appt.id} style={{ border: '1px solid var(--gray-100)', borderRadius: 12, padding: 14, background: '#fff', display: 'grid', gap: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 900, color: '#071327', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {patient?.nome || 'Paciente não encontrado'}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#334155', marginTop: 4 }}>
+                          {appt.tipo} - {doctor?.full_name || 'Médico não informado'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 3 }}>
+                          {doctor?.specialty || 'Especialidade não informada'} · {appt.data.split('-').reverse().join('/')} às {appt.hora}
+                        </div>
+                      </div>
+                      <StatusBadge status={effectiveAppointmentStatus(appt)} />
+                    </div>
+
+                    {appt.observacoes && (
+                      <div style={{ fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.5, padding: '9px 10px', borderRadius: 9, background: 'var(--gray-50)', border: '1px solid var(--gray-100)' }}>
+                        {appt.observacoes}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                      {!isPaciente && !isElapsedAppointment(appt) && (
+                        <button type="button" onClick={() => { setDetailsSlot(null); openModal(appt); }} style={{ border: '1px solid var(--gray-200)', background: '#fff', color: 'var(--gray-700)', borderRadius: 9, padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                          Editar
+                        </button>
+                      )}
+                      {canConfirmAppointment(appt) && (
+                        <button type="button" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 9, padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: confirmingId === appt.id ? 'not-allowed' : 'pointer' }}>
+                          {confirmingId === appt.id ? 'Confirmando...' : 'Confirmar'}
+                        </button>
+                      )}
+                      {canCancelAppointment(appt) && (
+                        <button type="button" onClick={() => setConfirmDelete(appt.id)} style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 9, padding: '8px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                          Cancelar consulta
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+              {detailsSlotAppointments.length === 0 && (
+                <div style={{ padding: 18, border: '1px dashed var(--gray-200)', borderRadius: 12, color: 'var(--gray-500)', textAlign: 'center', fontSize: 13, fontWeight: 700 }}>
+                  Nenhuma consulta encontrada neste horário.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {modal.open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'clamp(8px, 2vw, 16px)' }}>

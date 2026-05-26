@@ -28,7 +28,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   confirmado: { bg: 'var(--mint)', color: 'var(--dark)', label: 'Confirmada' },
   pendente: { bg: 'var(--amber-100)', color: 'var(--amber-600)', label: 'Pendente' },
   cancelado: { bg: 'var(--red-100)', color: 'var(--red-600)', label: 'Cancelada' },
-  realizado: { bg: '#ede9fe', color: '#5b21b6', label: 'Realizada' },
+  realizado: { bg: '#ede9fe', color: '#5b21b6', label: 'Atendido' },
   liberado: { bg: 'var(--mint)', color: 'var(--dark)', label: 'Liberado' },
   rascunho: { bg: 'var(--gray-100)', color: 'var(--gray-500)', label: 'Rascunho' },
 };
