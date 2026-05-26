@@ -73,15 +73,15 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
   const [prompt, setPrompt] = useState('');
   const [startDate, setStartDate] = useState(monthStartISO);
   const [endDate, setEndDate] = useState(todayISO);
-  const [activeTab, setActiveTab] = useState<'resposta' | 'graficos' | 'arquivos'>('resposta');
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSummary, setLastSummary] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   const activePrompt = prompt.trim();
-  const currentMessage = messages[0];
+  const currentMessage = messages[messages.length - 1];
   const periodLabel = useMemo(() => formatAssistantPeriod(startDate, endDate), [startDate, endDate]);
   const speechSupported = typeof window !== 'undefined' && supportsSpeechRecognition();
 
@@ -138,8 +138,10 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
       return;
     }
 
+    const submittedPrompt = activePrompt;
+    setPrompt('');
+    setPendingPrompt(submittedPrompt);
     setLoading(true);
-    setActiveTab('resposta');
     try {
       const data = await loadReadOnlyData(source);
       const built = buildAssistantContext(action, data, { startDate, endDate }, source);
@@ -148,7 +150,7 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
 
       const response = await managerSearchAssistantApi.ask({
         action,
-        prompt: activePrompt,
+        prompt: submittedPrompt,
         period: { startDate, endDate },
         context: built.context,
       });
@@ -162,9 +164,10 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
       });
 
       setMessages(prev => [
+        ...prev,
         {
           id: crypto.randomUUID(),
-          prompt: activePrompt,
+          prompt: submittedPrompt,
           response: {
             ...response,
             dataSummary: response.dataSummary ?? built.dataSummary,
@@ -175,12 +178,13 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
           charts,
           files,
         },
-        ...prev,
       ]);
     } catch (err) {
+      setPrompt(submittedPrompt);
       setError(err instanceof Error ? err.message : 'Não foi possível consultar o assistente.');
     } finally {
       setLoading(false);
+      setPendingPrompt(null);
     }
   };
 
@@ -222,6 +226,7 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
     setMessages([]);
     setLastSummary(null);
     setError(null);
+    setPrompt('');
   };
 
   const copyAnswer = async () => {
@@ -251,33 +256,14 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 0.86fr) minmax(520px, 1.14fr)', gap: 18, alignItems: 'start' }}>
-        <section style={panelStyle}>
+      <div className="ai-chat-shell" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 340px) minmax(0, 1fr)', gap: 18, alignItems: 'stretch' }}>
+        <aside className="ai-sidebar" style={{ ...panelStyle, alignSelf: 'start', position: 'sticky', top: 0 }}>
           <div style={sectionHeaderStyle}>
             <Sparkles size={18} color="var(--primary)" />
-            <h2 style={sectionTitleStyle}>Pergunta e filtros</h2>
+            <h2 style={sectionTitleStyle}>Contexto</h2>
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 14 }}>
-            <div>
-              <label htmlFor="manager-assistant-prompt" style={labelStyle}>Pergunta</label>
-              <textarea
-                id="manager-assistant-prompt"
-                value={prompt}
-                onChange={event => setPrompt(event.target.value.slice(0, 1500))}
-                maxLength={1500}
-                rows={5}
-                placeholder="Ex.: Resuma as consultas desta semana por status e por médico"
-                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'Montserrat, sans-serif', lineHeight: 1.5 }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>{prompt.length}/1500</span>
-                <button type="button" onClick={listening ? stopSpeech : startSpeech} style={{ ...smallButtonStyle, color: listening ? 'var(--red-600)' : 'var(--primary)' }}>
-                  {listening ? <MicOff size={14} /> : <Mic size={14} />} {listening ? 'Ouvindo...' : 'Falar com IA'}
-                </button>
-              </div>
-            </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <FieldDate id="assistant-start-date" label="Início" value={startDate} onChange={setStartDate} />
               <FieldDate id="assistant-end-date" label="Fim" value={endDate} onChange={setEndDate} />
@@ -293,11 +279,8 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
             </div>
 
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button type="submit" disabled={loading} style={{ ...primaryButtonStyle, opacity: loading ? 0.75 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
-                {loading ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={16} />} {loading ? 'Analisando...' : 'Analisar com IA'}
-              </button>
-              <button type="button" onClick={clearConversation} style={secondaryButtonStyle}>
-                <Eraser size={15} /> Limpar
+              <button type="button" onClick={clearConversation} style={{ ...secondaryButtonStyle, width: '100%' }}>
+                <Eraser size={15} /> Nova conversa
               </button>
             </div>
           </form>
@@ -322,40 +305,81 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
               ))}
             </div>
           </div>
-        </section>
-
-        <section style={{ display: 'grid', gap: 14 }}>
-          <div style={panelStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-              <div>
-                <h2 style={{ ...sectionTitleStyle, marginBottom: 2 }}>Resultado da análise</h2>
-                <p style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>Período: {periodLabel}</p>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={copyAnswer} disabled={!currentMessage} style={secondaryButtonStyle}>
-                  <Clipboard size={15} /> Copiar
-                </button>
-              </div>
+          {lastSummary && (
+            <div style={{ borderTop: '1px solid var(--gray-100)', marginTop: 14, paddingTop: 14 }}>
+              <InfoCard icon={BarChart3} title="Resumo dos dados" text={lastSummary} compact />
             </div>
+          )}
+        </aside>
 
-            <div role="tablist" aria-label="Resultado do assistente" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-              <TabButton active={activeTab === 'resposta'} onClick={() => setActiveTab('resposta')} label="Resposta" />
-              <TabButton active={activeTab === 'graficos'} onClick={() => setActiveTab('graficos')} label="Gráficos" />
-              <TabButton active={activeTab === 'arquivos'} onClick={() => setActiveTab('arquivos')} label="Arquivos" />
+        <section className="ai-chat-panel" style={{ ...panelStyle, minHeight: 'calc(100dvh - 170px)', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr) auto', padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <h2 style={{ ...sectionTitleStyle, marginBottom: 2 }}>Conversa gerencial</h2>
+              <p style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>Período: {periodLabel} · Somente leitura</p>
             </div>
-
-            {loading && <LoadingBox />}
-            {!loading && !currentMessage && <EmptyBox />}
-            {!loading && currentMessage && activeTab === 'resposta' && <StructuredResponseView message={currentMessage} />}
-            {!loading && currentMessage && activeTab === 'graficos' && <ChartsView charts={currentMessage.charts} />}
-            {!loading && currentMessage && activeTab === 'arquivos' && <FilesView files={currentMessage.files} />}
+            <button type="button" onClick={copyAnswer} disabled={!currentMessage} style={{ ...secondaryButtonStyle, opacity: currentMessage ? 1 : 0.6 }}>
+              <Clipboard size={15} /> Copiar última
+            </button>
           </div>
 
-          {lastSummary && <InfoCard icon={BarChart3} title="Resumo dos dados" text={lastSummary} />}
+          <div style={{ overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16, background: 'linear-gradient(180deg, #ffffff 0%, var(--gray-50) 100%)' }}>
+            {!messages.length && !pendingPrompt && !loading && <EmptyBox />}
+            {messages.map(message => (
+              <ChatTurn key={message.id} message={message} onCopy={() => void navigator.clipboard.writeText(message.response.answer).catch(() => setError('Não foi possível copiar automaticamente neste navegador.'))} />
+            ))}
+            {pendingPrompt && <UserBubble text={pendingPrompt} />}
+            {loading && <AssistantLoadingBubble />}
+          </div>
+
+          <form onSubmit={handleSubmit} style={{ padding: 14, borderTop: '1px solid var(--gray-100)', background: '#fff' }}>
+            <label htmlFor="manager-assistant-prompt" style={labelStyle}>Mensagem</label>
+            <div className="ai-composer-row" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'end' }}>
+              <textarea
+                id="manager-assistant-prompt"
+                value={prompt}
+                onChange={event => setPrompt(event.target.value.slice(0, 1500))}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void askAssistant();
+                  }
+                }}
+                disabled={loading}
+                maxLength={1500}
+                rows={2}
+                placeholder="Pergunte sobre consultas, faltas, agenda, laudos ou desempenho..."
+                style={{ ...inputStyle, minHeight: 52, maxHeight: 120, resize: 'vertical', fontFamily: 'Montserrat, sans-serif', lineHeight: 1.45 }}
+              />
+              <button type="button" onClick={listening ? stopSpeech : startSpeech} disabled={loading} aria-label={listening ? 'Parar microfone' : 'Falar com IA'} style={{ ...iconButtonStyle, color: listening ? 'var(--red-600)' : 'var(--primary)' }}>
+                {listening ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+              <button type="submit" disabled={loading || !activePrompt} style={{ ...primaryButtonStyle, minHeight: 52, opacity: loading || !activePrompt ? 0.7 : 1, cursor: loading || !activePrompt ? 'not-allowed' : 'pointer' }}>
+                {loading ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={16} />}
+                {loading ? 'Analisando' : 'Enviar'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>{prompt.length}/1500</span>
+              <span style={{ fontSize: 11, color: listening ? 'var(--primary)' : 'var(--gray-400)', fontWeight: 700 }}>
+                {listening ? 'Ouvindo...' : 'Enter envia, Shift+Enter quebra linha'}
+              </span>
+            </div>
+          </form>
         </section>
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 920px) {
+          .ai-chat-shell { grid-template-columns: 1fr !important; }
+          .ai-sidebar { position: static !important; }
+          .ai-chat-panel { min-height: calc(100dvh - 220px) !important; }
+        }
+        @media (max-width: 560px) {
+          .ai-composer-row { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -427,6 +451,59 @@ function countBy<T>(items: T[], getKey: (item: T) => string) {
     map.set(key, (map.get(key) ?? 0) + 1);
   });
   return Array.from(map.entries()).map(([label, value]) => ({ label, value }));
+}
+
+function ChatTurn({ message, onCopy }: { message: AssistantMessage; onCopy: () => void }) {
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      <UserBubble text={message.prompt} />
+      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+        <article style={assistantBubbleStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={assistantAvatarStyle}><Bot size={15} /></span>
+              <strong style={{ fontSize: 13, color: 'var(--gray-800)' }}>Assistente IA</strong>
+            </div>
+            <button type="button" onClick={onCopy} style={{ ...secondaryButtonStyle, padding: '6px 9px', fontSize: 12 }}>
+              <Clipboard size={14} /> Copiar
+            </button>
+          </div>
+          <StructuredResponseView message={message} />
+          {message.charts.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={blockTitleStyle}>Gráficos</div>
+              <ChartsView charts={message.charts} />
+            </div>
+          )}
+          {message.files.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={blockTitleStyle}>Arquivos gerados</div>
+              <FilesView files={message.files} />
+            </div>
+          )}
+        </article>
+      </div>
+    </div>
+  );
+}
+
+function UserBubble({ text }: { text: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={userBubbleStyle}>{text}</div>
+    </div>
+  );
+}
+
+function AssistantLoadingBubble() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+      <div role="status" style={{ ...assistantBubbleStyle, display: 'inline-flex', alignItems: 'center', gap: 8, width: 'auto' }}>
+        <Loader2 size={17} color="var(--primary)" style={{ animation: 'spin 1s linear infinite' }} />
+        A IA está analisando os dados do MediConnect...
+      </div>
+    </div>
+  );
 }
 
 function StructuredResponseView({ message }: { message: AssistantMessage }) {
@@ -557,24 +634,12 @@ function FilesView({ files }: { files: AiGeneratedFile[] }) {
   );
 }
 
-function LoadingBox() {
-  return <div role="status" style={emptyStyle}><Loader2 size={18} color="var(--primary)" style={{ animation: 'spin 1s linear infinite' }} /> Consultando dados e gerando resposta segura...</div>;
-}
-
 function EmptyBox() {
   return <div style={emptyStyle}><Bot size={18} color="var(--primary)" /> {MANAGER_ASSISTANT_EMPTY_STATE}</div>;
 }
 
 function EmptyInline({ icon: Icon, text }: { icon: ElementType; text: string }) {
   return <div style={emptyStyle}><Icon size={18} color="var(--primary)" /> {text}</div>;
-}
-
-function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button type="button" role="tab" aria-selected={active} onClick={onClick} style={{ ...chipStyle, background: active ? 'var(--mint)' : '#fff', borderColor: active ? '#b7ebcc' : 'var(--gray-200)', color: active ? 'var(--dark)' : 'var(--gray-700)' }}>
-      {label}
-    </button>
-  );
 }
 
 function FieldDate({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
@@ -586,9 +651,9 @@ function FieldDate({ id, label, value, onChange }: { id: string; label: string; 
   );
 }
 
-function InfoCard({ icon: Icon, title, text }: { icon: ElementType; title: string; text: string }) {
+function InfoCard({ icon: Icon, title, text, compact = false }: { icon: ElementType; title: string; text: string; compact?: boolean }) {
   return (
-    <div style={panelStyle}>
+    <div style={compact ? { background: 'var(--gray-50)', borderRadius: 8, border: '1px solid var(--gray-100)', padding: 12 } : panelStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <Icon size={16} color="var(--primary)" />
         <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--gray-800)' }}>{title}</h3>
@@ -673,12 +738,6 @@ const secondaryButtonStyle = {
   cursor: 'pointer',
 } satisfies CSSProperties;
 
-const smallButtonStyle = {
-  ...secondaryButtonStyle,
-  padding: '6px 9px',
-  fontSize: 12,
-} satisfies CSSProperties;
-
 const chipStyle = {
   borderRadius: 999,
   border: '1px solid var(--gray-200)',
@@ -689,6 +748,52 @@ const chipStyle = {
   alignItems: 'center',
   gap: 6,
   cursor: 'pointer',
+} satisfies CSSProperties;
+
+const iconButtonStyle = {
+  width: 52,
+  height: 52,
+  borderRadius: 8,
+  border: '1px solid var(--gray-200)',
+  background: '#fff',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+} satisfies CSSProperties;
+
+const userBubbleStyle = {
+  maxWidth: 'min(720px, 82%)',
+  borderRadius: '16px 16px 4px 16px',
+  padding: '12px 14px',
+  background: 'var(--primary)',
+  color: '#fff',
+  fontSize: 13,
+  lineHeight: 1.55,
+  fontWeight: 600,
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+} satisfies CSSProperties;
+
+const assistantBubbleStyle = {
+  width: 'min(860px, 94%)',
+  borderRadius: '16px 16px 16px 4px',
+  border: '1px solid var(--gray-100)',
+  background: '#fff',
+  padding: 14,
+  color: 'var(--gray-700)',
+  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+} satisfies CSSProperties;
+
+const assistantAvatarStyle = {
+  width: 28,
+  height: 28,
+  borderRadius: 999,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: 'var(--mint)',
+  color: 'var(--primary)',
 } satisfies CSSProperties;
 
 const alertStyle = {
