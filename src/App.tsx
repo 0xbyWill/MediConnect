@@ -218,7 +218,7 @@ export default function App() {
               reportsApi.listForPatient(patientId).catch(err => { capture(`laudos ${patientId}`, err); return [] as ApiReport[]; })
             )).then(groups => mergeById(...groups)),
           ]).then(groups => mergeById(...groups)),
-          doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return [] as ApiDoctor[]; }),
+          doctorsApi.listForScheduling().catch(err => { capture('médicos para agendamento', err); return [] as ApiDoctor[]; }),
         ]) : [[] as ApiAppointment[], [] as ApiReport[], [] as ApiDoctor[]];
         setPacientes(ownPatients.map(apiPatientToPaciente));
         setAgendamentos(toVisibleAgendamentos(apiAgendamentos));
