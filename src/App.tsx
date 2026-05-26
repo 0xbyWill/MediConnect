@@ -40,8 +40,19 @@ import AssistenteIA  from './pages/AssistenteIA';
 const onlyActiveAppointments = (appointments: ApiAppointment[]) =>
   appointments.filter(appointment => appointment.status !== 'cancelled');
 
+function isElapsedAgendamento(appointment: Agendamento) {
+  if (appointment.status === 'cancelado') return false;
+  const todayISO = dateToISO(new Date());
+  const nowTime = timeToHHMM(new Date());
+  return appointment.data < todayISO || (appointment.data === todayISO && appointment.hora <= nowTime);
+}
+
+function withElapsedStatus(appointment: Agendamento): Agendamento {
+  return isElapsedAgendamento(appointment) ? { ...appointment, status: 'realizado' } : appointment;
+}
+
 const toVisibleAgendamentos = (appointments: ApiAppointment[]) =>
-  onlyActiveAppointments(appointments).map(apiAppointmentToAgendamento);
+  onlyActiveAppointments(appointments).map(apiAppointmentToAgendamento).map(withElapsedStatus);
 
 function isPermissionError(err: unknown) {
   const message = err instanceof Error ? err.message.toLowerCase() : '';
@@ -235,7 +246,7 @@ export default function App() {
           doctorsApi.list({ active: true }).catch(err => { capture('médicos', err); return []; }),
         ]);
         setPacientes(withCreatedPatients(apiPacientes).map(apiPatientToPaciente));
-        setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento));
+        setAgendamentos(apiAgendamentos.map(apiAppointmentToAgendamento).map(withElapsedStatus));
         setLaudos(apiLaudos.map(apiReportToLaudo));
         setDoctors(apiDoctors);
       }
@@ -360,6 +371,10 @@ export default function App() {
 
   const updateAgendamento = useCallback(async (a: Agendamento) => {
     if (!user) return;
+    const current = agendamentos.find(item => item.id === a.id);
+    if (current && isElapsedAgendamento(current)) {
+      throw new Error('Consultas com horário já passado ficam como atendidas e não podem ser alteradas.');
+    }
     const medicoId = a.medicoId || (user.role === 'medico' ? user.doctor_id : undefined);
     if (!medicoId) {
       setApiError('Selecione um médico para atualizar o agendamento.');
@@ -370,10 +385,14 @@ export default function App() {
       agendamentoToApiAppointment({ ...a, medicoId }, user.id)
     );
     await refresh();
-  }, [refresh, user]);
+  }, [agendamentos, refresh, user]);
 
   const deleteAgendamento = useCallback(async (id: string) => {
     try {
+      const current = agendamentos.find(item => item.id === id);
+      if (current && isElapsedAgendamento(current)) {
+        throw new Error('Consultas com horário já passado ficam como atendidas e não podem ser canceladas ou excluídas.');
+      }
       if (user?.role === 'secretaria' || user?.role === 'paciente') {
         await appointmentsApi.cancel(id);
       } else {
@@ -390,7 +409,7 @@ export default function App() {
       setApiError(msg);
       throw new Error(msg);
     }
-  }, [refresh, user?.role]);
+  }, [agendamentos, refresh, user?.role]);
 
   // ─── CRUD Laudos ──────────────────────────────────────────────────────────
   const addLaudo = useCallback(async (l: Omit<Laudo, 'id'>) => {
@@ -449,7 +468,8 @@ export default function App() {
   }
 
   const allowedPages = ROLE_PAGES[user.role];
-  const currentPage  = allowedPages.includes(page) ? page : allowedPages[0];
+  const isPageAllowed = allowedPages.includes(page) && (page !== 'fila-prioridade' || user.role === 'gestao');
+  const currentPage  = isPageAllowed ? page : allowedPages[0];
   const notificationSeed = (() => {
     const today = new Date();
     const todayISO = dateToISO(today);
