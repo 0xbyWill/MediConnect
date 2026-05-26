@@ -4,6 +4,7 @@ export type PageType =
   | 'dashboard'
   | 'pacientes'
   | 'agenda'
+  | 'fila-prioridade'
   | 'registro'
   | 'laudos'
   | 'comunicacao'
@@ -16,7 +17,7 @@ export type PageType =
 
 export const ROLE_PAGES: Record<UserRole, PageType[]> = {
   medico: ['dashboard', 'pacientes', 'laudos', 'agenda', 'relatorios'],
-  gestao: ['dashboard', 'pacientes', 'laudos', 'agenda', 'comunicacao', 'mensagens', 'relatorios', 'usuarios', 'metricas', 'ia', 'configuracoes'],
+  gestao: ['dashboard', 'pacientes', 'laudos', 'agenda', 'fila-prioridade', 'comunicacao', 'mensagens', 'relatorios', 'usuarios', 'metricas', 'ia', 'configuracoes'],
   secretaria: ['dashboard', 'agenda', 'pacientes', 'comunicacao', 'mensagens'],
   paciente: ['dashboard', 'registro', 'agenda', 'laudos', 'mensagens'],
 };

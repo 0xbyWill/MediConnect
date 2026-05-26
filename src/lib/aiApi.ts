@@ -1,5 +1,5 @@
 import { request } from './httpClient';
-import type { ManagerSearchAssistantRequest, ManagerSearchAssistantResponse } from '../types';
+import type { ManagerSearchAssistantRequest, ManagerSearchAssistantResponse, QueueCandidate } from '../types';
 
 export type AiTone = 'professional' | 'friendly' | 'simple';
 export type AiMessageType = 'welcome' | 'warning' | 'support_initial' | 'payment_reminder' | 'custom';
@@ -520,6 +520,9 @@ export const managerSearchAssistantApi = {
       'Não execute, prometa ou confirme criação, edição, exclusão, cancelamento, envio de mensagem ou ação financeira.',
       'Não faça diagnóstico, prescrição, orientação médica ou interpretação clínica de laudos.',
       'Para mensagens, gere apenas rascunhos para revisao humana.',
+      'Sempre que possivel, responda em JSON valido com as chaves summary, indicators, insights, risks, recommendations, observations, charts e files.',
+      'charts deve conter especificacoes simples com id, title, type, data, xKey/yKey ou categoryKey/valueKey. Nao inclua dados sensiveis.',
+      'Se nao conseguir estruturar, responda texto claro e organizado.',
     ].join('\n');
 
     const userText = [
@@ -541,6 +544,51 @@ export const managerSearchAssistantApi = {
       answer: answer || 'Não foi possível gerar uma resposta com os dados fornecidos.',
       warnings: [],
       source: data.context?.fonteSolicitada as ManagerSearchAssistantResponse['source'],
+    };
+  },
+};
+
+export const queueAiApi = {
+  suggestOrder: async (data: { specialty: string; slotDate: string; slotTime: string; candidates: QueueCandidate[] }) => {
+    const sanitized = data.candidates.slice(0, 20).map(candidate => ({
+      patient_id: candidate.patientId,
+      specialty: candidate.specialty,
+      priority_level: candidate.priorityLevel,
+      priority_value: candidate.priorityValue,
+      waiting_days: candidate.waitingDays,
+      original_date: candidate.originalDate,
+      original_time: candidate.originalTime,
+      age: candidate.age ?? null,
+      refusal_count: candidate.refusalCount,
+      can_receive_sms: candidate.canReceiveSms,
+    }));
+
+    const system = [
+      'Voce e um assistente operacional de fila de antecipacao de consultas.',
+      'Ordene apenas os patient_id fornecidos para contato administrativo.',
+      'Nunca invente pacientes, datas ou especialidades.',
+      'Nunca misture especialidades; se houver especialidade divergente, ignore o item.',
+      'A decisao final e humana. Responda somente JSON valido no formato {"ordered_patient_ids":["..."],"warnings":[]}.',
+    ].join('\n');
+
+    const userText = [
+      `Especialidade da vaga: ${data.specialty}`,
+      `Vaga: ${data.slotDate} ${data.slotTime}`,
+      'Candidatos sanitizados sem nome, CPF, telefone, email ou dados clinicos livres:',
+      JSON.stringify(sanitized),
+      'Critérios: maior priority_value, maior waiting_days, original_date mais próxima, idade/prioridade legal, menor refusal_count.',
+    ].join('\n\n');
+
+    const answer = await chatComplete([
+      { role: 'system', content: system },
+      { role: 'user', content: userText },
+    ], { maxTokens: 500, temperature: 0.1 });
+
+    const match = answer.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match?.[0] ?? answer) as { ordered_patient_ids?: unknown; warnings?: unknown };
+    return {
+      orderedPatientIds: Array.isArray(parsed.ordered_patient_ids) ? parsed.ordered_patient_ids.map(String) : [],
+      warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map(String) : [],
     };
   },
 };

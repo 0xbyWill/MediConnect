@@ -26,6 +26,7 @@ import PatientChatbot from './components/PatientChatbot';
 import Dashboard     from './pages/Dashboard';
 import Pacientes     from './pages/Pacientes';
 import Agenda        from './pages/Agenda';
+import FilaPrioridade from './pages/FilaPrioridade';
 import Registro      from './pages/Registro';
 import Laudos        from './pages/Laudos';
 import Configuracoes from './pages/Configuracoes';
@@ -553,6 +554,14 @@ export default function App() {
               agendamentos={agendamentos} pacientes={pacientes} doctors={doctors}
               onAdd={addAgendamento} onUpdate={updateAgendamento}
               onDelete={deleteAgendamento} initialOpen={openAgendaModal} initialPatientId={agendaPatientId}
+            />
+          )}
+          {currentPage === 'fila-prioridade' && user.role === 'gestao' && allowedPages.includes('fila-prioridade') && (
+            <FilaPrioridade
+              pacientes={pacientes}
+              agendamentos={agendamentos}
+              doctors={doctors}
+              onUpdateAppointment={updateAgendamento}
             />
           )}
           {currentPage === 'registro' && user.role === 'paciente' && allowedPages.includes('registro') && (
