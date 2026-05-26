@@ -52,13 +52,30 @@ export interface ChatbotSupportRequest {
   status: 'open';
 }
 
-export interface SendSmsRequest {
-  patient_id: string;
+export interface SmsPayload {
   phone_number: string;
   message: string;
 }
 
+export interface SendSmsRequest extends SmsPayload {
+  patient_id?: string;
+}
+
 export interface SendSmsResponse {
+  success: boolean;
+  message?: string;
+  provider_message_id?: string;
+  sid?: string;
+  error?: string;
+}
+
+export interface SendWhatsappRequest {
+  phone_number: string;
+  message: string;
+  fallback_sms?: boolean;
+}
+
+export interface SendWhatsappResponse {
   success: boolean;
   message?: string;
   provider_message_id?: string;
@@ -88,6 +105,7 @@ export type ManagerSearchAssistantSource =
 export interface ManagerSearchAssistantRequest {
   action: ManagerSearchAssistantAction;
   prompt: string;
+  behaviorInstructions?: string;
   period?: {
     startDate: string;
     endDate: string;
@@ -433,6 +451,10 @@ export interface QueueAdvanceOffer {
   slotId: string;
   candidatePatientId: string;
   appointmentId: string;
+  slotDoctorId?: string;
+  slotDate?: string;
+  slotTime?: string;
+  slotSpecialty?: string;
   status: QueueOfferStatus;
   sentAt: string;
   respondedAt?: string;

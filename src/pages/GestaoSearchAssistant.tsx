@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ElementType, FormEvent } from 'react';
 import {
   BarChart3,
@@ -13,6 +13,9 @@ import {
   PieChart,
   Search,
   Sparkles,
+  RotateCcw,
+  Wrench,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { appointmentsApi, doctorsApi, patientsApi, reportsApi } from '../lib/api';
@@ -61,6 +64,24 @@ type ReadOnlyData = {
   reports: ApiReport[];
 };
 
+type AiToneSetting = 'objetivo' | 'acolhedor' | 'tecnico';
+type AiLengthSetting = 'curta' | 'media' | 'detalhada';
+
+type AiBehaviorSettings = {
+  tone: AiToneSetting;
+  responseLength: AiLengthSetting;
+  allowProactiveInsights: boolean;
+  customInstructions: string;
+};
+
+const AI_BEHAVIOR_STORAGE_KEY = 'mediconnect.managerAi.behavior.v1';
+const DEFAULT_AI_BEHAVIOR_SETTINGS: AiBehaviorSettings = {
+  tone: 'objetivo',
+  responseLength: 'curta',
+  allowProactiveInsights: false,
+  customInstructions: '',
+};
+
 const today = new Date();
 const todayISO = toISO(today);
 const monthStartISO = toISO(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -79,11 +100,17 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
   const [lastSummary, setLastSummary] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [behaviorSettings, setBehaviorSettings] = useState<AiBehaviorSettings>(() => loadAiBehaviorSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const activePrompt = prompt.trim();
   const currentMessage = messages[messages.length - 1];
   const periodLabel = useMemo(() => formatAssistantPeriod(startDate, endDate), [startDate, endDate]);
   const speechSupported = typeof window !== 'undefined' && supportsSpeechRecognition();
+
+  useEffect(() => {
+    saveAiBehaviorSettings(behaviorSettings);
+  }, [behaviorSettings]);
 
   const applyQuickAction = (nextAction: ManagerSearchAssistantAction) => {
     const selected = MANAGER_ASSISTANT_QUICK_ACTIONS.find(item => item.action === nextAction);
@@ -145,23 +172,26 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
     try {
       const data = await loadReadOnlyData(source);
       const built = buildAssistantContext(action, data, { startDate, endDate }, source);
-      const localCharts = buildLocalCharts(data, source);
+      const wantsCharts = shouldIncludeCharts(submittedPrompt);
+      const wantsFiles = shouldIncludeFiles(submittedPrompt);
+      const localCharts = wantsCharts ? buildLocalCharts(data, source) : [];
       setLastSummary(built.dataSummary);
 
       const response = await managerSearchAssistantApi.ask({
         action,
         prompt: submittedPrompt,
+        behaviorInstructions: buildBehaviorInstructions(behaviorSettings),
         period: { startDate, endDate },
         context: built.context,
       });
 
       const structured = parseAiStructuredResponse(response.answer);
-      const charts = normalizeAiChartData([...(structured.charts ?? []), ...localCharts]);
-      const files = buildGeneratedFiles({
+      const charts = wantsCharts ? normalizeAiChartData([...(structured.charts ?? []), ...localCharts]) : [];
+      const files = wantsFiles ? buildGeneratedFiles({
         response: structured,
         fallbackName: action,
         charts,
-      });
+      }) : [];
 
       setMessages(prev => [
         ...prev,
@@ -227,6 +257,10 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
     setLastSummary(null);
     setError(null);
     setPrompt('');
+  };
+
+  const resetBehaviorSettings = () => {
+    setBehaviorSettings(DEFAULT_AI_BEHAVIOR_SETTINGS);
   };
 
   const copyAnswer = async () => {
@@ -318,9 +352,14 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
               <h2 style={{ ...sectionTitleStyle, marginBottom: 2 }}>Conversa gerencial</h2>
               <p style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>Período: {periodLabel} · Somente leitura</p>
             </div>
-            <button type="button" onClick={copyAnswer} disabled={!currentMessage} style={{ ...secondaryButtonStyle, opacity: currentMessage ? 1 : 0.6 }}>
-              <Clipboard size={15} /> Copiar última
-            </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setSettingsOpen(true)} aria-label="Configurar comportamento da IA" title="Configurar comportamento da IA" style={iconSmallButtonStyle}>
+                <Wrench size={17} />
+              </button>
+              <button type="button" onClick={copyAnswer} disabled={!currentMessage} style={{ ...secondaryButtonStyle, opacity: currentMessage ? 1 : 0.6 }}>
+                <Clipboard size={15} /> Copiar última
+              </button>
+            </div>
           </div>
 
           <div style={{ overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16, background: 'linear-gradient(180deg, #ffffff 0%, var(--gray-50) 100%)' }}>
@@ -369,6 +408,15 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
         </section>
       </div>
 
+      {settingsOpen && (
+        <AiBehaviorSettingsModal
+          settings={behaviorSettings}
+          onChange={setBehaviorSettings}
+          onClose={() => setSettingsOpen(false)}
+          onReset={resetBehaviorSettings}
+        />
+      )}
+
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @media (max-width: 920px) {
@@ -380,6 +428,97 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
           .ai-composer-row { grid-template-columns: 1fr !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function AiBehaviorSettingsModal({
+  settings,
+  onChange,
+  onClose,
+  onReset,
+}: {
+  settings: AiBehaviorSettings;
+  onChange: (settings: AiBehaviorSettings) => void;
+  onClose: () => void;
+  onReset: () => void;
+}) {
+  const setField = <K extends keyof AiBehaviorSettings>(field: K, value: AiBehaviorSettings[K]) => {
+    onChange({ ...settings, [field]: value });
+  };
+
+  return (
+    <div style={modalOverlayStyle} role="presentation" onMouseDown={onClose}>
+      <section role="dialog" aria-modal="true" aria-labelledby="ai-behavior-title" style={modalStyle} onMouseDown={event => event.stopPropagation()}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <span style={assistantAvatarStyle}><Wrench size={15} /></span>
+            <div>
+              <h2 id="ai-behavior-title" style={{ ...sectionTitleStyle, marginBottom: 2 }}>Comportamento da IA</h2>
+              <p style={{ fontSize: 12, color: 'var(--gray-500)', margin: 0 }}>As preferencias ficam salvas neste navegador.</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fechar configuracoes" style={iconSmallButtonStyle}>
+            <X size={17} />
+          </button>
+        </header>
+
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div>
+            <label htmlFor="ai-tone-setting" style={labelStyle}>Tom de resposta</label>
+            <select id="ai-tone-setting" value={settings.tone} onChange={event => setField('tone', event.target.value as AiToneSetting)} style={inputStyle}>
+              <option value="objetivo">Objetivo e direto</option>
+              <option value="acolhedor">Acolhedor</option>
+              <option value="tecnico">Tecnico</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="ai-length-setting" style={labelStyle}>Tamanho padrao</label>
+            <select id="ai-length-setting" value={settings.responseLength} onChange={event => setField('responseLength', event.target.value as AiLengthSetting)} style={inputStyle}>
+              <option value="curta">Curta</option>
+              <option value="media">Media</option>
+              <option value="detalhada">Detalhada</option>
+            </select>
+          </div>
+
+          <label htmlFor="ai-proactive-setting" style={toggleRowStyle}>
+            <input
+              id="ai-proactive-setting"
+              type="checkbox"
+              checked={settings.allowProactiveInsights}
+              onChange={event => setField('allowProactiveInsights', event.target.checked)}
+            />
+            <span>
+              <strong style={{ display: 'block', color: 'var(--gray-800)', fontSize: 13 }}>Permitir sugestoes extras quando fizer sentido</strong>
+              <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>Mantem graficos e arquivos somente quando forem pedidos.</span>
+            </span>
+          </label>
+
+          <div>
+            <label htmlFor="ai-custom-instructions" style={labelStyle}>Instrucao personalizada</label>
+            <textarea
+              id="ai-custom-instructions"
+              value={settings.customInstructions}
+              onChange={event => setField('customInstructions', event.target.value.slice(0, 900))}
+              maxLength={900}
+              rows={5}
+              placeholder="Ex.: responder sempre em bullets curtos; evitar termos tecnicos; priorizar acoes administrativas..."
+              style={{ ...inputStyle, resize: 'vertical', minHeight: 110, fontFamily: 'Montserrat, sans-serif', lineHeight: 1.5 }}
+            />
+            <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>{settings.customInstructions.length}/900</p>
+          </div>
+        </div>
+
+        <footer style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+          <button type="button" onClick={onReset} style={secondaryButtonStyle}>
+            <RotateCcw size={15} /> Restaurar padrao
+          </button>
+          <button type="button" onClick={onClose} style={primaryButtonStyle}>
+            Salvar
+          </button>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -508,6 +647,20 @@ function AssistantLoadingBubble() {
 
 function StructuredResponseView({ message }: { message: AssistantMessage }) {
   const { structured } = message;
+  const hasLists = Boolean(
+    structured.indicators?.length ||
+    structured.insights?.length ||
+    structured.risks?.length ||
+    structured.recommendations?.length ||
+    structured.observations?.length ||
+    message.response.warnings?.length
+  );
+  const showSummaryCard = shouldIncludeSummary(message.prompt) || hasLists;
+
+  if (!showSummaryCard) {
+    return <p style={{ ...bodyTextStyle, margin: 0, whiteSpace: 'pre-wrap' }}>{structured.summary}</p>;
+  }
+
   return (
     <article style={{ display: 'grid', gap: 12 }}>
       <div style={{ border: '1px solid var(--gray-100)', borderRadius: 10, padding: 14, background: 'var(--gray-50)' }}>
@@ -522,6 +675,18 @@ function StructuredResponseView({ message }: { message: AssistantMessage }) {
       {message.response.warnings?.length ? <ListBlock title="Avisos" items={message.response.warnings} tone="warning" /> : null}
     </article>
   );
+}
+
+function shouldIncludeSummary(prompt: string) {
+  return /\b(resumo|resuma|sumario|sumario|relatorio|relatório|analise|análise|indicador|indicadores|dashboard)\b/i.test(prompt);
+}
+
+function shouldIncludeCharts(prompt: string) {
+  return /\b(grafico|grafico?s|gráfico|gráficos|chart|charts|dashboard|visualizacao|visualização)\b/i.test(prompt);
+}
+
+function shouldIncludeFiles(prompt: string) {
+  return /\b(arquivo|arquivos|export|exportar|download|baixar|csv|json|txt|planilha)\b/i.test(prompt);
 }
 
 function ListBlock({ title, items, tone }: { title: string; items?: string[]; tone?: 'warning' }) {
@@ -667,6 +832,61 @@ function toISO(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function loadAiBehaviorSettings(): AiBehaviorSettings {
+  if (typeof window === 'undefined') return DEFAULT_AI_BEHAVIOR_SETTINGS;
+  try {
+    const raw = window.localStorage.getItem(AI_BEHAVIOR_STORAGE_KEY);
+    if (!raw) return DEFAULT_AI_BEHAVIOR_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<AiBehaviorSettings>;
+    return normalizeAiBehaviorSettings(parsed);
+  } catch {
+    return DEFAULT_AI_BEHAVIOR_SETTINGS;
+  }
+}
+
+function saveAiBehaviorSettings(settings: AiBehaviorSettings) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(AI_BEHAVIOR_STORAGE_KEY, JSON.stringify(settings));
+}
+
+function normalizeAiBehaviorSettings(value: Partial<AiBehaviorSettings>): AiBehaviorSettings {
+  return {
+    tone: isToneSetting(value.tone) ? value.tone : DEFAULT_AI_BEHAVIOR_SETTINGS.tone,
+    responseLength: isLengthSetting(value.responseLength) ? value.responseLength : DEFAULT_AI_BEHAVIOR_SETTINGS.responseLength,
+    allowProactiveInsights: Boolean(value.allowProactiveInsights),
+    customInstructions: typeof value.customInstructions === 'string' ? value.customInstructions.slice(0, 900) : '',
+  };
+}
+
+function isToneSetting(value: unknown): value is AiToneSetting {
+  return value === 'objetivo' || value === 'acolhedor' || value === 'tecnico';
+}
+
+function isLengthSetting(value: unknown): value is AiLengthSetting {
+  return value === 'curta' || value === 'media' || value === 'detalhada';
+}
+
+function buildBehaviorInstructions(settings: AiBehaviorSettings) {
+  const tone: Record<AiToneSetting, string> = {
+    objetivo: 'Tom objetivo, direto e administrativo.',
+    acolhedor: 'Tom acolhedor, claro e profissional.',
+    tecnico: 'Tom tecnico, preciso e profissional.',
+  };
+  const responseLength: Record<AiLengthSetting, string> = {
+    curta: 'Respostas curtas por padrao, com no maximo 4 frases ou bullets, salvo pedido contrario.',
+    media: 'Respostas medias por padrao, com contexto suficiente e sem alongar desnecessariamente.',
+    detalhada: 'Respostas detalhadas quando a pergunta exigir, mantendo objetividade.',
+  };
+  return [
+    tone[settings.tone],
+    responseLength[settings.responseLength],
+    settings.allowProactiveInsights
+      ? 'Pode incluir sugestoes, alertas ou proximos passos quando forem claramente uteis, mas nao inclua graficos ou arquivos sem pedido explicito.'
+      : 'Nao inclua sugestoes, recomendacoes, alertas ou proximos passos extras sem pedido explicito.',
+    settings.customInstructions.trim() ? `Instrucao adicional do gestor: ${settings.customInstructions.trim()}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 const panelStyle = {
   background: '#fff',
   borderRadius: 8,
@@ -759,6 +979,52 @@ const iconButtonStyle = {
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
+  cursor: 'pointer',
+} satisfies CSSProperties;
+
+const iconSmallButtonStyle = {
+  width: 38,
+  height: 38,
+  borderRadius: 8,
+  border: '1px solid var(--gray-200)',
+  background: '#fff',
+  color: 'var(--gray-700)',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+} satisfies CSSProperties;
+
+const modalOverlayStyle = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 50,
+  background: 'rgba(15, 23, 42, 0.42)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 16,
+} satisfies CSSProperties;
+
+const modalStyle = {
+  width: 'min(560px, 100%)',
+  maxHeight: 'calc(100dvh - 32px)',
+  overflowY: 'auto',
+  background: '#fff',
+  borderRadius: 8,
+  border: '1px solid var(--gray-100)',
+  boxShadow: '0 24px 60px rgba(15, 23, 42, 0.18)',
+  padding: 18,
+} satisfies CSSProperties;
+
+const toggleRowStyle = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 10,
+  border: '1px solid var(--gray-100)',
+  borderRadius: 8,
+  padding: 12,
+  background: 'var(--gray-50)',
   cursor: 'pointer',
 } satisfies CSSProperties;
 

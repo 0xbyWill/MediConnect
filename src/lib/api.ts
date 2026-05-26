@@ -1,6 +1,13 @@
 // â”€â”€â”€ ConfiguraÃ§Ã£o Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import { request } from './httpClient';
-import type { ChatbotSupportRequest, SendSmsRequest, SendSmsResponse as AppSendSmsResponse } from '../types';
+import type {
+  ChatbotSupportRequest,
+  SendSmsRequest,
+  SendWhatsappRequest,
+  SendWhatsappResponse,
+  SmsPayload,
+  SendSmsResponse as AppSendSmsResponse,
+} from '../types';
 
 // â”€â”€â”€ Tipos da API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ApiUser {
@@ -410,6 +417,13 @@ export interface PatientSupportRequestResponse extends ChatbotSupportRequest {
   updated_at?: string;
 }
 
+function toSmsFunctionPayload(data: SmsPayload): SmsPayload {
+  return {
+    phone_number: data.phone_number,
+    message: data.message,
+  };
+}
+
 export interface ApiPatient {
   id: string;
   full_name: string;
@@ -472,6 +486,12 @@ export interface CreateMyAppointmentPayload {
   p_scheduled_at: string;
   p_duration_minutes?: number;
   p_notes?: string;
+}
+
+export interface AcceptAdvanceOfferPayload {
+  p_appointment_id: string;
+  p_doctor_id: string;
+  p_scheduled_at: string;
 }
 
 export interface ApiReport {
@@ -864,6 +884,12 @@ export const appointmentsApi = {
       body: JSON.stringify(data),
     }).then(response => Array.isArray(response) ? expectOne(response, 'agendamento criado') : response),
 
+  acceptAdvanceOfferForCurrentPatient: (data: AcceptAdvanceOfferPayload) =>
+    request<ApiAppointment | ApiAppointment[]>('/rest/v1/rpc/accept_my_advance_offer', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }).then(response => Array.isArray(response) ? expectOne(response, 'antecipacao aceita') : response),
+
   update: (id: string, data: Partial<ApiAppointment>) =>
     request<ApiAppointment[]>(`/rest/v1/appointments?id=eq.${id}`, {
       method: 'PATCH',
@@ -1017,13 +1043,13 @@ export const smsApi = {
   send: (data: SendSmsPayload) =>
     request<SendSmsResponse>('/functions/v1/send-sms', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(toSmsFunctionPayload(data)),
     }),
 
-  sendSms: (data: SendSmsPayload) =>
+  sendSms: (data: SmsPayload) =>
     request<SendSmsResponse>('/functions/v1/send-sms', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(toSmsFunctionPayload(data)),
     }),
 
   logs: (limit = 100) => {
@@ -1034,6 +1060,18 @@ export const smsApi = {
     });
     return request<ApiSmsLog[]>(`/rest/v1/sms_logs?${q.toString()}`);
   },
+};
+
+export const whatsappApi = {
+  sendWhatsapp: (data: SendWhatsappRequest) =>
+    request<SendWhatsappResponse>('/functions/v1/send-whatsapp', {
+      method: 'POST',
+      body: JSON.stringify({
+        phone_number: data.phone_number,
+        message: data.message,
+        fallback_sms: data.fallback_sms ?? false,
+      }),
+    }),
 };
 
 export const supportApi = {

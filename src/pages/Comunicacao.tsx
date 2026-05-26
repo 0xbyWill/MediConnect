@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ElementType, FormEvent } from 'react';
 import {
   Bell,
+  Bot,
   CheckCircle2,
   Clock,
   Copy,
@@ -14,14 +15,17 @@ import {
   User,
   XCircle,
 } from 'lucide-react';
-import type { Paciente } from '../types';
-import { smsApi, type ApiSmsLog } from '../lib/api';
+import type { Agendamento, Paciente } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { smsApi, whatsappApi, type ApiSmsLog } from '../lib/api';
 import { SMS_MESSAGE_MAX_LENGTH, SMS_TEMPLATES } from '../shared/constants/smsTemplates';
+import { dateToISO } from '../shared/utils/date';
 import { formatPhoneBR, isValidEmail, isValidPhoneBRForSms, normalizePhoneBRForSms } from '../shared/utils/validation';
 import { digitsOnly, formatCpf } from '../shared/utils/cpf';
 
 interface ComunicacaoProps {
   pacientes: Paciente[];
+  agendamentos: Agendamento[];
 }
 
 type Canal = 'whatsapp' | 'email' | 'sms';
@@ -42,6 +46,8 @@ interface Mensagem {
 
 const MESSAGE_MAX_LENGTH = SMS_MESSAGE_MAX_LENGTH;
 const STORAGE_KEY = 'mc_communication_history';
+const AUTOMATION_STORAGE_KEY = 'mc_communication_automation_enabled';
+const AUTOMATION_SENT_STORAGE_KEY = 'mc_communication_whatsapp_confirmations_sent';
 
 const CANAL_ICON: Record<Canal, ElementType> = {
   whatsapp: Phone,
@@ -141,7 +147,22 @@ function getProblemMessage(err: unknown) {
   if (msg.includes('503') || lower.includes('service-disabled') || lower.includes('serviço desabilitado') || lower.includes('serviço de sms está temporariamente desabilitado')) {
     return 'O serviço de SMS está temporariamente desabilitado no servidor.';
   }
-  return msg;
+  if (msg.includes('401') || msg.includes('403') || lower.includes('unauthorized') || lower.includes('forbidden')) {
+    return 'Sua sessao nao autorizou o envio. Entre novamente e tente outra vez.';
+  }
+  if (msg.includes('400') || lower.includes('phone') || lower.includes('telefone')) {
+    return 'Nao foi possivel enviar. Confira o telefone e a mensagem.';
+  }
+  return 'Nao foi possivel enviar o SMS agora. Tente novamente em instantes.';
+}
+
+function readSentAutomationKeys(): string[] {
+  try {
+    const raw = localStorage.getItem(AUTOMATION_SENT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) as string[] : [];
+  } catch {
+    return [];
+  }
 }
 
 function formatDateBR(date: string) {
@@ -149,13 +170,11 @@ function formatDateBR(date: string) {
   return date.split('-').reverse().join('/');
 }
 
-function encodeWhatsAppMessage(text: string) {
-  return encodeURIComponent(text).replace(/%20/g, '+');
-}
-
-export default function Comunicacao({ pacientes }: ComunicacaoProps) {
+export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProps) {
+  const { user } = useAuth();
   const [canal, setCanal] = useState<Canal>('sms');
   const [pacienteId, setPacienteId] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [texto, setTexto] = useState('');
   const [search, setSearch] = useState('');
   const [templateDate, setTemplateDate] = useState('');
@@ -163,11 +182,15 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('todos');
   const [historySearch, setHistorySearch] = useState('');
   const [mensagens, setMensagens] = useState<Mensagem[]>(readStoredMessages);
+  const [automaticMessagesEnabled, setAutomaticMessagesEnabled] = useState(
+    () => localStorage.getItem(AUTOMATION_STORAGE_KEY) === 'true'
+  );
+  const [sendingAutomaticMessages, setSendingAutomaticMessages] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [carregandoHistorico, setCarregandoHistorico] = useState(true);
   const [sucesso, setSucesso] = useState('');
   const [erro, setErro] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<{ pacienteId?: string; texto?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ pacienteId?: string; telefone?: string; texto?: string }>({});
 
   const paciente = useMemo(
     () => pacientes.find(p => p.id === pacienteId),
@@ -211,8 +234,26 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     falhas: mensagens.filter(msg => msg.status === 'falhou').length,
   }), [mensagens]);
 
-  const previewDestino = canal === 'email' ? paciente?.email : formatPhoneBR(paciente?.telefone ?? '');
-  const canSend = Boolean(pacienteId && texto.trim() && !enviando);
+  const previewDestino = canal === 'email' ? paciente?.email : formatPhoneBR(telefone);
+  const canAccessCommunication = user?.role === 'gestao' || user?.role === 'secretaria';
+  const canSend = Boolean(canAccessCommunication && pacienteId && texto.trim() && !enviando);
+  const todayIso = dateToISO(new Date());
+
+  const todayAppointments = useMemo(() => (
+    agendamentos
+      .filter(appt => appt.data === todayIso && appt.status !== 'cancelado' && appt.status !== 'realizado')
+      .sort((a, b) => a.hora.localeCompare(b.hora))
+  ), [agendamentos, todayIso]);
+
+  const nextAppointment = useMemo(() => {
+    if (!pacienteId) return null;
+    const now = new Date();
+    return agendamentos
+      .filter(appt => appt.pacienteId === pacienteId && appt.status !== 'cancelado' && appt.status !== 'realizado')
+      .map(appt => ({ appt, when: new Date(`${appt.data}T${appt.hora || '00:00'}:00`) }))
+      .filter(item => !Number.isNaN(item.when.getTime()) && item.when >= now)
+      .sort((a, b) => a.when.getTime() - b.when.getTime())[0]?.appt ?? null;
+  }, [agendamentos, pacienteId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -241,16 +282,38 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(mensagens.slice(0, 100)));
   }, [mensagens]);
 
+  useEffect(() => {
+    localStorage.setItem(AUTOMATION_STORAGE_KEY, String(automaticMessagesEnabled));
+  }, [automaticMessagesEnabled]);
+
+  useEffect(() => {
+    setTelefone(paciente?.telefone ?? '');
+    setFieldErrors(prev => ({ ...prev, telefone: undefined }));
+  }, [paciente]);
+
+  useEffect(() => {
+    if (nextAppointment) {
+      setTemplateDate(nextAppointment.data);
+      setTemplateTime(nextAppointment.hora);
+      return;
+    }
+    setTemplateDate(dateToISO(new Date()));
+    setTemplateTime('');
+  }, [nextAppointment]);
+
   const validate = () => {
     const errors: typeof fieldErrors = {};
     const message = texto.trim();
+    const smsPhone = normalizePhoneBRForSms(telefone);
 
+    if (!user) errors.pacienteId = 'Entre novamente para enviar comunicacoes.';
+    if (!canAccessCommunication) errors.pacienteId = 'Seu perfil nao tem permissao para enviar comunicacoes.';
     if (!pacienteId) errors.pacienteId = 'Selecione um paciente.';
     if (canal === 'email' && paciente?.email && !isValidEmail(paciente.email)) errors.pacienteId = 'Paciente sem e-mail válido.';
     if (canal === 'email' && !paciente?.email) errors.pacienteId = 'Paciente sem e-mail cadastrado.';
-    if ((canal === 'sms' || canal === 'whatsapp') && !paciente?.telefone) errors.pacienteId = 'Paciente sem telefone cadastrado.';
-    if ((canal === 'sms' || canal === 'whatsapp') && paciente?.telefone && !isValidPhoneBRForSms(paciente.telefone)) {
-      errors.pacienteId = 'Paciente sem telefone com DDD válido.';
+    if ((canal === 'sms' || canal === 'whatsapp') && !smsPhone) errors.telefone = 'Informe o telefone com DDD.';
+    if ((canal === 'sms' || canal === 'whatsapp') && smsPhone && !isValidPhoneBRForSms(smsPhone)) {
+      errors.telefone = 'Informe um telefone valido com DDD. Ex.: +5579999999999.';
     }
     if (!message) errors.texto = 'Informe a mensagem.';
     if (message.length > MESSAGE_MAX_LENGTH) errors.texto = `A mensagem deve ter no máximo ${MESSAGE_MAX_LENGTH} caracteres.`;
@@ -298,14 +361,31 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     if (!validate() || !paciente) return;
 
     const message = texto.trim();
-    setEnviando(true);
+    const phoneNumber = normalizePhoneBRForSms(telefone);
+      setEnviando(true);
 
     try {
       if (canal === 'whatsapp') {
-        const phoneNumber = normalizePhoneBRForSms(paciente.telefone);
-        window.open(`https://wa.me/${phoneNumber}?text=${encodeWhatsAppMessage(message)}`, '_blank', 'noopener,noreferrer');
-        addHistory({ pacienteId: paciente.id, canal, destino: phoneNumber, texto: message, status: 'pendente' });
-        setSucesso('WhatsApp aberto com a mensagem pronta para envio.');
+        const response = await whatsappApi.sendWhatsapp({
+          phone_number: phoneNumber,
+          message,
+          fallback_sms: false,
+        });
+
+        if (response.success === false) {
+          throw new Error(response.message || 'A API nao confirmou o envio do WhatsApp.');
+        }
+
+        addHistory({
+          id: response.sid ?? response.provider_message_id,
+          pacienteId: paciente.id,
+          canal,
+          destino: phoneNumber,
+          texto: message,
+          status: 'enviado',
+          sid: response.sid ?? response.provider_message_id,
+        });
+        setSucesso(response.message || 'WhatsApp enviado com sucesso.');
       } else if (canal === 'email') {
         const subject = encodeURIComponent('Comunicado MediConnect');
         const body = encodeURIComponent(message);
@@ -313,9 +393,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
         addHistory({ pacienteId: paciente.id, canal, destino: paciente.email, texto: message, status: 'pendente' });
         setSucesso('Cliente de e-mail aberto com a mensagem pronta.');
       } else {
-        const phoneNumber = normalizePhoneBRForSms(paciente.telefone);
-        const response = await smsApi.send({
-          patient_id: paciente.id,
+        const response = await smsApi.sendSms({
           phone_number: phoneNumber,
           message,
         });
@@ -345,7 +423,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
       addHistory({
         pacienteId: paciente.id,
         canal,
-        destino: canal === 'email' ? paciente.email : normalizePhoneBRForSms(paciente.telefone),
+        destino: canal === 'email' ? paciente.email : phoneNumber,
         texto: message,
         status: 'falhou',
       });
@@ -354,11 +432,127 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
     }
   };
 
+  const handleToggleAutomaticMessages = async () => {
+    setSucesso('');
+    setErro('');
+
+    if (automaticMessagesEnabled) {
+      setAutomaticMessagesEnabled(false);
+      setSucesso('Mensagens automaticas desativadas.');
+      window.setTimeout(() => setSucesso(''), 2500);
+      return;
+    }
+
+    if (!canAccessCommunication || sendingAutomaticMessages) return;
+    const sentKeys = new Set(readSentAutomationKeys());
+    const targets = todayAppointments
+      .map(appt => ({ appt, patient: pacientes.find(p => p.id === appt.pacienteId) }))
+      .filter(item => item.patient && !sentKeys.has(item.appt.id));
+
+    if (targets.length === 0) {
+      setAutomaticMessagesEnabled(true);
+      setSucesso('Mensagens automaticas ativadas. Nenhuma consulta de hoje pendente de confirmacao por WhatsApp.');
+      window.setTimeout(() => setSucesso(''), 3500);
+      return;
+    }
+
+    setSendingAutomaticMessages(true);
+    let sent = 0;
+    let failed = 0;
+
+    for (const { appt, patient } of targets) {
+      if (!patient) continue;
+      const phoneNumber = normalizePhoneBRForSms(patient.telefone);
+      const message = `Ola, ${patient.nome}. Sua consulta no MediConnect esta confirmada para hoje as ${appt.hora}. Responda SIM para confirmar.`;
+
+      if (!phoneNumber || !isValidPhoneBRForSms(phoneNumber)) {
+        failed += 1;
+        addHistory({ pacienteId: patient.id, canal: 'whatsapp', destino: phoneNumber || 'Sem telefone', texto: message, status: 'falhou' });
+        continue;
+      }
+
+      try {
+        const response = await whatsappApi.sendWhatsapp({
+          phone_number: phoneNumber,
+          message,
+          fallback_sms: false,
+        });
+
+        if (response.success === false) {
+          throw new Error(response.message || 'A API nao confirmou o envio do WhatsApp.');
+        }
+
+        sent += 1;
+        sentKeys.add(appt.id);
+        addHistory({
+          id: response.sid ?? response.provider_message_id,
+          pacienteId: patient.id,
+          canal: 'whatsapp',
+          destino: phoneNumber,
+          texto: message,
+          status: 'enviado',
+          sid: response.sid ?? response.provider_message_id,
+        });
+      } catch {
+        failed += 1;
+        addHistory({ pacienteId: patient.id, canal: 'whatsapp', destino: phoneNumber, texto: message, status: 'falhou' });
+      }
+    }
+
+    localStorage.setItem(AUTOMATION_SENT_STORAGE_KEY, JSON.stringify(Array.from(sentKeys)));
+    setAutomaticMessagesEnabled(true);
+    setSendingAutomaticMessages(false);
+
+    if (failed > 0) {
+      setErro(`${sent} confirmacao(oes) enviadas por WhatsApp. ${failed} falharam.`);
+      return;
+    }
+    setSucesso(`${sent} confirmacao(oes) enviadas por WhatsApp para consultas de hoje.`);
+    window.setTimeout(() => setSucesso(''), 3500);
+  };
+
+  if (!canAccessCommunication) {
+    return (
+      <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
+        <div role="alert" style={{ ...cardStyle, color: 'var(--red-600)', fontSize: 13, fontWeight: 700 }}>
+          Seu perfil nao tem permissao para acessar a area de Comunicacao.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Comunicação</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Comunicação</h1>
+            <button
+              type="button"
+              aria-pressed={automaticMessagesEnabled}
+              title={automaticMessagesEnabled ? 'Desativar confirmacoes automaticas por WhatsApp' : 'Ativar confirmacoes automaticas por WhatsApp'}
+              onClick={() => void handleToggleAutomaticMessages()}
+              disabled={sendingAutomaticMessages}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                border: `1px solid ${automaticMessagesEnabled ? 'var(--primary)' : 'var(--gray-200)'}`,
+                background: automaticMessagesEnabled ? 'var(--mint)' : '#fff',
+                color: automaticMessagesEnabled ? 'var(--primary)' : 'var(--gray-600)',
+                borderRadius: 999,
+                padding: '8px 12px',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: sendingAutomaticMessages ? 'not-allowed' : 'pointer',
+                opacity: sendingAutomaticMessages ? 0.75 : 1,
+                boxShadow: automaticMessagesEnabled ? '0 0 0 3px rgba(0, 179, 89, 0.12)' : 'none',
+              }}
+            >
+              <Bot size={16} />
+              {sendingAutomaticMessages ? 'Enviando...' : automaticMessagesEnabled ? 'WPP automatico ativo' : 'WPP automatico off'}
+            </button>
+          </div>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
             Prepare comunicados administrativos por SMS, WhatsApp ou e-mail sem sair do fluxo de pacientes.
           </p>
@@ -421,7 +615,7 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
                 style={{ ...fieldStyle, paddingLeft: 30 }}
               />
             </div>
-            {search.trim() && (
+            {search.trim() && !pacienteId && (
               <div style={{ border: '1px solid var(--gray-200)', borderRadius: 8, marginBottom: 10, maxHeight: 188, overflow: 'auto', background: '#fff' }}>
                 {filteredPacientes.length === 0 && (
                   <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--gray-500)' }}>Nenhum paciente encontrado.</div>
@@ -470,6 +664,28 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
                 <span>{paciente.email || 'Sem e-mail'}</span>
                 <span>{previewDestino ? `Destino: ${previewDestino}` : 'Destino indisponível'}</span>
               </div>
+            </div>
+          )}
+
+          {(canal === 'sms' || canal === 'whatsapp') && (
+            <div style={{ marginBottom: 16 }}>
+              <label htmlFor="communication-phone" style={labelStyle}>Telefone</label>
+              <input
+                id="communication-phone"
+                value={telefone}
+                onChange={e => {
+                  setTelefone(e.target.value);
+                  setFieldErrors(prev => ({ ...prev, telefone: undefined }));
+                }}
+                placeholder="+5579999999999"
+                disabled={enviando}
+                inputMode="tel"
+                autoComplete="tel"
+                aria-invalid={Boolean(fieldErrors.telefone)}
+                aria-describedby={fieldErrors.telefone ? 'communication-phone-error' : undefined}
+                style={fieldStyle}
+              />
+              {fieldErrors.telefone && <div id="communication-phone-error" role="alert" style={{ fontSize: 12, color: 'var(--red-600)', marginTop: 6 }}>{fieldErrors.telefone}</div>}
             </div>
           )}
 
@@ -562,8 +778,8 @@ export default function Comunicacao({ pacientes }: ComunicacaoProps) {
               justifyContent: 'center',
               gap: 8,
             }}>
-              {canal === 'sms' ? <Send size={15} /> : <ExternalLink size={15} />}
-              {enviando ? 'Enviando...' : canal === 'sms' ? 'Enviar SMS' : `Abrir ${CANAL_LABEL[canal]}`}
+              {canal === 'email' ? <ExternalLink size={15} /> : <Send size={15} />}
+              {enviando ? 'Enviando...' : canal === 'sms' ? 'Enviar SMS' : canal === 'whatsapp' ? 'Enviar WhatsApp' : `Abrir ${CANAL_LABEL[canal]}`}
             </button>
           </div>
         </form>

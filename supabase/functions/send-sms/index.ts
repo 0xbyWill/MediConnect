@@ -33,9 +33,15 @@ async function requireSmsSender(supabase: ReturnType<typeof createSupabase>) {
     .select('role,active,disabled')
     .or(`id.eq.${user.id},user_id.eq.${user.id},auth_user_id.eq.${user.id}`)
     .maybeSingle();
+  const { data: userRoleRows } = await supabase
+    .from('user_roles')
+    .select('role')
+    .or(`id.eq.${user.id},user_id.eq.${user.id}`)
+    .limit(1);
 
   const metadataRole = String(user.app_metadata?.role ?? user.user_metadata?.role ?? '').toLowerCase();
-  const role = String(profile?.role ?? metadataRole).toLowerCase();
+  const userRole = String((userRoleRows?.[0] as { role?: unknown } | undefined)?.role ?? '').toLowerCase();
+  const role = String(profile?.role || userRole || metadataRole).toLowerCase();
   const active = profile?.active !== false && profile?.disabled !== true;
 
   if (!active || !['gestao', 'gestor', 'admin', 'secretaria'].includes(role)) {
@@ -57,7 +63,6 @@ function validatePayload(body: SendSmsBody) {
   const phoneNumber = normalizePhoneForSms(String(body.phone_number ?? ''));
   const message = sanitizeText(body.message, MESSAGE_MAX_LENGTH);
 
-  if (!patientId) throw new Error('patient_id obrigatorio.');
   if (!phoneNumber) throw new Error('phone_number obrigatorio.');
   if (!/^\+55\d{10,11}$/.test(phoneNumber)) throw new Error('Telefone invalido para SMS no Brasil.');
   if (!message.trim()) throw new Error('message obrigatoria.');
@@ -84,7 +89,7 @@ async function logSms(
   },
 ) {
   await supabase.from('sms_logs').insert({
-    patient_id: payload.patientId,
+    ...(payload.patientId ? { patient_id: payload.patientId } : {}),
     user_id: payload.userId,
     phone_number: payload.phoneNumber,
     message: payload.message,
@@ -122,7 +127,6 @@ Deno.serve(async req => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        patient_id: parsed.patientId,
         phone_number: parsed.phoneNumber,
         message: parsed.message,
       }),

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BarChart2,
   Calendar,
+  CheckCircle2,
   Clock,
   FileText,
   MessageSquare,
@@ -12,9 +13,10 @@ import {
   UserCog,
   UserPlus,
   Users,
+  XCircle,
 } from 'lucide-react';
 import type { ApiDoctor } from '../lib/api';
-import type { Agendamento, Laudo, Paciente, PageType, UserRole } from '../types';
+import type { Agendamento, Laudo, Paciente, PageType, QueueAdvanceOffer, UserRole } from '../types';
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { dateToISO } from '../shared/utils/date';
@@ -27,6 +29,7 @@ interface DashboardProps {
   onNavigate: (page: PageType) => void;
   onNovoAgendamento: () => void;
   onNovoPaciente: () => void;
+  onUpdateAgendamento?: (agendamento: Agendamento) => Promise<void>;
 }
 
 type KpiItem = {
@@ -61,6 +64,7 @@ type DashboardModel = {
 const DAYS = ['Domingo', 'Segunda-feira', 'Terca-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sabado'];
 const MONTHS = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const PROJECT_MARK_SRC = '/mediconnect-mark.png';
+const ADVANCE_OFFERS_KEY = 'mc_advance_queue_offers';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }> = {
   confirmado: { bg: 'var(--mint)', color: 'var(--dark)', label: 'Confirmada' },
@@ -126,6 +130,20 @@ function ActionButton({ icon: Icon, label, onClick, primary = false }: { icon: R
       {label}
     </button>
   );
+}
+
+function readAdvanceOffers(): QueueAdvanceOffer[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ADVANCE_OFFERS_KEY) || '[]') as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is QueueAdvanceOffer => Boolean(item && typeof item === 'object' && 'id' in item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAdvanceOffers(offers: QueueAdvanceOffer[]) {
+  localStorage.setItem(ADVANCE_OFFERS_KEY, JSON.stringify(offers));
+  window.dispatchEvent(new Event('mc-advance-offers-updated'));
 }
 
 function itemInitials(title: string) {
@@ -312,9 +330,21 @@ function buildDashboardModel(params: {
 
 export default function Dashboard({
   pacientes, agendamentos, laudos, doctors = [],
-  onNavigate, onNovoAgendamento, onNovoPaciente,
+  onNavigate, onNovoAgendamento, onNovoPaciente, onUpdateAgendamento,
 }: DashboardProps) {
   const { user } = useAuth();
+  const [advanceOffers, setAdvanceOffers] = React.useState<QueueAdvanceOffer[]>(readAdvanceOffers);
+  const [offerSavingId, setOfferSavingId] = React.useState('');
+  const [offerError, setOfferError] = React.useState('');
+  React.useEffect(() => {
+    const syncOffers = () => setAdvanceOffers(readAdvanceOffers());
+    window.addEventListener('storage', syncOffers);
+    window.addEventListener('mc-advance-offers-updated', syncOffers);
+    return () => {
+      window.removeEventListener('storage', syncOffers);
+      window.removeEventListener('mc-advance-offers-updated', syncOffers);
+    };
+  }, []);
   const role = user?.role ?? 'secretaria';
   const allowedPages = ROLE_PAGES[role] ?? ROLE_PAGES.secretaria;
   const canNavigate = (page: PageType) => allowedPages.includes(page);
@@ -329,6 +359,62 @@ export default function Dashboard({
   const hora = today.getHours();
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
   const displayName = user?.full_name?.trim() || 'Usuário';
+  const patientIds = React.useMemo(() => Array.from(new Set([
+    user?.patient_id,
+    user?.id,
+    ...pacientes.map(patient => patient.id),
+  ].filter((id): id is string => Boolean(id)))), [pacientes, user?.id, user?.patient_id]);
+  const pendingAdvanceOffers = advanceOffers.filter(offer =>
+    patientIds.includes(offer.candidatePatientId) &&
+    ['pending', 'sent'].includes(offer.status)
+  );
+  const primaryAdvanceOffer = pendingAdvanceOffers[0];
+  const primaryAdvanceAppointment = primaryAdvanceOffer
+    ? agendamentos.find(appointment => appointment.id === primaryAdvanceOffer.appointmentId)
+    : undefined;
+  const primaryAdvanceDoctor = primaryAdvanceOffer?.slotDoctorId
+    ? doctors.find(doctor => doctor.id === primaryAdvanceOffer.slotDoctorId)
+    : undefined;
+
+  const updateStoredOffer = (offerId: string, status: QueueAdvanceOffer['status']) => {
+    setAdvanceOffers(current => {
+      const next = current.map(offer => offer.id === offerId
+        ? { ...offer, status, respondedAt: new Date().toISOString() }
+        : offer);
+      writeAdvanceOffers(next);
+      return next;
+    });
+  };
+
+  const acceptAdvanceOffer = async (offer: QueueAdvanceOffer) => {
+    if (!onUpdateAgendamento) return;
+    const appointment = agendamentos.find(item => item.id === offer.appointmentId);
+    if (!appointment || !offer.slotDoctorId || !offer.slotDate || !offer.slotTime) {
+      setOfferError('Não foi possível localizar todos os dados da vaga.');
+      return;
+    }
+    setOfferSavingId(offer.id);
+    setOfferError('');
+    try {
+      await onUpdateAgendamento({
+        ...appointment,
+        medicoId: offer.slotDoctorId,
+        data: offer.slotDate,
+        hora: offer.slotTime,
+        status: 'confirmado',
+      });
+      updateStoredOffer(offer.id, 'accepted');
+    } catch (err) {
+      setOfferError(err instanceof Error ? err.message : 'Não foi possível aceitar a antecipação.');
+    } finally {
+      setOfferSavingId('');
+    }
+  };
+
+  const declineAdvanceOffer = (offer: QueueAdvanceOffer) => {
+    setOfferError('');
+    updateStoredOffer(offer.id, 'declined');
+  };
 
   const quickActions = [
     canNavigate('agenda') && role !== 'paciente' && role !== 'medico' && { label: 'Novo Agendamento', icon: PlusCircle, onClick: onNovoAgendamento, primary: true },
@@ -444,6 +530,48 @@ export default function Dashboard({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
         {model.kpis.map(item => <KPI key={item.label} {...item} />)}
       </div>
+
+      {role === 'paciente' && primaryAdvanceOffer && (
+        <Panel style={{ marginBottom: 24, borderColor: 'rgba(0,166,63,0.22)', background: '#f8fffb' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Clock size={18} color="var(--primary)" />
+                <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--dark)', margin: 0 }}>Solicitação para adiantar consulta</h2>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6, margin: 0 }}>
+                Surgiu uma vaga para antecipar sua consulta de {primaryAdvanceOffer.slotSpecialty || primaryAdvanceDoctor?.specialty || 'especialidade médica'} para{' '}
+                <strong>{primaryAdvanceOffer.slotDate ? formatDate(primaryAdvanceOffer.slotDate) : '--/--/----'} às {primaryAdvanceOffer.slotTime || '--:--'}</strong>
+                {primaryAdvanceDoctor?.full_name ? ` com ${primaryAdvanceDoctor.full_name}` : ''}.
+              </p>
+              {primaryAdvanceAppointment && (
+                <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>
+                  Consulta original: {formatDate(primaryAdvanceAppointment.data)} às {primaryAdvanceAppointment.hora}.
+                </p>
+              )}
+              {offerError && <div role="alert" style={{ color: 'var(--red-600)', fontSize: 12, fontWeight: 800, marginTop: 8 }}>{offerError}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => void acceptAdvanceOffer(primaryAdvanceOffer)}
+                disabled={offerSavingId === primaryAdvanceOffer.id}
+                style={{ border: 'none', background: 'var(--primary)', color: '#fff', borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: 7, cursor: offerSavingId === primaryAdvanceOffer.id ? 'not-allowed' : 'pointer' }}
+              >
+                <CheckCircle2 size={16} /> Aceitar
+              </button>
+              <button
+                type="button"
+                onClick={() => declineAdvanceOffer(primaryAdvanceOffer)}
+                disabled={offerSavingId === primaryAdvanceOffer.id}
+                style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: 7, cursor: offerSavingId === primaryAdvanceOffer.id ? 'not-allowed' : 'pointer' }}
+              >
+                <XCircle size={16} /> Recusar
+              </button>
+            </div>
+          </div>
+        </Panel>
+      )}
 
       {quickActions.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
