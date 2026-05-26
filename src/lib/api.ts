@@ -699,6 +699,32 @@ export const doctorsApi = {
     return request<ApiDoctor[]>(`/rest/v1/doctors?${q.toString()}`);
   },
 
+  listForScheduling: async (params: { specialty?: string } = {}) => {
+    const body = JSON.stringify({ p_specialty: params.specialty || null });
+    try {
+      return await request<ApiDoctor[]>('/rest/v1/rpc/list_available_doctors_for_patient', {
+        method: 'POST',
+        body,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      const canFallback =
+        msg.includes('404') ||
+        msg.includes('not found') ||
+        msg.includes('function') ||
+        msg.includes('schema cache');
+      if (!canFallback) throw err;
+
+      const q = new URLSearchParams({
+        select: 'id,full_name,crm,crm_uf,specialty,active',
+        active: 'eq.true',
+        order: 'full_name.asc',
+      });
+      if (params.specialty) q.set('specialty', `eq.${params.specialty}`);
+      return request<ApiDoctor[]>(`/rest/v1/doctors?${q.toString()}`);
+    }
+  },
+
   create: (data: CreateDoctorPayload) =>
     request<ApiDoctor | CreateUserResponse>('/functions/v1/create-doctor', {
       method: 'POST',
