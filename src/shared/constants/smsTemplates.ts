@@ -1,10 +1,8 @@
 export type SmsTemplateId =
   | 'appointment_reminder'
-  | 'appointment_tomorrow'
-  | 'report_available'
-  | 'secretary_contact'
   | 'appointment_confirmation'
-  | 'return_request';
+  | 'appointment_advance'
+  | 'general_notice';
 
 export interface SmsTemplate {
   id: SmsTemplateId;
@@ -18,31 +16,21 @@ export const SMS_TEMPLATES: SmsTemplate[] = [
   {
     id: 'appointment_reminder',
     label: 'Lembrete de consulta',
-    message: 'Lembrete: {nome}, você possui consulta agendada em {data} às {hora}. MediConnect.',
-  },
-  {
-    id: 'appointment_tomorrow',
-    label: 'Consulta amanhã',
-    message: 'Lembrete: {nome}, sua consulta está marcada para amanhã às {hora}. Em caso de dúvida, fale com a secretaria.',
-  },
-  {
-    id: 'report_available',
-    label: 'Laudo disponível',
-    message: 'MediConnect: {nome}, há um laudo disponível para consulta no sistema. Não responda este SMS.',
-  },
-  {
-    id: 'secretary_contact',
-    label: 'Contato da secretaria',
-    message: 'MediConnect: {nome}, a secretaria tentou contato. Por favor, retorne quando possível.',
+    message: 'Ola, {nome}. Lembrete: voce possui consulta agendada no MediConnect em {data} as {hora}.',
   },
   {
     id: 'appointment_confirmation',
-    label: 'Confirmação de agendamento',
-    message: 'MediConnect: {nome}, sua consulta foi agendada para {data} às {hora}.',
+    label: 'Confirmacao de consulta',
+    message: 'Ola, {nome}. Sua consulta no MediConnect esta confirmada para {data} as {hora}.',
   },
   {
-    id: 'return_request',
-    label: 'Solicitação de retorno',
-    message: 'MediConnect: {nome}, solicitamos retorno de contato com a secretaria para tratar de assunto administrativo.',
+    id: 'appointment_advance',
+    label: 'Antecipacao de consulta',
+    message: 'Ola, {nome}. Surgiu uma possibilidade de antecipar sua consulta. Responda a clinica para confirmar interesse.',
+  },
+  {
+    id: 'general_notice',
+    label: 'Comunicado geral',
+    message: 'Ola, {nome}. Temos um comunicado importante da clinica. Entre em contato para mais informacoes.',
   },
 ];

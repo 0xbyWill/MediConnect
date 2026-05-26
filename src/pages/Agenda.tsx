@@ -182,12 +182,13 @@ const STATUS_LABEL: Record<Agendamento['status'], { label: string; bg: string; c
 
 export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, initialPatientId, readOnly = false }: AgendaProps) {
   const { user } = useAuth();
+  const isGestao = user?.role === 'gestao';
   const isMedico = user?.role === 'medico';
   const isSecretaria = user?.role === 'secretaria';
   const isPaciente = user?.role === 'paciente' || readOnly;
   const canPatientSchedule = user?.role === 'paciente' && !readOnly;
   const canCreateAgendamento = canPatientSchedule || (!isPaciente && !isMedico);
-  const canCancelAgendamento = canPatientSchedule || isMedico || isSecretaria;
+  const canCancelAgendamento = canPatientSchedule || isGestao || isMedico || isSecretaria;
   const canManageAvailability = !isPaciente && !isSecretaria;
   const today = dateToISO(new Date());
 
@@ -438,6 +439,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     effectiveAppointmentStatus(appt) !== 'realizado' &&
     !isElapsedAppointment(appt) &&
     (
+      isGestao ||
       isSecretaria ||
       (canPatientSchedule && appt.pacienteId === ownPatientId) ||
       (isMedico && Boolean(user?.doctor_id) && appt.medicoId === user?.doctor_id)
@@ -1130,6 +1132,11 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                           {canConfirmAppointment(appt) && (
                             <button type="button" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: confirmingId === appt.id ? 'not-allowed' : 'pointer' }}>
                               {confirmingId === appt.id ? 'Confirmando...' : 'Confirmar'}
+                            </button>
+                          )}
+                          {canCancelAppointment(appt) && (
+                            <button type="button" onClick={() => setConfirmDelete(appt.id)} style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                              Cancelar
                             </button>
                           )}
                           {canCreateAgendamento && isAvailable && !isPast && (

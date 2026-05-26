@@ -74,9 +74,9 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
           appointments: agendamentos,
           doctors,
           refusalCounts,
-        });
+    });
     return base.filter(candidate =>
-      (!selectedSlot || candidate.doctorId === selectedSlot.doctorId) &&
+      (!selectedSlot || isSameSpecialty(candidate.specialty, selectedSlot.specialty)) &&
       (!specialtyFilter || candidate.specialty === specialtyFilter)
     );
   }, [agendamentos, doctors, pacientes, refusalCounts, selectedSlot, specialtyFilter]);
@@ -90,6 +90,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
 
   useEffect(() => {
     localStorage.setItem(OFFERS_KEY, JSON.stringify(offers));
+    window.dispatchEvent(new Event('mc-advance-offers-updated'));
   }, [offers]);
 
   const loadAvailability = async () => {
@@ -199,6 +200,10 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
         slotId: selectedSlot.id,
         candidatePatientId: candidate.patientId,
         appointmentId: candidate.appointmentId,
+        slotDoctorId: selectedSlot.doctorId,
+        slotDate: selectedSlot.date,
+        slotTime: selectedSlot.time,
+        slotSpecialty: selectedSlot.specialty,
         status: 'sent',
         sentAt: new Date().toISOString(),
         smsSid: response.sid,
@@ -210,6 +215,10 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
         slotId: selectedSlot.id,
         candidatePatientId: candidate.patientId,
         appointmentId: candidate.appointmentId,
+        slotDoctorId: selectedSlot.doctorId,
+        slotDate: selectedSlot.date,
+        slotTime: selectedSlot.time,
+        slotSpecialty: selectedSlot.specialty,
         status: 'failed',
         sentAt: new Date().toISOString(),
         error: err instanceof Error ? err.message : 'Falha ao enviar SMS.',
@@ -223,20 +232,21 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
   const markDeclined = (candidate: QueueCandidate) => {
     if (!selectedSlot) return;
     const openOffer = findLatestOffer(offers, selectedSlot.id, candidate.patientId);
-    if (!openOffer) return;
-    setOffers(current => current.map(offer => offer.id === openOffer.id
-      ? { ...offer, status: 'declined', respondedAt: new Date().toISOString() }
-      : offer));
+    setError('');
+    setSuccess('');
+    if (!openOffer) {
+      setOffers(current => [...current, buildLocalOffer(selectedSlot, candidate, 'declined')]);
+    } else {
+      setOffers(current => current.map(offer => offer.id === openOffer.id
+        ? { ...offer, status: 'declined', respondedAt: new Date().toISOString() }
+        : offer));
+    }
     setSuccess('Recusa registrada. A consulta original foi mantida.');
   };
 
   const acceptOffer = async (candidate: QueueCandidate) => {
     if (!selectedSlot) return;
     const openOffer = findLatestOffer(offers, selectedSlot.id, candidate.patientId);
-    if (!openOffer) {
-      setError('Envie a oferta antes de confirmar a antecipação.');
-      return;
-    }
     const appointment = agendamentos.find(appt => appt.id === candidate.appointmentId);
     if (!appointment) {
       setError('Consulta original não encontrada.');
@@ -257,9 +267,13 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
         hora: selectedSlot.time,
         status: 'confirmado',
       });
-      setOffers(current => current.map(offer => offer.id === openOffer.id
-        ? { ...offer, status: 'accepted', respondedAt: new Date().toISOString() }
-        : offer));
+      if (!openOffer) {
+        setOffers(current => [...current, buildLocalOffer(selectedSlot, candidate, 'accepted')]);
+      } else {
+        setOffers(current => current.map(offer => offer.id === openOffer.id
+          ? { ...offer, status: 'accepted', respondedAt: new Date().toISOString() }
+          : offer));
+      }
       setSuccess('Antecipação confirmada e consulta remarcada.');
       await loadAvailability();
     } catch (err) {
@@ -363,13 +377,13 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
                     <span>Recusas: {candidate.refusalCount}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => void sendOffer(candidate)} disabled={!selectedSlot || !candidate.canReceiveSms || sendingId === candidate.patientId || Boolean(offer && ['sent', 'accepted'].includes(offer.status))} style={buttonStyle('#fff', 'var(--primary)', '1px solid rgba(0,166,63,0.28)')}>
+                    <button type="button" onClick={() => void sendOffer(candidate)} disabled={!selectedSlot || sendingId === candidate.patientId || Boolean(offer && ['sent', 'accepted'].includes(offer.status))} style={buttonStyle('#fff', 'var(--primary)', '1px solid rgba(0,166,63,0.28)')}>
                       {sendingId === candidate.patientId ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={14} />} Enviar oferta
                     </button>
-                    <button type="button" onClick={() => void acceptOffer(candidate)} disabled={!offer || offer.status === 'accepted' || applyingId === candidate.patientId} style={buttonStyle('var(--primary)', '#fff', 'none')}>
+                    <button type="button" onClick={() => void acceptOffer(candidate)} disabled={!selectedSlot || offer?.status === 'accepted' || applyingId === candidate.patientId} style={buttonStyle('var(--primary)', '#fff', 'none')}>
                       {applyingId === candidate.patientId ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={14} />} Aceite recebido
                     </button>
-                    <button type="button" onClick={() => markDeclined(candidate)} disabled={!offer || offer.status === 'declined'} style={buttonStyle('#fff', 'var(--red-600)', '1px solid var(--red-100)')}>
+                    <button type="button" onClick={() => markDeclined(candidate)} disabled={!selectedSlot || offer?.status === 'declined' || offer?.status === 'accepted'} style={buttonStyle('#fff', 'var(--red-600)', '1px solid var(--red-100)')}>
                       <XCircle size={14} /> Recusou
                     </button>
                   </div>
@@ -448,6 +462,23 @@ function readOffers(): QueueAdvanceOffer[] {
 
 function findLatestOffer(offers: QueueAdvanceOffer[], slotId: string, patientId: string) {
   return [...offers].reverse().find(offer => offer.slotId === slotId && offer.candidatePatientId === patientId && offer.status !== 'failed');
+}
+
+function buildLocalOffer(slot: QueueAvailableSlot, candidate: QueueCandidate, status: 'accepted' | 'declined'): QueueAdvanceOffer {
+  const now = new Date().toISOString();
+  return {
+    id: `${slot.id}:${candidate.patientId}:manual:${Date.now()}`,
+    slotId: slot.id,
+    candidatePatientId: candidate.patientId,
+    appointmentId: candidate.appointmentId,
+    slotDoctorId: slot.doctorId,
+    slotDate: slot.date,
+    slotTime: slot.time,
+    slotSpecialty: slot.specialty,
+    status,
+    sentAt: now,
+    respondedAt: now,
+  };
 }
 
 function timeToMinutes(value: string) {

@@ -380,6 +380,23 @@ export default function App() {
       setApiError('Selecione um médico para atualizar o agendamento.');
       return;
     }
+    if (user.role === 'paciente') {
+      try {
+        await appointmentsApi.acceptAdvanceOfferForCurrentPatient({
+          p_appointment_id: a.id,
+          p_doctor_id: medicoId,
+          p_scheduled_at: `${a.data}T${a.hora}:00Z`,
+        });
+        await refresh();
+        return;
+      } catch (rpcErr) {
+        const message = rpcErr instanceof Error ? rpcErr.message.toLowerCase() : '';
+        if (message.includes('accept_my_advance_offer') || message.includes('schema cache') || message.includes('404') || message.includes('could not find the function')) {
+          throw new Error('O Supabase ainda não tem a função para o paciente aceitar antecipação. Aplique a migration 202605260002_accept_patient_advance_offer.sql e recarregue a tela.');
+        }
+        throw rpcErr;
+      }
+    }
     await appointmentsApi.update(
       a.id,
       agendamentoToApiAppointment({ ...a, medicoId }, user.id)
@@ -393,7 +410,7 @@ export default function App() {
       if (current && isElapsedAgendamento(current)) {
         throw new Error('Consultas com horário já passado ficam como atendidas e não podem ser canceladas ou excluídas.');
       }
-      if (user?.role === 'secretaria' || user?.role === 'paciente') {
+      if (user?.role === 'gestao' || user?.role === 'secretaria' || user?.role === 'paciente') {
         await appointmentsApi.cancel(id);
       } else {
         await appointmentsApi.delete(id);
@@ -558,6 +575,7 @@ export default function App() {
               onNavigate={handleNavigate}
               onNovoAgendamento={() => { setAgendaPatientId(null); setOpenAgendaModal(true); setPage('agenda'); }}
               onNovoPaciente={() => { setOpenPacienteModal(true); setPage('pacientes'); }}
+              onUpdateAgendamento={updateAgendamento}
             />
           )}
           {currentPage === 'pacientes' && allowedPages.includes('pacientes') && (
@@ -592,7 +610,7 @@ export default function App() {
               onAdd={addLaudo} onUpdate={updateLaudo} onDelete={deleteLaudo} readOnly={user.role === 'paciente'}/>
           )}
           {currentPage === 'comunicacao' && allowedPages.includes('comunicacao') && (
-            <Comunicacao pacientes={pacientes}/>
+            <Comunicacao pacientes={pacientes} agendamentos={agendamentos}/>
           )}
           {currentPage === 'mensagens' && allowedPages.includes('mensagens') && (
             <Mensagens pacientes={pacientes}/>

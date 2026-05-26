@@ -520,20 +520,23 @@ export const managerSearchAssistantApi = {
       'Não execute, prometa ou confirme criação, edição, exclusão, cancelamento, envio de mensagem ou ação financeira.',
       'Não faça diagnóstico, prescrição, orientação médica ou interpretação clínica de laudos.',
       'Para mensagens, gere apenas rascunhos para revisao humana.',
-      'Sempre que possivel, responda em JSON valido com as chaves summary, indicators, insights, risks, recommendations, observations, charts e files.',
+      'Responda somente ao que foi perguntado, sem adicionar resumo, recomendacoes, indicadores, riscos, observacoes, graficos ou arquivos se o gestor nao pedir explicitamente.',
+      'Para perguntas simples, responda em texto curto, direto, com no maximo 4 frases ou bullets.',
+      'Use JSON apenas quando o gestor pedir uma saida estruturada, resumo, relatorio, indicadores, graficos ou arquivos.',
+      'Ao usar JSON, inclua somente as chaves necessarias ao pedido. Use charts e files apenas se forem solicitados explicitamente.',
       'charts deve conter especificacoes simples com id, title, type, data, xKey/yKey ou categoryKey/valueKey. Nao inclua dados sensiveis.',
-      'Se nao conseguir estruturar, responda texto claro e organizado.',
     ].join('\n');
 
     const userText = [
       `Data atual em São Paulo: ${currentDate}`,
       `Ação solicitada: ${data.action}`,
+      data.behaviorInstructions ? `Preferencias de comportamento definidas pelo gestor:\n${data.behaviorInstructions}` : '',
       `Pergunta do gestor: ${data.prompt}`,
       'Periodo:',
       JSON.stringify(data.period ?? {}),
       'Contexto administrativo sanitizado em JSON:',
       JSON.stringify(data.context ?? {}).slice(0, 14000),
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
 
     const answer = await chatComplete([
       { role: 'system', content: system },
