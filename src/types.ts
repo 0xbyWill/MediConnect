@@ -102,6 +102,39 @@ export interface ManagerSearchAssistantResponse {
   source?: ManagerSearchAssistantSource;
 }
 
+export type AiChartType = 'bar' | 'line' | 'pie';
+
+export interface AiChartSpec {
+  id: string;
+  title: string;
+  description?: string;
+  type: AiChartType;
+  data: Array<Record<string, string | number>>;
+  xKey?: string;
+  yKey?: string;
+  categoryKey?: string;
+  valueKey?: string;
+}
+
+export interface AiGeneratedFile {
+  id: string;
+  name: string;
+  type: 'txt' | 'csv' | 'json';
+  content: string;
+}
+
+export interface AiStructuredResponse {
+  summary: string;
+  indicators?: string[];
+  insights?: string[];
+  risks?: string[];
+  recommendations?: string[];
+  observations?: string[];
+  charts?: AiChartSpec[];
+  files?: AiGeneratedFile[];
+  rawText?: string;
+}
+
 export type PatientPriorityLevel = 'P1' | 'P2' | 'P3' | 'P4' | 'P5';
 
 export type PatientMobilityInput =
@@ -355,6 +388,56 @@ export interface Agendamento {
   duracao?: string;
   enviarEmail?: boolean;
   enviarWhatsapp?: boolean;
+}
+
+export type QueueOfferStatus = 'pending' | 'sent' | 'accepted' | 'declined' | 'expired' | 'failed';
+
+export interface QueueAvailableSlot {
+  id: string;
+  doctorId: string;
+  doctorName: string;
+  specialty: string;
+  date: string;
+  time: string;
+  source: 'availability' | 'cancelled';
+  cancelledAppointmentId?: string;
+}
+
+export interface QueueCandidate {
+  patientId: string;
+  patientName: string;
+  appointmentId: string;
+  doctorId: string;
+  doctorName: string;
+  specialty: string;
+  originalDate: string;
+  originalTime: string;
+  priorityLevel: PatientPriorityLevel;
+  priorityValue: number;
+  priorityScore: number;
+  waitingDays: number;
+  age?: number | null;
+  refusalCount: number;
+  canReceiveSms: boolean;
+  reasons: string[];
+}
+
+export interface QueueSuggestion {
+  orderedPatientIds: string[];
+  source: 'gemini' | 'fallback';
+  warnings: string[];
+}
+
+export interface QueueAdvanceOffer {
+  id: string;
+  slotId: string;
+  candidatePatientId: string;
+  appointmentId: string;
+  status: QueueOfferStatus;
+  sentAt: string;
+  respondedAt?: string;
+  smsSid?: string;
+  error?: string;
 }
 
 // ─── Laudo ────────────────────────────────────────────────────────────────────
