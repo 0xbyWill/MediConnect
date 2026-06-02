@@ -10,13 +10,14 @@ import {
   pacienteToApiPatient,
 } from './types';
 import { useAuth } from './contexts/AuthContext';
-import { appointmentsApi, doctorsApi, patientsApi, reportsApi } from './lib/api';
+import { appointmentsApi, doctorsApi, patientsApi, reportsApi, smsApi } from './lib/api';
 import type { ApiAppointment, ApiDoctor, ApiPatient, ApiReport } from './lib/api';
 import LoadingState from './app/LoadingState';
 import { buildRoleNotifications } from './app/notifications';
 import type { NotificationItem } from './app/notifications';
 import { dateToISO, timeToHHMM } from './shared/utils/date';
 import { mergeById } from './shared/utils/collection';
+import { normalizePhoneBRForSms } from './shared/utils/validation';
 
 import Login         from './pages/Login';
 import CadastroPaciente from './pages/CadastroPaciente';
@@ -65,6 +66,10 @@ function isMissingPatientAppointmentRpc(err: unknown) {
     message.includes('create_my_appointment') &&
     (message.includes('schema cache') || message.includes('404') || message.includes('could not find the function'))
   );
+}
+
+function formatDateBR(dateISO: string) {
+  return dateISO.split('-').reverse().join('/');
 }
 
 export default function App() {
@@ -342,6 +347,9 @@ export default function App() {
       setApiError('Seu perfil de paciente não está vinculado a um cadastro de paciente.');
       return;
     }
+
+    const paciente = pacientes.find(item => item.id === pacienteId);
+    const medico = doctors.find(item => item.id === medicoId);
     const payload = agendamentoToApiAppointment({ ...a, pacienteId, medicoId }, user.id);
     try {
       if (user.role === 'paciente') {
@@ -366,8 +374,39 @@ export default function App() {
       }
       throw err;
     }
+
+    // Envio de SMS sem bloquear o fluxo de agendamento.
+    const smsPhone = normalizePhoneBRForSms(paciente?.telefone ?? '');
+    if (paciente && smsPhone && medico) {
+      const smsMessage = [
+        `Ola ${paciente.nome}.`,
+        '',
+        `Sua consulta foi agendada com Dr. ${medico.full_name}.`,
+        '',
+        `Especialidade: ${medico.specialty || 'Nao informada'}`,
+        `Data: ${formatDateBR(a.data)}`,
+        `Horario: ${a.hora}`,
+        '',
+        'Equipe MediConnect.',
+      ].join('\n');
+
+      try {
+        await smsApi.send({
+          patient_id: paciente.id,
+          phone_number: smsPhone,
+          message: smsMessage,
+        });
+      } catch (smsErr) {
+        const smsMessageError = smsErr instanceof Error ? smsErr.message : 'Erro ao enviar SMS.';
+        const canSendSmsByRole = user.role === 'secretaria' || user.role === 'gestao';
+        if (canSendSmsByRole) {
+          setApiError(`Consulta criada, mas o SMS nao foi enviado: ${smsMessageError}`);
+        }
+      }
+    }
+
     await refresh();
-  }, [pacientes, refresh, user]);
+  }, [doctors, pacientes, refresh, user]);
 
   const updateAgendamento = useCallback(async (a: Agendamento) => {
     if (!user) return;
