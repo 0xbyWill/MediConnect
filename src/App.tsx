@@ -391,7 +391,7 @@ export default function App() {
       ].join('\n');
 
       try {
-        await smsApi.sendSms({
+        await smsApi.send({
           patient_id: paciente.id,
           phone_number: smsPhone,
           message: smsMessage,
