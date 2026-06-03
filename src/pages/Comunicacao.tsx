@@ -4,7 +4,6 @@ import {
   Bell,
   Bot,
   CheckCircle2,
-  Clock,
   Copy,
   ExternalLink,
   Mail,
@@ -30,7 +29,7 @@ interface ComunicacaoProps {
 }
 
 type Canal = 'whatsapp' | 'email' | 'sms';
-type StatusMsg = 'enviado' | 'pendente' | 'falhou';
+type StatusMsg = 'enviado' | 'falhou';
 type HistoryFilter = 'todos' | Canal;
 
 interface Mensagem {
@@ -70,7 +69,6 @@ const CANAL_LABEL: Record<Canal, string> = {
 
 const STATUS_STYLE: Record<StatusMsg, { bg: string; color: string; icon: ElementType; label: string }> = {
   enviado: { bg: 'var(--mint)', color: 'var(--dark)', icon: CheckCircle2, label: 'Enviado' },
-  pendente: { bg: 'var(--amber-100)', color: 'var(--amber-600)', icon: Clock, label: 'Pendente' },
   falhou: { bg: 'var(--red-100)', color: 'var(--red-600)', icon: XCircle, label: 'Falhou' },
 };
 
@@ -106,7 +104,11 @@ const cardStyle = {
 function readStoredMessages(): Mensagem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) as Mensagem[] : [];
+    const parsed = raw ? JSON.parse(raw) as Array<Mensagem & { status?: string }> : [];
+    return parsed.map(msg => ({
+      ...msg,
+      status: msg.status === 'falhou' ? 'falhou' : 'enviado',
+    }));
   } catch {
     return [];
   }
@@ -116,7 +118,7 @@ function toStatus(status?: string | null): StatusMsg {
   const value = status?.toLowerCase().trim();
   if (value === 'sent' || value === 'enviado' || value === 'delivered' || value === 'success') return 'enviado';
   if (value === 'failed' || value === 'falhou' || value === 'error' || value === 'undelivered') return 'falhou';
-  return 'pendente';
+  return 'enviado';
 }
 
 function splitDateTime(value?: string) {
@@ -231,7 +233,6 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
   const stats = useMemo(() => ({
     total: mensagens.length,
     enviados: mensagens.filter(msg => msg.status === 'enviado').length,
-    pendentes: mensagens.filter(msg => msg.status === 'pendente').length,
     falhas: mensagens.filter(msg => msg.status === 'falhou').length,
   }), [mensagens]);
 
@@ -391,7 +392,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
         const subject = encodeURIComponent('Comunicado MediConnect');
         const body = encodeURIComponent(message);
         window.location.href = `mailto:${paciente.email}?subject=${subject}&body=${body}`;
-        addHistory({ pacienteId: paciente.id, canal, destino: paciente.email, texto: message, status: 'pendente' });
+        addHistory({ pacienteId: paciente.id, canal, destino: paciente.email, texto: message, status: 'enviado' });
         setSucesso('Cliente de e-mail aberto com a mensagem pronta.');
       } else {
         const response = await smsApi.sendSms({
@@ -452,7 +453,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
 
     if (targets.length === 0) {
       setAutomaticMessagesEnabled(true);
-      setSucesso('Mensagens automaticas ativadas. Nenhuma consulta de hoje pendente de confirmacao por WhatsApp.');
+      setSucesso('Mensagens automaticas ativadas. Nenhuma consulta de hoje aguardando confirmacao por WhatsApp.');
       window.setTimeout(() => setSucesso(''), 3500);
       return;
     }
@@ -561,7 +562,6 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <StatCard label="Total" value={stats.total} />
           <StatCard label="Enviados" value={stats.enviados} />
-          <StatCard label="Pendentes" value={stats.pendentes} />
           <StatCard label="Falhas" value={stats.falhas} danger={stats.falhas > 0} />
         </div>
       </header>
