@@ -17,6 +17,7 @@ import { usersApi } from '../lib/api';
 import type { PatientCreatePayload } from '../lib/api';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
 import { formatPhoneBR, isValidEmail, isValidISODate, isValidPhoneBR, normalizeEmail, normalizePhoneBR } from '../shared/utils/validation';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 interface CadastroPacienteProps {
   onBackToLogin: () => void;
@@ -79,7 +80,7 @@ function formatApiError(err: unknown) {
   if (lower.includes('rate') || lower.includes('too many') || msg.includes('429')) {
     return 'Muitas tentativas. Aguarde um pouco antes de tentar novamente.';
   }
-  return msg || 'Erro ao criar conta. Tente novamente.';
+  return toUserFacingErrorMessage(err, 'Erro ao criar conta. Tente novamente.');
 }
 
 const hasErrors = (errors: FieldErrors) => Object.keys(errors).length > 0;

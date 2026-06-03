@@ -210,7 +210,7 @@ type CreatePatientResponse =
 
 function expectOne<T>(rows: T[], entity: string): T {
   const row = rows[0];
-  if (!row) throw new Error(`A API não retornou ${entity}. Verifique permissões e dados enviados.`);
+  if (!row) throw new Error(`Não foi possível localizar ${entity}. Verifique permissões e dados enviados.`);
   return row;
 }
 
@@ -219,7 +219,7 @@ function normalizeCreatedPatient(response: CreatePatientResponse, fallback: Omit
 
   const source = response.patient ?? response.data ?? response;
   const id = source.id ?? response.patient_id ?? '';
-  if (!id) throw new Error('A API criou o paciente, mas não retornou o identificador.');
+  if (!id) throw new Error('O paciente foi criado, mas não foi possível confirmar o cadastro na tela.');
 
   return {
     ...fallback,
@@ -417,8 +417,9 @@ export interface PatientSupportRequestResponse extends ChatbotSupportRequest {
   updated_at?: string;
 }
 
-function toSmsFunctionPayload(data: SmsPayload): SmsPayload {
+function toSmsFunctionPayload(data: SmsPayload | SendSmsRequest): SendSmsRequest {
   return {
+    ...('patient_id' in data && data.patient_id ? { patient_id: data.patient_id } : {}),
     phone_number: data.phone_number,
     message: data.message,
   };
@@ -637,7 +638,7 @@ export const usersApi = {
       }
     }
 
-    throw new Error('Endpoint de criação de usuário com senha não encontrado.');
+    throw new Error('Criação de usuário com senha indisponível no momento.');
   },
 
   createPatientAccount: (data: PatientCreatePayload) =>
@@ -702,7 +703,7 @@ export const usersApi = {
       try {
         const response = await request<DeleteUserResponse>(path, { method: 'POST', body });
         if (response.success !== true) {
-          throw new Error(response.message || 'A API não confirmou a exclusão do usuário.');
+          throw new Error(response.message || 'Não foi possível confirmar a exclusão do usuário.');
         }
         return response;
       } catch (err) {
@@ -723,7 +724,7 @@ export const usersApi = {
       }
     }
 
-    throw new Error('Endpoint de exclusão de usuário não encontrado. Faça o deploy da Supabase Edge Function delete-user.');
+    throw new Error('Exclusão de usuário indisponível no momento.');
   },
 };
 
@@ -837,7 +838,7 @@ export const patientsApi = {
       );
 
       if (deletedRows.length === 0) {
-        throw new Error('A API não excluiu nenhum paciente. Verifique se o perfil logado tem permissão de admin/gestão e se o id existe.');
+        throw new Error('Nenhum paciente foi excluído. Verifique se seu perfil tem permissão e tente novamente.');
       }
     };
 
@@ -906,7 +907,7 @@ export const appointmentsApi = {
     }, { Prefer: 'return=representation' });
 
     if (rows.length === 0) {
-      throw new Error('A API não cancelou nenhum agendamento. Verifique permissão do perfil logado e se o agendamento existe.');
+      throw new Error('Nenhum agendamento foi cancelado. Verifique se seu perfil tem permissão e tente novamente.');
     }
 
     return rows[0];

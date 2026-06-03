@@ -6,6 +6,12 @@ verify_jwt = true
 [functions.admin-ai]
 verify_jwt = true
 
+[functions.manager-search-assistant]
+verify_jwt = true
+
+[functions.send-sms]
+verify_jwt = true
+
 [functions.delete-user]
 verify_jwt = true
 

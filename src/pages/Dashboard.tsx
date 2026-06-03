@@ -20,6 +20,7 @@ import type { Agendamento, Laudo, Paciente, PageType, QueueAdvanceOffer, UserRol
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { dateToISO } from '../shared/utils/date';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 interface DashboardProps {
   pacientes: Paciente[];
@@ -405,7 +406,7 @@ export default function Dashboard({
       });
       updateStoredOffer(offer.id, 'accepted');
     } catch (err) {
-      setOfferError(err instanceof Error ? err.message : 'Não foi possível aceitar a antecipação.');
+      setOfferError(toUserFacingErrorMessage(err, 'Não foi possível aceitar a antecipação.'));
     } finally {
       setOfferSavingId('');
     }

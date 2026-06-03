@@ -79,7 +79,7 @@ export default function Metricas({ pacientes, agendamentos, laudos }: MetricasPr
     <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)' }}>Métricas de Performance</h1>
-        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>Fluxos, produtividade e tabelas com dados reais carregados da API.</p>
+        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>Fluxos, produtividade e tabelas com dados reais do sistema.</p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>

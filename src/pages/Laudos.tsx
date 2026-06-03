@@ -19,6 +19,7 @@ import {
   type LaudoTemplate,
 } from '../modules/laudos/templates/laudoTemplates';
 import { reviewLaudoQuality, type LaudoQualityReview } from '../modules/laudos/quality/laudoQuality';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const today = dateToISO(new Date());
@@ -652,7 +653,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       }
       closeEditor();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Erro ao salvar laudo.');
+      setSaveError(toUserFacingErrorMessage(err, 'Erro ao salvar laudo. Tente novamente em instantes.'));
     } finally {
       setSaving(false);
     }
@@ -689,7 +690,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
       setPeriodoFiltro('todos');
       setConfirmLiberar(null);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Erro ao liberar laudo para o paciente.');
+      setSaveError(toUserFacingErrorMessage(err, 'Erro ao liberar laudo para o paciente. Tente novamente em instantes.'));
     } finally {
       setSaving(false);
     }

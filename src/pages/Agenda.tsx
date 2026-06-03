@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertCircle, Calendar, CalendarCheck, Clock, Loader2, Mail, MapPin,
+  AlertCircle, Calendar, CalendarCheck, ChevronLeft, ChevronRight, Clock, Loader2, Mail, MapPin,
   Pencil, Phone, Plus, Search, Trash2, Users, X,
 } from 'lucide-react';
 import type { Agendamento, Paciente, TipoConsulta } from '../types';
@@ -9,6 +9,7 @@ import type { ApiDoctor, ApiDoctorAvailability, DoctorAppointmentType } from '..
 import { useAuth } from '../contexts/AuthContext';
 import { dateToISO } from '../shared/utils/date';
 import { initials } from '../shared/utils/text';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 const TIPOS: TipoConsulta[] = ['Primeira Consulta', 'Retorno', 'Check-up', 'Urgência'];
 const SLOT_STEP_MINUTES = 30;
@@ -179,6 +180,13 @@ const STATUS_LABEL: Record<Agendamento['status'], { label: string; bg: string; c
   cancelado: { label: 'Cancelada', bg: 'var(--red-100)', color: 'var(--red-600)' },
   realizado: { label: 'Atendido', bg: '#ede9fe', color: '#5b21b6' },
 };
+const STATUS_ORDER: Agendamento['status'][] = ['confirmado', 'pendente', 'realizado', 'cancelado'];
+const PERIOD_OPTIONS: Array<{ value: 'dia' | 'semana' | 'mes' | 'todos'; label: string }> = [
+  { value: 'dia', label: 'Dia' },
+  { value: 'semana', label: 'Semana' },
+  { value: 'mes', label: 'Mês' },
+  { value: 'todos', label: 'Lista' },
+];
 
 export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, initialPatientId, readOnly = false }: AgendaProps) {
   const { user } = useAuth();
@@ -193,7 +201,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const today = dateToISO(new Date());
 
   const [selectedDate, setSelectedDate] = useState(today);
-  const [period, setPeriod] = useState<'dia' | 'semana' | 'mes' | 'todos'>('semana');
+  const [period, setPeriod] = useState<'dia' | 'semana' | 'mes' | 'todos'>('dia');
   const [filterDoctorId, setFilterDoctorId] = useState('');
   const [filterPatient, setFilterPatient] = useState('');
   const [statusFilter, setStatusFilter] = useState<Agendamento['status'] | ''>('');
@@ -292,7 +300,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       setAvailabilityRules(rows.sort(byAvailabilityOrder));
     } catch (err) {
       setAvailabilityRules([]);
-      setAvailabilityRulesError(err instanceof Error ? err.message : 'Erro ao carregar disponibilidades.');
+      setAvailabilityRulesError(toUserFacingErrorMessage(err, 'Erro ao carregar disponibilidades. Tente novamente em instantes.'));
     } finally {
       setAvailabilityRulesLoading(false);
     }
@@ -342,23 +350,31 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     ? startOfMonth(new Date(`${selectedDate}T00:00:00`))
     : selectedDate;
 
-  const filteredAppointments = agendamentos
+  const baseFilteredAppointments = agendamentos
     .filter(a => {
       const patient = pacientes.find(p => p.id === a.pacienteId);
       const q = filterPatient.toLowerCase().trim();
       const matchDoctor = !activeDoctorId || a.medicoId === activeDoctorId;
       const matchPatient = !q || patient?.nome.toLowerCase().includes(q) || patient?.cpf.includes(q);
+      return matchDoctor && matchPatient;
+    })
+    .sort(byChronology);
+  const statusScopedAppointments = baseFilteredAppointments.filter(a => !statusFilter || effectiveAppointmentStatus(a) === statusFilter);
+  const filteredAppointments = statusScopedAppointments
+    .filter(a => {
       const matchStatus = !statusFilter || effectiveAppointmentStatus(a) === statusFilter;
       const matchPeriod =
         period === 'todos' ||
         (period === 'dia' && a.data === selectedDate) ||
         (period === 'semana' && a.data >= periodStart && a.data <= dateToISO(new Date(new Date(`${periodStart}T00:00:00`).getTime() + 6 * 86400000))) ||
         (period === 'mes' && a.data.slice(0, 7) === selectedDate.slice(0, 7));
-      return matchDoctor && matchPatient && matchPeriod && matchStatus;
+      return matchPeriod && matchStatus;
     })
     .sort(byChronology);
 
-  const scheduledToday = agendamentos.filter(a => a.data === today).length;
+  const todayAppointments = statusScopedAppointments.filter(a => a.data === today);
+  const selectedMonthAppointments = statusScopedAppointments.filter(a => a.data.slice(0, 7) === selectedDate.slice(0, 7));
+  const scheduledToday = todayAppointments.length;
   const uniquePatients = new Set(filteredAppointments.map(a => a.pacienteId)).size;
   const busiestHour = Object.entries(
     filteredAppointments.reduce<Record<string, number>>((acc, a) => {
@@ -410,6 +426,13 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     month: 'long',
     year: 'numeric',
   });
+  const periodLabel = period === 'dia'
+    ? selectedDateLabel
+    : period === 'semana'
+    ? weekRangeLabel
+    : period === 'mes'
+    ? monthLabel
+    : 'Todos os agendamentos';
   const monthStart = new Date(selectedDateObject.getFullYear(), selectedDateObject.getMonth(), 1);
   const monthGridStart = new Date(monthStart);
   monthGridStart.setDate(monthGridStart.getDate() - monthGridStart.getDay());
@@ -417,10 +440,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     const date = new Date(monthGridStart);
     date.setDate(date.getDate() + index);
     const iso = dateToISO(date);
-    const count = agendamentos.filter(appt => {
-      const matchDoctor = !activeDoctorId || appt.medicoId === activeDoctorId;
-      return appt.data === iso && matchDoctor;
-    }).length;
+    const appointments = statusScopedAppointments.filter(appt => appt.data === iso);
     return {
       iso,
       day: date.getDate(),
@@ -428,7 +448,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       isSelected: iso === selectedDate,
       isToday: iso === today,
       isPast: iso < today,
-      count,
+      count: appointments.length,
+      appointments,
     };
   });
   const selectedDayAppointments = filteredAppointments.filter(appt => appt.data === selectedDate);
@@ -471,6 +492,21 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
   const occupancyRate = dayAvailabilitySlots.length
     ? Math.min(100, Math.round((selectedDayAppointments.length / dayAvailabilitySlots.length) * 100))
     : 0;
+  const todayStatusCounts = STATUS_ORDER.reduce<Record<Agendamento['status'], number>>((acc, status) => {
+    acc[status] = todayAppointments.filter(appt => effectiveAppointmentStatus(appt) === status).length;
+    return acc;
+  }, { confirmado: 0, pendente: 0, realizado: 0, cancelado: 0 });
+  const monthStatusCounts = STATUS_ORDER.reduce<Record<Agendamento['status'], number>>((acc, status) => {
+    acc[status] = selectedMonthAppointments.filter(appt => effectiveAppointmentStatus(appt) === status).length;
+    return acc;
+  }, { confirmado: 0, pendente: 0, realizado: 0, cancelado: 0 });
+  const shiftSelectedDate = (direction: -1 | 1) => {
+    const next = new Date(`${selectedDate}T00:00:00`);
+    if (period === 'mes') next.setMonth(next.getMonth() + direction);
+    else if (period === 'semana') next.setDate(next.getDate() + direction * 7);
+    else next.setDate(next.getDate() + direction);
+    setSelectedDate(dateToISO(next));
+  };
 
   const modalDoctorId = isMedico ? user?.doctor_id || '' : modal.data.medicoId || '';
   const modalWeekday = modal.data.data ? new Date(`${modal.data.data}T00:00:00`).getDay() : undefined;
@@ -507,7 +543,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       .catch(err => {
         if (cancelled) return;
         setDayAvailability([]);
-        setDayAvailabilityError(err instanceof Error ? err.message : 'Erro ao carregar disponibilidade do dia.');
+        setDayAvailabilityError(toUserFacingErrorMessage(err, 'Erro ao carregar disponibilidade do dia.'));
       })
       .finally(() => {
         if (!cancelled) setDayAvailabilityLoading(false);
@@ -538,7 +574,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       .catch(err => {
         if (cancelled) return;
         setAvailability([]);
-        setAvailabilityError(err instanceof Error ? err.message : 'Erro ao carregar disponibilidade do médico.');
+        setAvailabilityError(toUserFacingErrorMessage(err, 'Erro ao carregar disponibilidade do médico.'));
       })
       .finally(() => {
         if (!cancelled) setAvailabilityLoading(false);
@@ -568,7 +604,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       .catch(err => {
         if (cancelled) return;
         setModalDoctorAvailability([]);
-        setModalDoctorAvailabilityError(err instanceof Error ? err.message : 'Erro ao carregar médicos disponíveis.');
+        setModalDoctorAvailabilityError(toUserFacingErrorMessage(err, 'Erro ao carregar médicos disponíveis.'));
       })
       .finally(() => {
         if (!cancelled) setModalDoctorAvailabilityLoading(false);
@@ -711,7 +747,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       setAvailabilityModal(m => ({ ...m, data: emptyAvailabilityForm(saved.doctor_id) }));
       await loadAvailabilityRules(saved.doctor_id);
     } catch (err) {
-      setAvailabilitySaveError(err instanceof Error ? err.message : 'Erro ao salvar disponibilidade.');
+      setAvailabilitySaveError(toUserFacingErrorMessage(err, 'Erro ao salvar disponibilidade. Tente novamente em instantes.'));
     } finally {
       setAvailabilitySaving(false);
     }
@@ -730,7 +766,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         setAvailabilityModal(m => ({ ...m, data: emptyAvailabilityForm(rule.doctor_id) }));
       }
     } catch (err) {
-      setAvailabilitySaveError(err instanceof Error ? err.message : 'Erro ao excluir disponibilidade.');
+      setAvailabilitySaveError(toUserFacingErrorMessage(err, 'Erro ao excluir disponibilidade. Tente novamente em instantes.'));
     } finally {
       setAvailabilityDeletingId(null);
     }
@@ -771,7 +807,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       else await onUpdate({ ...payload, id: modal.data.id! });
       closeModal();
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : 'Erro ao salvar agendamento.');
+      setApiError(toUserFacingErrorMessage(err, 'Erro ao salvar agendamento. Tente novamente em instantes.'));
     } finally {
       setSaving(false);
     }
@@ -790,7 +826,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
       await onDelete(confirmDelete);
       setConfirmDelete(null);
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : 'Erro ao excluir agendamento.');
+      setApiError(toUserFacingErrorMessage(err, 'Erro ao excluir agendamento. Tente novamente em instantes.'));
       setConfirmDelete(null);
     }
   };
@@ -802,7 +838,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     try {
       await onUpdate({ ...appt, status: 'confirmado' });
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : 'Erro ao confirmar consulta.');
+      setApiError(toUserFacingErrorMessage(err, 'Erro ao confirmar consulta. Tente novamente em instantes.'));
     } finally {
       setConfirmingId(null);
     }
@@ -815,8 +851,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     : [];
 
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'transparent', overflow: 'hidden' }}>
-      <div style={{ flexShrink: 0, background: 'transparent', borderBottom: 'none', padding: '30px clamp(18px, 4vw, 36px) 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ position: 'absolute', inset: 0, display: 'block', background: 'transparent', overflowY: 'auto', overflowX: 'hidden' }}>
+      <div style={{ background: 'transparent', borderBottom: 'none', padding: '30px clamp(18px, 4vw, 36px) 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <div>
             <h1 style={{ fontSize: 30, fontWeight: 800, color: '#071327', margin: 0, lineHeight: 1.15 }}>Agenda de Consultas</h1>
@@ -840,78 +876,155 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           )}
         </div>
 
-        <div style={{ display: 'none', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
           <Metric label="Consultas filtradas" value={filteredAppointments.length} icon={CalendarCheck} />
           <Metric label="Hoje" value={scheduledToday} icon={Clock} />
           <Metric label="Pacientes no período" value={uniquePatients} icon={Users} />
           <Metric label="Horário de pico" value={busiestHour ? `${busiestHour[0]}h` : '—'} icon={Calendar} />
         </div>
 
-        <div style={{ display: 'none', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', background: 'rgba(255,255,255,0.78)', border: '1px solid rgba(15,118,75,0.10)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow-sm)' }}>
-          {!isMedico && (
-            <div>
-              <label htmlFor="agenda-doctor-filter" style={labelStyle}>Agenda</label>
-              <select id="agenda-doctor-filter" value={filterDoctorId} onChange={e => setFilterDoctorId(e.target.value)}
-              style={{ minWidth: 220, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
-              <option value="">Todos os médicos</option>
-              {doctors.map(d => <option key={d.id} value={d.id}>{d.full_name}{d.specialty ? ` - ${d.specialty}` : ''}</option>)}
-              </select>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', background: 'rgba(255,255,255,0.88)', border: '1px solid rgba(15,118,75,0.10)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow-sm)' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', background: '#f1f5f9', border: '1px solid #dbe7e2', borderRadius: 12, padding: 4 }}>
+            {PERIOD_OPTIONS.map(option => {
+              const selected = period === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setPeriod(option.value)}
+                  style={{
+                    border: 'none',
+                    borderRadius: 9,
+                    padding: '8px 13px',
+                    background: selected ? 'var(--primary)' : 'transparent',
+                    color: selected ? '#fff' : '#334155',
+                    fontSize: 12,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => shiftSelectedDate(-1)} title="Período anterior" style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #dbe7e2', background: '#fff', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <ChevronLeft size={16} />
+            </button>
+            <div style={{ minWidth: 190, textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4 }}>Visualização atual</div>
+              <div style={{ fontSize: 14, color: '#071327', fontWeight: 900, textTransform: period === 'mes' ? 'lowercase' : 'none' }}>{periodLabel}</div>
             </div>
-          )}
-          <div>
-            <label htmlFor="agenda-date-filter" style={labelStyle}>Data base</label>
-            <input id="agenda-date-filter" type="date" value={selectedDate} min={today} onChange={e => setSelectedDate(e.target.value)}
-              style={{ padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }} />
-          </div>
-          <div>
-            <label htmlFor="agenda-period-filter" style={labelStyle}>Visualização</label>
-            <select id="agenda-period-filter" value={period} onChange={e => setPeriod(e.target.value as typeof period)}
-            style={{ padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
-            <option value="dia">Dia</option>
-            <option value="semana">Semana</option>
-            <option value="mes">Mês</option>
-            <option value="todos">Todos</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="agenda-status-filter" style={labelStyle}>Status</label>
-            <select id="agenda-status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value as Agendamento['status'] | '')}
-              style={{ minWidth: 160, padding: '9px 12px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }}>
-              <option value="">Todos os status</option>
-              <option value="pendente">Pendente</option>
-              <option value="confirmado">Confirmada</option>
-              <option value="realizado">Atendido</option>
-              <option value="cancelado">Cancelada</option>
-            </select>
-          </div>
-          <div style={{ position: 'relative', flex: '1 1 240px' }}>
-            <label htmlFor="agenda-patient-filter" style={labelStyle}>Paciente</label>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: 32, color: 'var(--gray-400)' }} />
-            <input id="agenda-patient-filter" value={filterPatient} onChange={e => setFilterPatient(e.target.value)} placeholder="Filtrar por paciente ou CPF..."
-              style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--gray-200)', borderRadius: 9, fontSize: 13, background: 'var(--gray-50)' }} />
+            <button type="button" onClick={() => shiftSelectedDate(1)} title="Próximo período" style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #dbe7e2', background: '#fff', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <ChevronRight size={16} />
+            </button>
+            <button type="button" onClick={() => setSelectedDate(today)} style={{ border: '1px solid #dbe7e2', background: '#fff', color: '#334155', borderRadius: 10, padding: '8px 12px', fontSize: 12, fontWeight: 900, cursor: 'pointer' }}>
+              Hoje
+            </button>
           </div>
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 clamp(18px, 4vw, 36px) 36px' }}>
+      <div style={{ overflow: 'visible', padding: '0 clamp(18px, 4vw, 36px) 36px' }}>
         {apiError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', border: '1px solid var(--red-100)', marginBottom: 14, fontSize: 13, fontWeight: 600 }}>
             <AlertCircle size={15} /> {apiError}
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 24, alignItems: 'start' }}>
-          <aside style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, boxShadow: 'none', padding: 22, position: 'sticky', top: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 22 }}>
+        {period === 'mes' && (
+          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 14, alignItems: 'start', marginBottom: 18 }}>
+            <div style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid #dbe7e2', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <h2 style={{ fontSize: 17, fontWeight: 900, color: '#071327', margin: 0, textTransform: 'lowercase' }}>{monthLabel}</h2>
+                  <p style={{ fontSize: 12, color: '#64748b', marginTop: 3 }}>Visão geral do mês com consultas por status.</p>
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 900 }}>{selectedMonthAppointments.length} consulta{selectedMonthAppointments.length === 1 ? '' : 's'}</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+                {['dom.', 'seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.'].map(day => (
+                  <div key={day} style={{ padding: '9px 10px', background: '#f8fafc', borderRight: '1px solid #dbe7e2', borderBottom: '1px solid #dbe7e2', color: '#64748b', fontSize: 11, fontWeight: 900, textAlign: 'center' }}>
+                    {day}
+                  </div>
+                ))}
+                {monthDays.map(day => (
+                  <button
+                    key={`month-${day.iso}`}
+                    type="button"
+                    onClick={() => setSelectedDate(day.iso)}
+                    style={{
+                      minHeight: 104,
+                      minWidth: 0,
+                      padding: 8,
+                      border: 'none',
+                      borderRight: '1px solid #dbe7e2',
+                      borderBottom: '1px solid #dbe7e2',
+                      background: day.isSelected ? '#ecfdf5' : day.isToday ? '#f0fdf4' : day.inMonth ? '#fff' : '#f8fafc',
+                      color: day.inMonth ? '#071327' : '#94a3b8',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <strong style={{ fontSize: 12, color: day.isSelected ? 'var(--primary)' : 'inherit' }}>{day.day}</strong>
+                      {day.count > 0 && <span style={{ fontSize: 10, fontWeight: 900, color: '#64748b' }}>{day.count}</span>}
+                    </span>
+                    <span style={{ display: 'grid', gap: 4 }}>
+                      {day.appointments.slice(0, 3).map(appt => {
+                        const patient = pacientes.find(p => p.id === appt.pacienteId);
+                        const st = STATUS_LABEL[effectiveAppointmentStatus(appt)] ?? STATUS_LABEL.pendente;
+                        return (
+                          <span key={appt.id} title={`${appt.hora} - ${patient?.nome || 'Paciente não encontrado'}`} style={{ display: 'block', borderRadius: 6, padding: '4px 6px', background: st.bg, color: st.color, fontSize: 10, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {appt.hora} {patient?.nome || 'Paciente'}
+                          </span>
+                        );
+                      })}
+                      {day.appointments.length > 3 && <span style={{ fontSize: 10, color: '#64748b', fontWeight: 800 }}>mais {day.appointments.length - 3}</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <aside style={{ display: 'grid', gap: 14 }}>
+              <div style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, padding: 16 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 900, color: '#071327', margin: '0 0 14px' }}>Resumo de hoje</h3>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <StatLine label="Hoje" value={todayAppointments.length} />
+                  <StatLine label="Confirmadas" value={todayStatusCounts.confirmado} tone="green" />
+                  <StatLine label="Pendentes" value={todayStatusCounts.pendente} />
+                  <StatLine label="Canceladas" value={todayStatusCounts.cancelado} />
+                </div>
+              </div>
+
+              <div style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, padding: 16 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 900, color: '#071327', margin: '0 0 14px' }}>Status do mês</h3>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {STATUS_ORDER.map(status => (
+                    <StatusLegendItem key={status} status={status} count={monthStatusCounts[status]} />
+                  ))}
+                </div>
+              </div>
+            </aside>
+          </section>
+        )}
+
+        <div style={{ display: period === 'dia' ? 'grid' : 'none', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 24, alignItems: 'start' }}>
+          <aside style={{ background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, boxShadow: 'none', padding: 22, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18 }}>
               <Calendar size={20} color="var(--primary)" />
               <h2 style={{ fontSize: 17, fontWeight: 800, color: '#071327', margin: 0 }}>Calendário</h2>
             </div>
 
-            <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 900, color: '#071327', marginBottom: 18, textTransform: 'lowercase' }}>
+            <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 900, color: '#071327', marginBottom: 20, textTransform: 'lowercase' }}>
               {monthLabel}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 10, columnGap: 8, marginBottom: 28 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 'clamp(8px, 1.5vh, 16px)', columnGap: 8, marginBottom: 24 }}>
               {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((day, index) => (
                 <div key={`${day}-${index}`} style={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#334155', height: 22 }}>
                   {day}
@@ -923,8 +1036,8 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                   type="button"
                   onClick={() => setSelectedDate(day.iso)}
                   style={{
-                    width: 40,
-                    height: 40,
+                    width: 'clamp(36px, 5.2vh, 46px)',
+                    height: 'clamp(36px, 5.2vh, 46px)',
                     justifySelf: 'center',
                     border: day.isSelected ? 'none' : day.isPast ? '1px solid #e5e7eb' : '1px solid transparent',
                     borderRadius: day.isSelected ? 10 : 8,
@@ -955,7 +1068,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               ))}
             </div>
 
-            <div style={{ borderTop: '1px solid #dbe7e2', paddingTop: 22, display: 'grid', gap: 14 }}>
+            <div style={{ borderTop: '1px solid #dbe7e2', paddingTop: 18, display: 'grid', gap: 12 }}>
               <StatLine label="Total de Consultas" value={selectedDayAppointments.length} />
               <StatLine label="Horários livres" value={freeSlots} tone="green" />
               <StatLine label="Taxa de ocupação" value={`${occupancyRate}%`} />
@@ -1029,7 +1142,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               </div>
             </div>
 
-            <div style={{ maxHeight: 'calc(100dvh - 300px)', overflow: 'auto', padding: '10px 24px 24px', display: 'grid', gap: 10 }}>
+            <div style={{ maxHeight: 'min(720px, calc(100dvh - 330px))', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', scrollbarGutter: 'stable', padding: '10px 18px 24px 24px', display: 'grid', alignContent: 'start', gap: 12 }}>
               {dayAvailabilityError && (
                 <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', border: '1px solid var(--red-100)', fontSize: 13, fontWeight: 600 }}>
                   <AlertCircle size={15} /> {dayAvailabilityError}
@@ -1045,6 +1158,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
               {!dayAvailabilityLoading && visibleSelectedDaySlots.map(({ slot, appointments, isAvailable, isPast, availableDoctorId }) => {
                 const canClickSlotToSchedule = canCreateAgendamento && isAvailable && !isPast && appointments.length === 0;
                 const openSlotSchedule = () => openModal(undefined, selectedDate, slot, '', availableDoctorId);
+                const canOfferAdditionalSlot = canCreateAgendamento && isAvailable && !isPast;
                 return (
                 <div
                   key={slot}
@@ -1059,95 +1173,74 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
                     }
                   }}
                   style={{
-                  minHeight: 76,
                   border: isPast ? '1px solid #e5e7eb' : appointments.length ? '1px solid #86efac' : isAvailable ? '1px solid #dbe7e2' : '1px solid #f8d7da',
                   borderRadius: 9,
                   background: isPast ? '#f8fafc' : appointments.length ? '#ecfdf3' : isAvailable ? '#fff' : '#fff7f7',
                   display: 'grid',
-                  gridTemplateColumns: '78px 1fr auto',
-                  alignItems: 'center',
-                  gap: 16,
+                  gridTemplateColumns: '1fr',
+                  gap: 12,
                   padding: '14px 16px',
                   opacity: isPast ? 0.7 : 1,
                   cursor: canClickSlotToSchedule ? 'pointer' : 'default',
                 }}>
-                  <div style={{ borderRight: '1px solid #d1d5db', paddingRight: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, paddingBottom: 10, borderBottom: '1px solid rgba(148, 163, 184, 0.24)' }}>
                     <div style={{ fontSize: 19, fontWeight: 900, color: isPast ? '#64748b' : '#071327', lineHeight: 1 }}>{slot}</div>
-                    <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>30min</div>
+                    <div style={{ fontSize: 12, color: '#475569' }}>30min</div>
                   </div>
 
-                  <div style={{ minWidth: 0, display: 'grid', gap: 8 }}>
+                  <div style={{ minWidth: 0, display: 'grid', gap: 10 }}>
                     {appointments.length === 0 ? (
-                      <span style={{ color: '#64748b', fontSize: 15, fontStyle: 'italic' }}>Horário disponível</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                        <span style={{ color: '#64748b', fontSize: 15, fontStyle: 'italic' }}>Horário disponível</span>
+                        {canOfferAdditionalSlot && (
+                          <button type="button" onClick={event => { event.stopPropagation(); openSlotSchedule(); }} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                            Agendar
+                          </button>
+                        )}
+                      </div>
                     ) : appointments.map(appt => {
                       const patient = pacientes.find(p => p.id === appt.pacienteId);
                       const doctor = doctors.find(d => d.id === appt.medicoId);
                       return (
-                        <div key={appt.id} style={{ minWidth: 0 }}>
-                          <div title={patient?.nome || ''} style={{ fontSize: 15, fontWeight: 800, color: '#071327', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {patient?.nome || 'Paciente não encontrado'}
+                        <article key={appt.id} style={{ minWidth: 0, display: 'grid', gap: 10, padding: '10px 12px', border: '1px solid rgba(134, 239, 172, 0.55)', borderRadius: 10, background: '#fff' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div title={patient?.nome || ''} style={{ fontSize: 15, fontWeight: 800, color: '#071327', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {patient?.nome || 'Paciente não encontrado'}
+                            </div>
+                            <div title={doctor?.full_name || ''} style={{ fontSize: 13, color: '#334155', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {appt.tipo}{doctor?.full_name ? ` - ${doctor.full_name}` : ''}
+                            </div>
                           </div>
-                          <div title={doctor?.full_name || ''} style={{ fontSize: 13, color: '#334155', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {appt.tipo}{doctor?.full_name ? ` - ${doctor.full_name}` : ''}
+
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+                            <StatusBadge status={effectiveAppointmentStatus(appt)} />
+                            {!isPaciente && (
+                              <button type="button" onClick={() => setDetailsSlot({ date: selectedDate, slot })} style={{ border: 'none', background: 'transparent', color: 'var(--primary)', fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                Ver Detalhes
+                              </button>
+                            )}
+                            {canConfirmAppointment(appt) && (
+                              <button type="button" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: confirmingId === appt.id ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                                {confirmingId === appt.id ? 'Confirmando...' : 'Confirmar'}
+                              </button>
+                            )}
+                            {canCancelAppointment(appt) && (
+                              <button type="button" onClick={() => setConfirmDelete(appt.id)} style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                Cancelar
+                              </button>
+                            )}
                           </div>
-                        </div>
+                        </article>
                       );
                     })}
+                    {appointments.length > 0 && canOfferAdditionalSlot && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={() => openModal(undefined, selectedDate, slot, '', availableDoctorId)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                          Agendar outro
+                        </button>
+                      </div>
+                    )}
                   </div>
-
-                  {appointments.length === 0 ? (
-                    canCreateAgendamento && isAvailable && !isPast && (
-                      <button type="button" onClick={event => { event.stopPropagation(); openSlotSchedule(); }} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
-                        Agendar
-                      </button>
-                    )
-                  ) : canPatientSchedule ? (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {appointments.slice(0, 1).map(appt => (
-                        <React.Fragment key={appt.id}>
-                          <StatusBadge status={effectiveAppointmentStatus(appt)} />
-                          {canConfirmAppointment(appt) && (
-                            <button type="button" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: confirmingId === appt.id ? 'not-allowed' : 'pointer' }}>
-                              {confirmingId === appt.id ? 'Confirmando...' : 'Confirmar'}
-                            </button>
-                          )}
-                          {canCancelAppointment(appt) && (
-                            <button type="button" onClick={() => setConfirmDelete(appt.id)} style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                              Cancelar
-                            </button>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {appointments.slice(0, 1).map(appt => (
-                        <React.Fragment key={appt.id}>
-                          <StatusBadge status={effectiveAppointmentStatus(appt)} />
-                          {!isPaciente && (
-                            <button type="button" onClick={() => setDetailsSlot({ date: selectedDate, slot })} style={{ border: 'none', background: 'transparent', color: 'var(--primary)', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
-                              Ver Detalhes
-                            </button>
-                          )}
-                          {canConfirmAppointment(appt) && (
-                            <button type="button" onClick={() => void handleConfirmAppointment(appt)} disabled={confirmingId === appt.id} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: confirmingId === appt.id ? 'not-allowed' : 'pointer' }}>
-                              {confirmingId === appt.id ? 'Confirmando...' : 'Confirmar'}
-                            </button>
-                          )}
-                          {canCancelAppointment(appt) && (
-                            <button type="button" onClick={() => setConfirmDelete(appt.id)} style={{ border: '1px solid var(--red-100)', background: '#fff', color: 'var(--red-600)', borderRadius: 9, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                              Cancelar
-                            </button>
-                          )}
-                          {canCreateAgendamento && isAvailable && !isPast && (
-                            <button type="button" onClick={() => openModal(undefined, selectedDate, slot, '', availableDoctorId)} style={{ border: '1px solid var(--primary)', background: '#fff', color: 'var(--primary)', borderRadius: 10, padding: '7px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                              Agendar
-                            </button>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  )}
                 </div>
                 );
               })}
@@ -1165,7 +1258,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           </section>
         </div>
 
-        <div style={{ display: 'none', gridTemplateColumns: 'minmax(220px, 260px) minmax(720px, 1fr)', gap: 14, alignItems: 'start' }}>
+        <div style={{ display: period === 'semana' ? 'grid' : 'none', gridTemplateColumns: 'minmax(220px, 260px) minmax(720px, 1fr)', gap: 14, alignItems: 'start' }}>
           <aside style={{ background: '#fff', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', padding: 14, position: 'sticky', top: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <div>
@@ -1280,7 +1373,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
           </section>
         </div>
 
-        <div style={{ display: 'none', background: '#fff', borderRadius: 14, border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'auto' }}>
+        <div style={{ display: period === 'todos' ? 'block' : 'none', background: '#fff', borderRadius: 14, border: '1px solid var(--gray-100)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'auto' }}>
           <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: '12%' }} />
@@ -1437,7 +1530,7 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
             <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
               <div>
                 <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--gray-800)', margin: 0 }}>{modal.mode === 'add' ? 'Novo Agendamento' : 'Editar Agendamento'}</h2>
-                <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3 }}>Paciente e horário serão salvos usando dados reais da API.</p>
+                <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3 }}>Paciente e horário serão salvos com dados reais do sistema.</p>
               </div>
               <button onClick={closeModal} disabled={saving} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: 'var(--gray-100)', cursor: saving ? 'not-allowed' : 'pointer' }}><X size={15} /></button>
             </div>
@@ -1796,6 +1889,19 @@ function StatusBadge({ status }: { status: Agendamento['status'] }) {
     <span style={{ fontSize: 12, fontWeight: 800, padding: '4px 10px', borderRadius: 20, background: st.bg, color: st.color, whiteSpace: 'nowrap' }}>
       {st.label}
     </span>
+  );
+}
+
+function StatusLegendItem({ status, count }: { status: Agendamento['status']; count: number }) {
+  const st = STATUS_LABEL[status] ?? STATUS_LABEL.pendente;
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 12 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#334155', fontWeight: 700 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: st.color }} />
+        {st.label}
+      </span>
+      <strong style={{ color: '#071327', fontWeight: 900 }}>{count}</strong>
+    </div>
   );
 }
 

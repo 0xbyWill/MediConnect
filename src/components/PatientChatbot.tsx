@@ -137,19 +137,18 @@ export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: Pati
     setAiLoading(true);
     try {
       const response = await patientChatbotAiApi.ask({
+        userId: user.id,
         message,
         patientName,
         history: messages.slice(-8).map(item => ({ sender: item.sender, text: item.text })),
       });
       pushMessages(createMessage('bot', response.answer, 'answer'));
       setAwaitingResolution(true);
-    } catch (err) {
+    } catch {
       pushMessages(
         createMessage(
           'bot',
-          err instanceof Error && err.message.includes('VITE_GEMINI_API_KEY')
-            ? 'A IA ainda não está configurada neste ambiente. A secretaria pode te ajudar pelo atendimento direto.'
-            : 'Não consegui responder com IA agora. A secretaria pode te ajudar pelo atendimento direto.',
+          'Não consegui responder agora. A secretaria pode te ajudar pelo atendimento direto.',
           'support'
         )
       );

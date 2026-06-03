@@ -46,6 +46,7 @@ export function sortQueueCandidates(candidates: QueueCandidate[]) {
 }
 
 export function buildQueueCandidates(params: {
+  slotDoctorId?: string;
   slotSpecialty: string;
   slotDate: string;
   slotTime: string;
@@ -54,48 +55,57 @@ export function buildQueueCandidates(params: {
   doctors: ApiDoctor[];
   refusalCounts?: Record<string, number>;
 }) {
-  const { slotSpecialty, slotDate, slotTime, patients, appointments, doctors, refusalCounts = {} } = params;
+  const { slotDoctorId, slotSpecialty, slotDate, slotTime, patients, appointments, doctors, refusalCounts = {} } = params;
   const patientById = new Map(patients.map(patient => [patient.id, patient]));
   const doctorById = new Map(doctors.map(doctor => [doctor.id, doctor]));
   const slotDateTime = `${slotDate} ${slotTime}`;
 
-  return sortQueueCandidates(
-    appointments
-      .filter(appt => appt.status !== 'cancelado' && appt.status !== 'realizado')
-      .filter(appt => `${appt.data} ${appt.hora}` > slotDateTime)
-      .map((appt): QueueCandidate | null => {
-        const patient = patientById.get(appt.pacienteId);
-        const doctor = appt.medicoId ? doctorById.get(appt.medicoId) : undefined;
-        if (!patient || !doctor || !isSameSpecialty(doctor.specialty, slotSpecialty)) return null;
+  const candidates = appointments
+    .filter(appt => appt.status !== 'cancelado' && appt.status !== 'realizado')
+    .filter(appt => `${appt.data} ${appt.hora}` > slotDateTime)
+    .map((appt): QueueCandidate | null => {
+      const patient = patientById.get(appt.pacienteId);
+      const doctor = appt.medicoId ? doctorById.get(appt.medicoId) : undefined;
+      if (slotDoctorId && doctor?.id !== slotDoctorId) return null;
+      if (!patient || !doctor || !isSameSpecialty(doctor.specialty, slotSpecialty)) return null;
 
-        const priority = calculatePatientPriority(patient);
-        const normalized = normalizePriorityInput(patient);
-        const waitingDays = parseWaitingDays(patient.tempoNaFila, appt.data);
-        const age = normalized.age ?? null;
-        const refusalCount = refusalCounts[patient.id] ?? 0;
-        const priorityNumber = priorityValue(priority.level);
+      const priority = calculatePatientPriority(patient);
+      const normalized = normalizePriorityInput(patient);
+      const waitingDays = parseWaitingDays(patient.tempoNaFila, appt.data);
+      const age = normalized.age ?? null;
+      const refusalCount = refusalCounts[patient.id] ?? 0;
+      const priorityNumber = priorityValue(priority.level);
 
-        return {
-          patientId: patient.id,
-          patientName: patient.nome,
-          appointmentId: appt.id,
-          doctorId: doctor.id,
-          doctorName: doctor.full_name,
-          specialty: doctor.specialty,
-          originalDate: appt.data,
-          originalTime: appt.hora,
-          priorityLevel: priority.level,
-          priorityValue: priorityNumber,
-          priorityScore: calculateQueueScore({ priorityValue: priorityNumber, waitingDays, refusalCount, age }),
-          waitingDays,
-          age,
-          refusalCount,
-          canReceiveSms: Boolean(patient.telefone),
-          reasons: priority.reasons.slice(0, 3),
-        } satisfies QueueCandidate;
-      })
-      .filter((candidate): candidate is QueueCandidate => Boolean(candidate))
-  );
+      return {
+        patientId: patient.id,
+        patientName: patient.nome,
+        appointmentId: appt.id,
+        doctorId: doctor.id,
+        doctorName: doctor.full_name,
+        specialty: doctor.specialty,
+        originalDate: appt.data,
+        originalTime: appt.hora,
+        priorityLevel: priority.level,
+        priorityValue: priorityNumber,
+        priorityScore: calculateQueueScore({ priorityValue: priorityNumber, waitingDays, refusalCount, age }),
+        waitingDays,
+        age,
+        refusalCount,
+        canReceiveSms: Boolean(patient.telefone),
+        reasons: priority.reasons.slice(0, 3),
+      } satisfies QueueCandidate;
+    })
+    .filter((candidate): candidate is QueueCandidate => Boolean(candidate))
+    .sort((a, b) => `${a.originalDate} ${a.originalTime}`.localeCompare(`${b.originalDate} ${b.originalTime}`));
+
+  const nearestAppointmentByPatient = new Map<string, QueueCandidate>();
+  candidates.forEach(candidate => {
+    if (!nearestAppointmentByPatient.has(candidate.patientId)) {
+      nearestAppointmentByPatient.set(candidate.patientId, candidate);
+    }
+  });
+
+  return sortQueueCandidates(Array.from(nearestAppointmentByPatient.values()));
 }
 
 export function buildAllQueueCandidates(params: {
