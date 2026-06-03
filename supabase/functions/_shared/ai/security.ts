@@ -1,5 +1,5 @@
 const MAX_TEXT = 8000;
-const CORS_ALLOWED_ORIGIN = Deno.env.get('CORS_ALLOWED_ORIGIN') ?? '*';
+const CORS_ALLOWED_ORIGIN = Deno.env.get('CORS_ALLOWED_ORIGIN') ?? 'http://localhost:5173';
 const SECRET_PATTERNS = [
   /\b[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{24,}\b/g,
   /\b(sk|pk|rk|xoxb|ghp|github_pat)_[A-Za-z0-9_=-]{16,}\b/gi,

@@ -64,7 +64,7 @@ function buildUrl(path: string): string {
   const base = new URL(BASE_URL);
   const url = new URL(path, `${BASE_URL}/`);
   if (url.origin !== base.origin) {
-    throw new Error('Destino de API externo bloqueado para evitar vazamento de credenciais.');
+    throw new Error('Destino externo bloqueado por segurança.');
   }
   return url.toString();
 }

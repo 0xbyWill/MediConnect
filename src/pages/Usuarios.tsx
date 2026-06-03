@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { UserRole } from '../types';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
 import { formatPhoneBR, isValidEmail, isValidPhoneBR, normalizeEmail } from '../shared/utils/validation';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 type StaffRole = Exclude<UserRole, 'paciente'>;
 
@@ -126,11 +127,11 @@ function formatSaveError(err: unknown): string {
   if (lower.includes('invalid') && lower.includes('email')) {
     return 'Informe um e-mail válido. Ex: usuario@clinica.com';
   }
-  if (msg.includes('400')) return 'A API recusou os dados enviados. Confira os campos obrigatórios.';
+  if (msg.includes('400')) return 'Confira os campos obrigatórios antes de salvar.';
   if (msg.includes('401') || msg.includes('403')) {
     return 'Seu perfil precisa ser Gestão/Admin para criar usuários.';
   }
-  return msg;
+  return toUserFacingErrorMessage(err, 'Não foi possível salvar o usuário. Confira os dados e tente novamente.');
 }
 
 function responseId(response: ApiDoctor | CreateUserResponse): string {
@@ -278,7 +279,7 @@ export default function Usuarios() {
       setUsuarios(filterDeletedUsuarios(nextUsuarios, blockedKeys));
       setPageError(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao listar usuários.';
+      const msg = toUserFacingErrorMessage(err, 'Erro ao listar usuários. Tente novamente em instantes.');
       setPageError(msg);
     } finally {
       setLoadingUsers(false);
@@ -493,7 +494,7 @@ export default function Usuarios() {
       setConfirmDelete(null);
       await loadUsuarios(deletedKeys);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao deletar usuário.';
+      const msg = toUserFacingErrorMessage(err, 'Erro ao excluir usuário. Tente novamente em instantes.');
       if (isAlreadyDeletedError(msg)) {
         persistDeletedUserKeys(deletedKeys);
         setUsuarios(prev => filterDeletedUsuarios(prev, deletedKeys));
@@ -591,7 +592,7 @@ export default function Usuarios() {
             Filtro de perfil
           </div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-            {loadingUsers ? 'Atualizando dados da API...' : `${filteredUsuarios.length} usuário${filteredUsuarios.length === 1 ? '' : 's'} exibido${filteredUsuarios.length === 1 ? '' : 's'}`}
+            {loadingUsers ? 'Atualizando dados...' : `${filteredUsuarios.length} usuário${filteredUsuarios.length === 1 ? '' : 's'} exibido${filteredUsuarios.length === 1 ? '' : 's'}`}
           </div>
         </div>
 
@@ -701,7 +702,7 @@ export default function Usuarios() {
                           setConfirmDelete(u.id);
                         }}
                         disabled={selfUser}
-                        title={selfUser ? 'A API não permite excluir o próprio usuário' : 'Excluir usuário'}
+                        title={selfUser ? 'Não é possível excluir o próprio usuário' : 'Excluir usuário'}
                         style={{ width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', cursor: selfUser ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: selfUser ? 'var(--gray-300)' : 'var(--red-500)' }}
                       ><Trash2 size={14} /></button>
                     </div>

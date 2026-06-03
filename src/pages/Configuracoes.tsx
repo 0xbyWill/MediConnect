@@ -10,7 +10,7 @@ export default function Configuracoes() {
     <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(16px, 3vw, 32px)' }}>
       <div style={{ maxWidth: 1040 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--dark)', marginBottom: 8 }}>Configurações</h1>
-        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 24 }}>Preferências organizadas por categoria. Dados sensíveis seguem a autenticação e permissões da API.</p>
+        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 24 }}>Preferências organizadas por categoria. Dados sensíveis seguem autenticação e permissões por perfil.</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
           <Section title="Perfil" icon={UserCog}>
@@ -45,8 +45,8 @@ export default function Configuracoes() {
             <Info label="Perfis" value="Médico, Gestão e Secretaria" />
           </Section>
 
-          <Section title="Integração da API" icon={Database}>
-            <Info label="Backend" value="Supabase / RiseUP API" />
+          <Section title="Integração do sistema" icon={Database}>
+            <Info label="Backend" value="Supabase / RiseUP" />
             <Info label="Base URL" value={appEnv.supabaseUrl} />
             <Info label="Persistência" value="REST e Edge Functions" />
           </Section>

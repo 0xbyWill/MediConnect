@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Paciente, Agendamento, Laudo, PageType } from './types';
+import { Suspense, lazy, useState, useCallback, useEffect, useRef } from 'react';
+import type { Paciente, Agendamento, Laudo, PageType, QueueAdvanceOffer } from './types';
 import {
   ROLE_PAGES,
   agendamentoToApiAppointment,
@@ -11,31 +11,37 @@ import {
 } from './types';
 import { useAuth } from './contexts/AuthContext';
 import { appointmentsApi, doctorsApi, patientsApi, reportsApi } from './lib/api';
+import { smsApi } from './lib/api';
 import type { ApiAppointment, ApiDoctor, ApiPatient, ApiReport } from './lib/api';
+import { queueAiApi } from './lib/aiApi';
 import LoadingState from './app/LoadingState';
 import { buildRoleNotifications } from './app/notifications';
 import type { NotificationItem } from './app/notifications';
 import { dateToISO, timeToHHMM } from './shared/utils/date';
 import { mergeById } from './shared/utils/collection';
+import { toUserFacingErrorMessage } from './shared/utils/errors';
+import { normalizePhoneBRForSms } from './shared/utils/validation';
+import { buildAdvanceOfferMessage, buildQueueCandidates, sortQueueCandidates } from './shared/utils/advanceQueue';
 
 import Login         from './pages/Login';
 import CadastroPaciente from './pages/CadastroPaciente';
 import Sidebar       from './components/Sidebar';
 import Topbar        from './components/Topbar';
 import PatientChatbot from './components/PatientChatbot';
-import Dashboard     from './pages/Dashboard';
-import Pacientes     from './pages/Pacientes';
-import Agenda        from './pages/Agenda';
-import FilaPrioridade from './pages/FilaPrioridade';
-import Registro      from './pages/Registro';
-import Laudos        from './pages/Laudos';
-import Configuracoes from './pages/Configuracoes';
-import Comunicacao   from './pages/Comunicacao';
-import Mensagens     from './pages/Mensagens';
-import Relatorios    from './pages/Relatorios';
-import Usuarios      from './pages/Usuarios';
-import Metricas      from './pages/Metricas';
-import AssistenteIA  from './pages/AssistenteIA';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Pacientes = lazy(() => import('./pages/Pacientes'));
+const Agenda = lazy(() => import('./pages/Agenda'));
+const FilaPrioridade = lazy(() => import('./pages/FilaPrioridade'));
+const Registro = lazy(() => import('./pages/Registro'));
+const Laudos = lazy(() => import('./pages/Laudos'));
+const Configuracoes = lazy(() => import('./pages/Configuracoes'));
+const Comunicacao = lazy(() => import('./pages/Comunicacao'));
+const Mensagens = lazy(() => import('./pages/Mensagens'));
+const Relatorios = lazy(() => import('./pages/Relatorios'));
+const Usuarios = lazy(() => import('./pages/Usuarios'));
+const Metricas = lazy(() => import('./pages/Metricas'));
+const AssistenteIA = lazy(() => import('./pages/AssistenteIA'));
 
 const onlyActiveAppointments = (appointments: ApiAppointment[]) =>
   appointments.filter(appointment => appointment.status !== 'cancelled');
@@ -53,6 +59,30 @@ function withElapsedStatus(appointment: Agendamento): Agendamento {
 
 const toVisibleAgendamentos = (appointments: ApiAppointment[]) =>
   onlyActiveAppointments(appointments).map(apiAppointmentToAgendamento).map(withElapsedStatus);
+
+const ADVANCE_OFFERS_KEY = 'mc_advance_queue_offers';
+
+function readAdvanceOffers(): QueueAdvanceOffer[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ADVANCE_OFFERS_KEY) || '[]') as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is QueueAdvanceOffer => Boolean(item && typeof item === 'object' && 'id' in item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function appendAdvanceOffer(offer: QueueAdvanceOffer) {
+  const offers = readAdvanceOffers();
+  localStorage.setItem(ADVANCE_OFFERS_KEY, JSON.stringify([...offers, offer]));
+  window.dispatchEvent(new Event('mc-advance-offers-updated'));
+}
+
+function hasOpenAdvanceOffer(slotId: string) {
+  return readAdvanceOffers().some(offer =>
+    offer.slotId === slotId &&
+    ['pending', 'sent', 'accepted'].includes(offer.status)
+  );
+}
 
 function isPermissionError(err: unknown) {
   const message = err instanceof Error ? err.message.toLowerCase() : '';
@@ -127,8 +157,8 @@ export default function App() {
 
     const errors: string[] = [];
     const capture = (label: string, err: unknown) => {
-      const msg = err instanceof Error ? err.message : 'erro desconhecido';
-      errors.push(`${label}: ${msg}`);
+      void err;
+      errors.push(`Não foi possível carregar ${label}.`);
     };
 
     try {
@@ -252,11 +282,11 @@ export default function App() {
       }
 
       if (errors.length) {
-        setApiError(errors.join(' | '));
+        setApiError(Array.from(new Set(errors)).join(' '));
       }
 
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao carregar dados da API.';
+      const msg = toUserFacingErrorMessage(err, 'Não foi possível carregar os dados. Atualize a tela e tente novamente.');
       setApiError(msg);
       setPacientes([]);
       setAgendamentos([]);
@@ -285,11 +315,7 @@ export default function App() {
       createdPatientsRef.current = mergeById(createdPatientsRef.current, [created]);
       await refresh();
     } catch (err) {
-      const rawMsg = err instanceof Error ? err.message : 'Erro ao cadastrar paciente.';
-      const msg =
-        rawMsg.includes('row-level security') || rawMsg.includes('Permissões insuficientes')
-          ? 'O perfil médico ainda não tem permissão no Supabase para cadastrar pacientes. Ajuste a policy/Edge Function de patients para liberar INSERT para médicos.'
-          : rawMsg;
+      const msg = toUserFacingErrorMessage(err, 'Não foi possível cadastrar o paciente. Confira os dados e tente novamente.');
       setApiError(msg);
       throw new Error(msg);
     }
@@ -308,21 +334,21 @@ export default function App() {
       const rawMsg = err instanceof Error ? err.message : 'Erro ao excluir paciente.';
       const lowerMsg = rawMsg.toLowerCase();
       if (rawMsg.includes('403') || lowerMsg.includes('forbidden')) {
-        const msg = 'A API não permitiu excluir este paciente para o perfil logado.';
+        const msg = 'Seu perfil não tem permissão para excluir este paciente.';
         setApiError(msg);
         throw new Error(msg);
       }
       if (lowerMsg.includes('nao excluiu nenhum paciente')) {
-        const msg = 'A API não excluiu o paciente. Pela documentação, esta ação exige perfil admin/gestão.';
+        const msg = 'Este paciente não pôde ser excluído com o perfil atual.';
         setApiError(msg);
         throw new Error(msg);
       }
       if (lowerMsg.includes('foreign key') || lowerMsg.includes('violates') || lowerMsg.includes('referenced')) {
-        const msg = 'Não foi possível excluir este paciente porque ele possui registros vinculados na API.';
+        const msg = 'Não foi possível excluir este paciente porque ele possui registros vinculados.';
         setApiError(msg);
         throw new Error(msg);
       }
-      const msg = rawMsg;
+      const msg = toUserFacingErrorMessage(err, 'Não foi possível excluir o paciente. Tente novamente em instantes.');
       setApiError(msg);
       throw new Error(msg);
     }
@@ -362,7 +388,7 @@ export default function App() {
     } catch (err) {
       if (user.role !== 'paciente') throw err;
       if (isPermissionError(err) || isMissingPatientAppointmentRpc(err)) {
-        throw new Error('O Supabase ainda não liberou o agendamento pelo paciente. Aplique a migration 202605190002_appointments_patient_self_schedule.sql e recarregue o schema da API.');
+        throw new Error('O agendamento pelo paciente ainda não está disponível. Fale com a secretaria para concluir a solicitação.');
       }
       throw err;
     }
@@ -392,7 +418,7 @@ export default function App() {
       } catch (rpcErr) {
         const message = rpcErr instanceof Error ? rpcErr.message.toLowerCase() : '';
         if (message.includes('accept_my_advance_offer') || message.includes('schema cache') || message.includes('404') || message.includes('could not find the function')) {
-          throw new Error('O Supabase ainda não tem a função para o paciente aceitar antecipação. Aplique a migration 202605260002_accept_patient_advance_offer.sql e recarregue a tela.');
+          throw new Error('Não foi possível aceitar a antecipação agora. Fale com a secretaria para confirmar a vaga.');
         }
         throw rpcErr;
       }
@@ -404,29 +430,109 @@ export default function App() {
     await refresh();
   }, [agendamentos, refresh, user]);
 
+  const sendAdvanceOfferForCancelledAppointment = useCallback(async (cancelled: Agendamento) => {
+    if (!cancelled.medicoId) return;
+    const doctor = doctors.find(item => item.id === cancelled.medicoId);
+    if (!doctor?.specialty) return;
+
+    const slotId = `cancelled:${cancelled.id}`;
+    if (hasOpenAdvanceOffer(slotId)) return;
+
+    const candidates = buildQueueCandidates({
+      slotDoctorId: doctor.id,
+      slotSpecialty: doctor.specialty,
+      slotDate: cancelled.data,
+      slotTime: cancelled.hora,
+      patients: pacientes,
+      appointments: agendamentos,
+      doctors,
+    });
+
+    let orderedCandidates = sortQueueCandidates(candidates);
+    try {
+      const suggestion = await queueAiApi.suggestOrder({
+        specialty: doctor.specialty,
+        slotDate: cancelled.data,
+        slotTime: cancelled.hora,
+        candidates,
+      });
+      const byPatientId = new Map(candidates.map(candidate => [candidate.patientId, candidate]));
+      const fromSuggestion = suggestion.orderedPatientIds
+        .map(id => byPatientId.get(id))
+        .filter((candidate): candidate is typeof candidates[number] => Boolean(candidate));
+      if (fromSuggestion.length > 0) {
+        const suggestedIds = new Set(fromSuggestion.map(candidate => candidate.patientId));
+        orderedCandidates = [
+          ...fromSuggestion,
+          ...orderedCandidates.filter(candidate => !suggestedIds.has(candidate.patientId)),
+        ];
+      }
+    } catch {
+      orderedCandidates = sortQueueCandidates(candidates);
+    }
+
+    const candidate = orderedCandidates.find(item => {
+      const patient = pacientes.find(paciente => paciente.id === item.patientId);
+      return Boolean(patient && normalizePhoneBRForSms(patient.telefone));
+    });
+    if (!candidate) return;
+
+    const patient = pacientes.find(item => item.id === candidate.patientId);
+    const phone = normalizePhoneBRForSms(patient?.telefone ?? '');
+    if (!patient || !phone) return;
+
+    const baseOffer = {
+      id: `${slotId}:${candidate.patientId}:${candidate.appointmentId}:auto:${Date.now()}`,
+      slotId,
+      candidatePatientId: candidate.patientId,
+      appointmentId: candidate.appointmentId,
+      slotDoctorId: doctor.id,
+      slotDate: cancelled.data,
+      slotTime: cancelled.hora,
+      slotSpecialty: doctor.specialty,
+      sentAt: new Date().toISOString(),
+    } satisfies Omit<QueueAdvanceOffer, 'status'>;
+
+    try {
+      const response = await smsApi.send({
+        patient_id: patient.id,
+        phone_number: phone,
+        message: buildAdvanceOfferMessage({
+          patientName: candidate.patientName,
+          specialty: doctor.specialty,
+          date: cancelled.data,
+          time: cancelled.hora,
+        }),
+      });
+      if (response.success === false) throw new Error(response.message || 'O envio do SMS não foi confirmado.');
+      appendAdvanceOffer({ ...baseOffer, status: 'sent', smsSid: response.sid });
+    } catch (err) {
+      appendAdvanceOffer({
+        ...baseOffer,
+        status: 'failed',
+        error: toUserFacingErrorMessage(err, 'Falha ao enviar SMS.'),
+      });
+      setApiError('Consulta cancelada, mas não foi possível enviar a oferta automática por SMS.');
+    }
+  }, [agendamentos, doctors, pacientes]);
+
   const deleteAgendamento = useCallback(async (id: string) => {
     try {
       const current = agendamentos.find(item => item.id === id);
       if (current && isElapsedAgendamento(current)) {
         throw new Error('Consultas com horário já passado ficam como atendidas e não podem ser canceladas ou excluídas.');
       }
-      if (user?.role === 'gestao' || user?.role === 'secretaria' || user?.role === 'paciente') {
-        await appointmentsApi.cancel(id);
-      } else {
-        await appointmentsApi.delete(id);
+      await appointmentsApi.cancel(id);
+      if (current) {
+        await sendAdvanceOfferForCancelledAppointment(current);
       }
       await refresh();
     } catch (err) {
-      const rawMsg = err instanceof Error ? err.message : 'Erro ao alterar agendamento.';
-      const lowerMsg = rawMsg.toLowerCase();
-      const msg =
-        rawMsg.includes('403') || lowerMsg.includes('forbidden')
-          ? 'A API não permitiu alterar este agendamento para o perfil logado.'
-          : rawMsg;
+      const msg = toUserFacingErrorMessage(err, 'Não foi possível alterar este agendamento. Tente novamente em instantes.');
       setApiError(msg);
       throw new Error(msg);
     }
-  }, [agendamentos, refresh, user?.role]);
+  }, [agendamentos, refresh, sendAdvanceOfferForCancelledAppointment]);
 
   // ─── CRUD Laudos ──────────────────────────────────────────────────────────
   const addLaudo = useCallback(async (l: Omit<Laudo, 'id'>) => {
@@ -547,7 +653,7 @@ export default function App() {
           ) : (
             <>
 
-          {/* Banner de erro/loading da API */}
+          {/* Banner de erro/carregamento */}
           {(apiLoading || apiError) && (
             <div style={{
               position: 'absolute', top: 12, right: 16, zIndex: 30,
@@ -563,12 +669,13 @@ export default function App() {
               {apiError && (
                 <button onClick={() => { setApiError(null); void refresh(); }}
                   style={{ marginLeft: 4, padding: '2px 8px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                  Retry
+                  Tentar novamente
                 </button>
               )}
             </div>
           )}
 
+          <Suspense fallback={<LoadingState label="Carregando tela..." />}>
           {currentPage === 'dashboard' && (
             <Dashboard
               pacientes={pacientes} agendamentos={agendamentos} laudos={laudos} doctors={doctors}
@@ -624,6 +731,7 @@ export default function App() {
           )}
           {currentPage === 'ia' && allowedPages.includes('ia') && <AssistenteIA/>}
           {currentPage === 'configuracoes' && allowedPages.includes('configuracoes') && <Configuracoes/>}
+          </Suspense>
             </>
           )}
         </main>

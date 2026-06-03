@@ -93,7 +93,6 @@ src/
 │   ├── Sidebar.tsx           # Menu lateral dinâmico por perfil
 │   └── Topbar.tsx            # Barra superior com busca e perfil
 ├── types.ts                  # Tipagens globais e helpers de mapeamento
-├── store.ts                  # Persistência local via localStorage
 ├── App.tsx                   # Roteamento por perfil e guard de autenticação
 ├── main.tsx                  # Entry point com AuthProvider
 └── index.css                 # Variáveis CSS e estilos globais
@@ -210,7 +209,7 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-1.5-flash
 ```
 
-Para Gemini, configure `AI_PROVIDER=gemini`, `GEMINI_API_KEY` e `GEMINI_MODEL` nos secrets das Edge Functions. Nao exponha chaves de IA como variaveis `VITE_*`.
+Para Gemini, configure `AI_PROVIDER=gemini`, `GEMINI_API_KEY` e `GEMINI_MODEL` nos secrets das Edge Functions. Chaves de IA devem ficar somente no servidor; nao use variaveis publicas `VITE_*` para provedores de IA.
 
 Endpoints:
 

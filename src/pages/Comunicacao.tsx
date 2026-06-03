@@ -22,6 +22,7 @@ import { SMS_MESSAGE_MAX_LENGTH, SMS_TEMPLATES } from '../shared/constants/smsTe
 import { dateToISO } from '../shared/utils/date';
 import { formatPhoneBR, isValidEmail, isValidPhoneBRForSms, normalizePhoneBRForSms } from '../shared/utils/validation';
 import { digitsOnly, formatCpf } from '../shared/utils/cpf';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 interface ComunicacaoProps {
   pacientes: Paciente[];
@@ -153,7 +154,7 @@ function getProblemMessage(err: unknown) {
   if (msg.includes('400') || lower.includes('phone') || lower.includes('telefone')) {
     return 'Nao foi possivel enviar. Confira o telefone e a mensagem.';
   }
-  return 'Nao foi possivel enviar o SMS agora. Tente novamente em instantes.';
+  return toUserFacingErrorMessage(err, 'Nao foi possivel enviar a mensagem agora. Tente novamente em instantes.');
 }
 
 function readSentAutomationKeys(): string[] {
@@ -373,7 +374,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
         });
 
         if (response.success === false) {
-          throw new Error(response.message || 'A API nao confirmou o envio do WhatsApp.');
+          throw new Error(response.message || 'O envio do WhatsApp não foi confirmado.');
         }
 
         addHistory({
@@ -399,7 +400,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
         });
 
         if (response.success === false) {
-          throw new Error(response.message || 'A API não confirmou o envio do SMS.');
+          throw new Error(response.message || 'O envio do SMS não foi confirmado.');
         }
 
         addHistory({
@@ -479,7 +480,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
         });
 
         if (response.success === false) {
-          throw new Error(response.message || 'A API nao confirmou o envio do WhatsApp.');
+          throw new Error(response.message || 'O envio do WhatsApp não foi confirmado.');
         }
 
         sent += 1;

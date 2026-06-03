@@ -173,7 +173,7 @@ export function buildAssistantContext(
   }
 
   if (source === 'financial' || action === 'financial_summary') {
-    warnings.push('Não há API financeira dedicada carregada neste contexto; valores de receita, recebido e pendente só podem ser analisados se já estiverem no contexto.');
+    warnings.push('Não há dados financeiros dedicados carregados neste contexto; valores de receita, recebido e pendente só podem ser analisados se já estiverem disponíveis.');
   }
 
   const pendingReports = reports
@@ -214,7 +214,7 @@ export function buildAssistantContext(
       receitaEstimada: null,
       recebido: null,
       pendente: null,
-      observacao: 'Não há dados financeiros estruturados disponíveis nas APIs lidas pelo assistente.',
+      observacao: 'Não há dados financeiros estruturados disponíveis para o assistente.',
     },
     prioridadeInternaPacientes: buildPriorityMetricsSummary(uiPatients, []),
   }) as Record<string, unknown>;

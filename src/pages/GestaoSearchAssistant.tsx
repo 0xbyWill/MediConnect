@@ -47,6 +47,7 @@ import {
   parseAiStructuredResponse,
   supportsSpeechRecognition,
 } from '../shared/utils/aiAssistantOutput';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 type AssistantMessage = {
   id: string;
@@ -211,7 +212,7 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
       ]);
     } catch (err) {
       setPrompt(submittedPrompt);
-      setError(err instanceof Error ? err.message : 'Não foi possível consultar o assistente.');
+      setError(toUserFacingErrorMessage(err, 'Não foi possível consultar o assistente. Tente novamente em instantes.'));
     } finally {
       setLoading(false);
       setPendingPrompt(null);

@@ -1,13 +1,14 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Brain, CalendarClock, CheckCircle2, Loader2, MessageSquare, RefreshCw, Send, XCircle } from 'lucide-react';
+import { AlertCircle, CalendarClock, CheckCircle2, Loader2, MessageSquare, RefreshCw, Send, XCircle } from 'lucide-react';
 import type { Agendamento, Paciente, QueueAdvanceOffer, QueueAvailableSlot, QueueCandidate, QueueSuggestion } from '../types';
-import type { ApiDoctor, ApiDoctorAvailability } from '../lib/api';
-import { availabilityApi, smsApi } from '../lib/api';
+import type { ApiDoctor } from '../lib/api';
+import { smsApi } from '../lib/api';
 import { queueAiApi } from '../lib/aiApi';
 import { useAuth } from '../contexts/AuthContext';
 import { dateToISO } from '../shared/utils/date';
 import { normalizePhoneBRForSms } from '../shared/utils/validation';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 import {
   buildAdvanceOfferMessage,
   buildAllQueueCandidates,
@@ -25,35 +26,31 @@ interface FilaPrioridadeProps {
 }
 
 const OFFERS_KEY = 'mc_advance_queue_offers';
-const LOOKAHEAD_DAYS = 14;
-
 export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpdateAppointment }: FilaPrioridadeProps) {
   const { user } = useAuth();
-  const [availability, setAvailability] = useState<ApiDoctorAvailability[]>([]);
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [specialtyFilter, setSpecialtyFilter] = useState('');
+  const [doctorFilter, setDoctorFilter] = useState('');
   const [offers, setOffers] = useState<QueueAdvanceOffer[]>(readOffers);
   const [suggestion, setSuggestion] = useState<QueueSuggestion | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
   const [sendingId, setSendingId] = useState('');
   const [applyingId, setApplyingId] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const slots = useMemo(() => buildAvailableSlots({ availability, agendamentos, doctors }), [agendamentos, availability, doctors]);
+  const slots = useMemo(() => buildCancelledSlots({ agendamentos, doctors, offers }), [agendamentos, doctors, offers]);
   const filteredSlots = useMemo(() => slots.filter(slot =>
-    (!specialtyFilter || slot.specialty === specialtyFilter)
-  ), [slots, specialtyFilter]);
-  const doctorSlotOptions = useMemo(() => {
-    const byDoctor = new Map<string, QueueAvailableSlot>();
-    filteredSlots.forEach(slot => {
-      if (!byDoctor.has(slot.doctorId)) byDoctor.set(slot.doctorId, slot);
-    });
-    return Array.from(byDoctor.values());
-  }, [filteredSlots]);
+    (!specialtyFilter || slot.specialty === specialtyFilter) &&
+    (!doctorFilter || slot.doctorId === doctorFilter)
+  ), [doctorFilter, slots, specialtyFilter]);
   const selectedSlot = slots.find(slot => slot.id === selectedSlotId) ?? null;
   const doctorSpecialties = useMemo(() => Array.from(new Set(doctors.map(doctor => doctor.specialty).filter(Boolean))).sort((a, b) => a.localeCompare(b)), [doctors]);
+  const doctorOptions = useMemo(() => {
+    const doctorIdsWithSlots = new Set(slots.map(slot => slot.doctorId));
+    return doctors
+      .filter(doctor => doctorIdsWithSlots.has(doctor.id))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  }, [doctors, slots]);
   const refusalCounts = useMemo(() => offers.reduce<Record<string, number>>((acc, offer) => {
     if (offer.status === 'declined') acc[offer.candidatePatientId] = (acc[offer.candidatePatientId] ?? 0) + 1;
     return acc;
@@ -61,6 +58,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
   const candidates = useMemo(() => {
     const base = selectedSlot
       ? buildQueueCandidates({
+          slotDoctorId: selectedSlot.doctorId,
           slotSpecialty: selectedSlot.specialty,
           slotDate: selectedSlot.date,
           slotTime: selectedSlot.time,
@@ -76,6 +74,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
           refusalCounts,
     });
     return base.filter(candidate =>
+      (!selectedSlot || candidate.doctorId === selectedSlot.doctorId) &&
       (!selectedSlot || isSameSpecialty(candidate.specialty, selectedSlot.specialty)) &&
       (!specialtyFilter || candidate.specialty === specialtyFilter)
     );
@@ -87,41 +86,69 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
       .map(id => byId.get(id))
       .filter((candidate): candidate is QueueCandidate => Boolean(candidate && isSameSpecialty(candidate.specialty, selectedSlot.specialty)));
   }, [candidates, selectedSlot, suggestion]);
+  const sentOffersCount = offers.filter(offer => ['sent', 'accepted'].includes(offer.status)).length;
+  const acceptedOffersCount = offers.filter(offer => offer.status === 'accepted').length;
 
   useEffect(() => {
     localStorage.setItem(OFFERS_KEY, JSON.stringify(offers));
     window.dispatchEvent(new Event('mc-advance-offers-updated'));
   }, [offers]);
 
-  const loadAvailability = async () => {
-    if (user?.role !== 'gestao') return;
-    setLoading(true);
-    setError('');
-    try {
-      const rows = await availabilityApi.list({ active: true });
-      setAvailability(rows);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar vagas da agenda.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadAvailability();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.role]);
-
   useEffect(() => {
     setSuggestion(null);
   }, [selectedSlotId]);
 
   useEffect(() => {
+    if (!selectedSlot || candidates.length === 0) {
+      setSuggestion(null);
+      return;
+    }
+
+    let active = true;
+    queueAiApi.suggestOrder({
+      specialty: selectedSlot.specialty,
+      slotDate: selectedSlot.date,
+      slotTime: selectedSlot.time,
+      candidates,
+    })
+      .then(response => {
+        if (!active) return;
+        const validated = validateGeminiQueueSuggestion(
+          candidates.map(candidate => candidate.patientId),
+          response.orderedPatientIds,
+          selectedSlot.specialty,
+          candidates
+        );
+        setSuggestion({ ...validated, warnings: [...validated.warnings, ...response.warnings] });
+      })
+      .catch(() => {
+        if (!active) return;
+        setSuggestion({
+          orderedPatientIds: sortQueueCandidates(candidates).map(candidate => candidate.patientId),
+          source: 'fallback',
+          warnings: [],
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [candidates, selectedSlot]);
+
+  useEffect(() => {
     if (!selectedSlot) return;
-    if (specialtyFilter && selectedSlot.specialty !== specialtyFilter) {
+    if (
+      (specialtyFilter && selectedSlot.specialty !== specialtyFilter) ||
+      (doctorFilter && selectedSlot.doctorId !== doctorFilter)
+    ) {
       setSelectedSlotId('');
     }
-  }, [selectedSlot, specialtyFilter]);
+  }, [doctorFilter, selectedSlot, specialtyFilter]);
+
+  useEffect(() => {
+    if (selectedSlotId || filteredSlots.length === 0) return;
+    setSelectedSlotId(filteredSlots[0].id);
+  }, [filteredSlots, selectedSlotId]);
 
   if (user?.role !== 'gestao') {
     return (
@@ -133,40 +160,12 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
     );
   }
 
-  const runAiSuggestion = async () => {
-    if (!selectedSlot) return;
-    setAiLoading(true);
-    setError('');
-    try {
-      const response = await queueAiApi.suggestOrder({
-        specialty: selectedSlot.specialty,
-        slotDate: selectedSlot.date,
-        slotTime: selectedSlot.time,
-        candidates,
-      });
-      const validated = validateGeminiQueueSuggestion(
-        candidates.map(candidate => candidate.patientId),
-        response.orderedPatientIds,
-        selectedSlot.specialty,
-        candidates
-      );
-      setSuggestion({ ...validated, warnings: [...validated.warnings, ...response.warnings] });
-    } catch (err) {
-      setSuggestion({
-        orderedPatientIds: sortQueueCandidates(candidates).map(candidate => candidate.patientId),
-        source: 'fallback',
-        warnings: [err instanceof Error ? err.message : 'Gemini indisponível; fallback determinístico aplicado.'],
-      });
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const sendOffer = async (candidate: QueueCandidate) => {
     if (!selectedSlot) return;
     const duplicate = offers.some(offer =>
       offer.slotId === selectedSlot.id &&
       offer.candidatePatientId === candidate.patientId &&
+      offer.appointmentId === candidate.appointmentId &&
       ['pending', 'sent', 'accepted'].includes(offer.status)
     );
     if (duplicate) {
@@ -184,7 +183,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
     setSendingId(candidate.patientId);
     setError('');
     setSuccess('');
-    const offerId = `${selectedSlot.id}:${candidate.patientId}:${Date.now()}`;
+    const offerId = `${selectedSlot.id}:${candidate.patientId}:${candidate.appointmentId}:${Date.now()}`;
     const message = buildAdvanceOfferMessage({
       patientName: candidate.patientName,
       specialty: selectedSlot.specialty,
@@ -194,7 +193,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
 
     try {
       const response = await smsApi.send({ patient_id: patient.id, phone_number: phone, message });
-      if (response.success === false) throw new Error(response.message || 'A API não confirmou o envio do SMS.');
+      if (response.success === false) throw new Error(response.message || 'O envio do SMS não foi confirmado.');
       setOffers(current => [...current, {
         id: offerId,
         slotId: selectedSlot.id,
@@ -221,9 +220,9 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
         slotSpecialty: selectedSlot.specialty,
         status: 'failed',
         sentAt: new Date().toISOString(),
-        error: err instanceof Error ? err.message : 'Falha ao enviar SMS.',
+        error: toUserFacingErrorMessage(err, 'Falha ao enviar SMS.'),
       }]);
-      setError(err instanceof Error ? err.message : 'Falha ao enviar SMS.');
+      setError(toUserFacingErrorMessage(err, 'Falha ao enviar SMS. Tente novamente em instantes.'));
     } finally {
       setSendingId('');
     }
@@ -231,7 +230,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
 
   const markDeclined = (candidate: QueueCandidate) => {
     if (!selectedSlot) return;
-    const openOffer = findLatestOffer(offers, selectedSlot.id, candidate.patientId);
+    const openOffer = findLatestOffer(offers, selectedSlot.id, candidate.patientId, candidate.appointmentId);
     setError('');
     setSuccess('');
     if (!openOffer) {
@@ -246,7 +245,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
 
   const acceptOffer = async (candidate: QueueCandidate) => {
     if (!selectedSlot) return;
-    const openOffer = findLatestOffer(offers, selectedSlot.id, candidate.patientId);
+    const openOffer = findLatestOffer(offers, selectedSlot.id, candidate.patientId, candidate.appointmentId);
     const appointment = agendamentos.find(appt => appt.id === candidate.appointmentId);
     if (!appointment) {
       setError('Consulta original não encontrada.');
@@ -275,9 +274,10 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
           : offer));
       }
       setSuccess('Antecipação confirmada e consulta remarcada.');
-      await loadAvailability();
+      setSelectedSlotId('');
+      setSuggestion(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao remarcar consulta.');
+      setError(toUserFacingErrorMessage(err, 'Erro ao remarcar consulta. Tente novamente em instantes.'));
     } finally {
       setApplyingId('');
     }
@@ -287,25 +287,31 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
     <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '30px clamp(18px, 4vw, 36px)', background: 'transparent' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 30, fontWeight: 800, color: '#071327', margin: 0, lineHeight: 1.15 }}>Fila de Prioridade</h1>
-          <p style={{ fontSize: 14, color: '#334155', marginTop: 6 }}>Antecipe consultas por especialidade, prioridade operacional e aceite do paciente.</p>
+          <h1 style={{ fontSize: 30, fontWeight: 800, color: '#071327', margin: 0, lineHeight: 1.15 }}>Cancelamentos e Realocações</h1>
+          <p style={{ fontSize: 14, color: '#334155', marginTop: 6 }}>Controle horários cancelados, envie ofertas por SMS e realoque apenas pacientes do mesmo médico.</p>
         </div>
-        <button type="button" onClick={() => void loadAvailability()} disabled={loading} style={buttonStyle('#fff', 'var(--primary)', '1px solid rgba(0,166,63,0.28)')}>
-          {loading ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={16} />} Atualizar
+        <button type="button" onClick={() => setOffers(readOffers())} style={buttonStyle('#fff', 'var(--primary)', '1px solid rgba(0,166,63,0.28)')}>
+          <RefreshCw size={16} /> Atualizar ofertas
         </button>
       </div>
 
       {error && <Alert tone="error" text={error} />}
       {success && <Alert tone="success" text={success} />}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min(100%, 320px), 0.8fr) minmax(min(100%, 480px), 1.2fr)', gap: 20, alignItems: 'start' }}>
+      <div style={summaryGridStyle}>
+        <MetricCard label="Cancelamentos" value={filteredSlots.length} hint="Horários para realocar" />
+        <MetricCard label="Candidatos da vaga" value={selectedSlot ? candidates.length : 0} hint="Mesmo médico" />
+        <MetricCard label="Ofertas ativas" value={sentOffersCount} hint={`${acceptedOffersCount} aceita(s)`} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min(100%, 380px), 0.95fr) minmax(min(100%, 520px), 1.3fr)', gap: 20, alignItems: 'start' }}>
         <section style={panelStyle}>
           <div style={sectionHeaderStyle}>
             <CalendarClock size={19} color="var(--primary)" />
-            <h2 style={sectionTitleStyle}>Vagas elegíveis</h2>
+            <h2 style={sectionTitleStyle}>1. Horário cancelado</h2>
           </div>
 
-          <div style={{ display: 'grid', gap: 12, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
             <div>
               <label htmlFor="queue-specialty-filter" style={labelStyle}>Especialidade</label>
               <select id="queue-specialty-filter" value={specialtyFilter} onChange={event => setSpecialtyFilter(event.target.value)} style={fieldStyle}>
@@ -313,54 +319,62 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
                 {doctorSpecialties.map(specialty => <option key={specialty} value={specialty}>{specialty}</option>)}
               </select>
             </div>
+            <div>
+              <label htmlFor="queue-doctor-filter" style={labelStyle}>Médico</label>
+              <select id="queue-doctor-filter" value={doctorFilter} onChange={event => setDoctorFilter(event.target.value)} style={fieldStyle}>
+                <option value="">Todos os médicos com vaga</option>
+                {doctorOptions.map(doctor => <option key={doctor.id} value={doctor.id}>{doctor.full_name}</option>)}
+              </select>
+            </div>
           </div>
 
-          <label htmlFor="queue-slot" style={labelStyle}>Médico com vaga</label>
-          <select id="queue-slot" value={selectedSlotId} onChange={event => setSelectedSlotId(event.target.value)} style={fieldStyle} disabled={loading || slots.length === 0}>
-            <option value="">{doctorSlotOptions.length === 0 ? 'Nenhum médico com vaga futura' : 'Todos os médicos / visão geral'}</option>
-            {doctorSlotOptions.map(slot => (
-              <option key={slot.id} value={slot.id}>
-                {slot.doctorName} - {slot.specialty}
-              </option>
+          <div style={{ display: 'grid', gap: 10, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
+            {filteredSlots.map(slot => (
+              <button
+                key={slot.id}
+                type="button"
+                onClick={() => setSelectedSlotId(slot.id)}
+                style={slotCardStyle(selectedSlotId === slot.id)}
+              >
+                <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                  <strong>{slot.doctorName}</strong>
+                  <SourcePill />
+                </span>
+                <span>{slot.specialty}</span>
+                <span style={{ color: '#0f172a', fontWeight: 800 }}>{formatDateBR(slot.date)} às {slot.time}</span>
+              </button>
             ))}
-          </select>
-
-          {selectedSlot && (
-            <div style={{ marginTop: 16, display: 'grid', gap: 8, fontSize: 13, color: '#334155' }}>
-              <strong style={{ color: '#071327' }}>{selectedSlot.doctorName}</strong>
-              <span>{selectedSlot.specialty}</span>
-              <span>Próxima vaga: {formatDateBR(selectedSlot.date)} às {selectedSlot.time}</span>
-              <span>{selectedSlot.source === 'cancelled' ? 'Origem: consulta cancelada' : 'Origem: disponibilidade ativa'}</span>
-            </div>
-          )}
-          {!selectedSlot && (
-            <div style={{ marginTop: 16, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              Modo geral ativo: exibindo todos os pacientes com consultas futuras. Selecione uma vaga apenas quando quiser montar a chamada para antecipação.
-            </div>
-          )}
+            {filteredSlots.length === 0 && <Empty text="Nenhum cancelamento encontrado para os filtros selecionados." />}
+          </div>
         </section>
 
         <section style={panelStyle}>
-          <div style={{ ...sectionHeaderStyle, justifyContent: 'space-between' }}>
+          <div style={sectionHeaderStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Brain size={19} color="var(--primary)" />
-              <h2 style={sectionTitleStyle}>Sequência sugerida</h2>
+              <RefreshCw size={19} color="var(--primary)" />
+              <h2 style={sectionTitleStyle}>2. Pacientes elegíveis</h2>
             </div>
-            <button type="button" onClick={() => void runAiSuggestion()} disabled={!selectedSlot || candidates.length === 0 || aiLoading} style={buttonStyle('var(--primary)', '#fff', 'none')}>
-              {aiLoading ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Brain size={15} />} Ordenar com IA
-            </button>
           </div>
 
-          {suggestion && (
-            <div style={{ fontSize: 12, color: '#475569', marginBottom: 12 }}>
-              Fonte: {suggestion.source === 'gemini' ? 'Gemini validado' : 'fallback determinístico'}
-              {suggestion.warnings.length > 0 && ` - ${suggestion.warnings[0]}`}
+          {selectedSlot ? (
+            <div style={selectedSlotStyle}>
+              <div>
+                <span style={labelStyle}>Vaga selecionada</span>
+                <strong style={{ display: 'block', color: '#071327', fontSize: 15 }}>{selectedSlot.doctorName}</strong>
+                <span style={{ color: '#334155', fontSize: 13 }}>{selectedSlot.specialty} - {formatDateBR(selectedSlot.date)} às {selectedSlot.time}</span>
+              </div>
+              <SourcePill />
             </div>
+          ) : (
+            <Empty text="Escolha um cancelamento à esquerda para ver apenas pacientes daquele médico." />
           )}
 
           <div style={{ display: 'grid', gap: 10 }}>
             {orderedCandidates.map((candidate, index) => {
-              const offer = selectedSlot ? findLatestOffer(offers, selectedSlot.id, candidate.patientId) : null;
+              const offer = selectedSlot ? findLatestOffer(offers, selectedSlot.id, candidate.patientId, candidate.appointmentId) : null;
+              const sendDisabled = !selectedSlot || sendingId === candidate.patientId || Boolean(offer && ['sent', 'accepted'].includes(offer.status));
+              const acceptDisabled = !selectedSlot || offer?.status === 'accepted' || applyingId === candidate.patientId;
+              const declineDisabled = !selectedSlot || offer?.status === 'declined' || offer?.status === 'accepted';
               return (
                 <article key={candidate.appointmentId} style={{ border: '1px solid #dbe7e2', borderRadius: 10, padding: 14, background: '#fff', display: 'grid', gap: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
@@ -374,16 +388,22 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
                     <span>Prioridade: {candidate.priorityValue}/5</span>
                     <span>Espera: {candidate.waitingDays} dia(s)</span>
                     <span>Consulta: {formatDateBR(candidate.originalDate)} {candidate.originalTime}</span>
+                    <span>Médico atual: {candidate.doctorName}</span>
                     <span>Recusas: {candidate.refusalCount}</span>
                   </div>
+                  {candidate.reasons.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {candidate.reasons.map(reason => <span key={reason} style={reasonPillStyle}>{reason}</span>)}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => void sendOffer(candidate)} disabled={!selectedSlot || sendingId === candidate.patientId || Boolean(offer && ['sent', 'accepted'].includes(offer.status))} style={buttonStyle('#fff', 'var(--primary)', '1px solid rgba(0,166,63,0.28)')}>
+                    <button type="button" onClick={() => void sendOffer(candidate)} disabled={sendDisabled} style={buttonStyle('#fff', 'var(--primary)', '1px solid rgba(0,166,63,0.28)', sendDisabled)}>
                       {sendingId === candidate.patientId ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={14} />} Enviar oferta
                     </button>
-                    <button type="button" onClick={() => void acceptOffer(candidate)} disabled={!selectedSlot || offer?.status === 'accepted' || applyingId === candidate.patientId} style={buttonStyle('var(--primary)', '#fff', 'none')}>
+                    <button type="button" onClick={() => void acceptOffer(candidate)} disabled={acceptDisabled} style={buttonStyle('var(--primary)', '#fff', 'none', acceptDisabled)}>
                       {applyingId === candidate.patientId ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={14} />} Aceite recebido
                     </button>
-                    <button type="button" onClick={() => markDeclined(candidate)} disabled={!selectedSlot || offer?.status === 'declined' || offer?.status === 'accepted'} style={buttonStyle('#fff', 'var(--red-600)', '1px solid var(--red-100)')}>
+                    <button type="button" onClick={() => markDeclined(candidate)} disabled={declineDisabled} style={buttonStyle('#fff', 'var(--red-600)', '1px solid var(--red-100)', declineDisabled)}>
                       <XCircle size={14} /> Recusou
                     </button>
                   </div>
@@ -392,7 +412,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
               );
             })}
             {!selectedSlot && orderedCandidates.length > 0 && <Empty text="Selecione uma vaga para enviar oferta ou confirmar antecipação." />}
-            {selectedSlot && orderedCandidates.length === 0 && <Empty text="Nenhum paciente elegível da mesma especialidade para esta vaga." />}
+            {selectedSlot && orderedCandidates.length === 0 && <Empty text="Nenhum paciente elegível do mesmo médico para esta vaga." />}
             {!selectedSlot && orderedCandidates.length === 0 && <Empty text="Nenhum paciente futuro encontrado para os filtros atuais." />}
           </div>
         </section>
@@ -403,31 +423,10 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
   );
 }
 
-function buildAvailableSlots(params: { availability: ApiDoctorAvailability[]; agendamentos: Agendamento[]; doctors: ApiDoctor[] }): QueueAvailableSlot[] {
+function buildCancelledSlots(params: { agendamentos: Agendamento[]; doctors: ApiDoctor[]; offers: QueueAdvanceOffer[] }): QueueAvailableSlot[] {
   const today = dateToISO(new Date());
   const doctorById = new Map(params.doctors.map(doctor => [doctor.id, doctor]));
   const slots: QueueAvailableSlot[] = [];
-
-  for (let dayOffset = 0; dayOffset < LOOKAHEAD_DAYS; dayOffset += 1) {
-    const date = new Date();
-    date.setDate(date.getDate() + dayOffset);
-    const iso = dateToISO(date);
-    const weekday = date.getDay();
-    params.availability.filter(rule => rule.active !== false && rule.weekday === weekday).forEach(rule => {
-      const doctor = doctorById.get(rule.doctor_id);
-      if (!doctor?.specialty) return;
-      const start = timeToMinutes(rule.start_time);
-      const end = timeToMinutes(rule.end_time);
-      if (start === null || end === null || end <= start) return;
-      const step = Math.max(30, rule.slot_minutes || 30);
-      for (let current = start; current < end; current += step) {
-        const time = minutesToTime(current);
-        if (`${iso} ${time}` <= `${today} ${currentTime()}`) continue;
-        if (hasConflict(params.agendamentos, { doctorId: doctor.id, date: iso, time }, '')) continue;
-        slots.push({ id: `availability:${doctor.id}:${iso}:${time}`, doctorId: doctor.id, doctorName: doctor.full_name, specialty: doctor.specialty, date: iso, time, source: 'availability' });
-      }
-    });
-  }
 
   params.agendamentos
     .filter(appt => appt.status === 'cancelado' && appt.data >= today && appt.medicoId)
@@ -435,6 +434,24 @@ function buildAvailableSlots(params: { availability: ApiDoctorAvailability[]; ag
       const doctor = appt.medicoId ? doctorById.get(appt.medicoId) : undefined;
       if (!doctor?.specialty || hasConflict(params.agendamentos, { doctorId: doctor.id, date: appt.data, time: appt.hora }, appt.id)) return;
       slots.push({ id: `cancelled:${appt.id}`, doctorId: doctor.id, doctorName: doctor.full_name, specialty: doctor.specialty, date: appt.data, time: appt.hora, source: 'cancelled', cancelledAppointmentId: appt.id });
+    });
+
+  params.offers
+    .filter(offer => offer.slotDoctorId && offer.slotDate && offer.slotTime && offer.slotSpecialty)
+    .filter(offer => offer.slotDate! >= today)
+    .forEach(offer => {
+      const doctor = offer.slotDoctorId ? doctorById.get(offer.slotDoctorId) : undefined;
+      if (!doctor || hasConflict(params.agendamentos, { doctorId: offer.slotDoctorId!, date: offer.slotDate!, time: offer.slotTime! }, offer.appointmentId)) return;
+      slots.push({
+        id: offer.slotId,
+        doctorId: offer.slotDoctorId!,
+        doctorName: doctor.full_name,
+        specialty: offer.slotSpecialty!,
+        date: offer.slotDate!,
+        time: offer.slotTime!,
+        source: 'cancelled',
+        cancelledAppointmentId: offer.slotId.startsWith('cancelled:') ? offer.slotId.slice('cancelled:'.length) : undefined,
+      });
     });
 
   const unique = new Map(slots.map(slot => [`${slot.doctorId}:${slot.date}:${slot.time}`, slot]));
@@ -460,8 +477,13 @@ function readOffers(): QueueAdvanceOffer[] {
   }
 }
 
-function findLatestOffer(offers: QueueAdvanceOffer[], slotId: string, patientId: string) {
-  return [...offers].reverse().find(offer => offer.slotId === slotId && offer.candidatePatientId === patientId && offer.status !== 'failed');
+function findLatestOffer(offers: QueueAdvanceOffer[], slotId: string, patientId: string, appointmentId: string) {
+  return [...offers].reverse().find(offer =>
+    offer.slotId === slotId &&
+    offer.candidatePatientId === patientId &&
+    offer.appointmentId === appointmentId &&
+    offer.status !== 'failed'
+  );
 }
 
 function buildLocalOffer(slot: QueueAvailableSlot, candidate: QueueCandidate, status: 'accepted' | 'declined'): QueueAdvanceOffer {
@@ -479,21 +501,6 @@ function buildLocalOffer(slot: QueueAvailableSlot, candidate: QueueCandidate, st
     sentAt: now,
     respondedAt: now,
   };
-}
-
-function timeToMinutes(value: string) {
-  const [hour, minute] = value.slice(0, 5).split(':').map(Number);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  return hour * 60 + minute;
-}
-
-function minutesToTime(value: number) {
-  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-}
-
-function currentTime() {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
 function formatDateBR(iso: string) {
@@ -526,11 +533,72 @@ function StatusPill({ status }: { status: QueueAdvanceOffer['status'] }) {
   return <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 9px', borderRadius: 20, background: status === 'accepted' ? 'var(--mint)' : status === 'declined' || status === 'failed' ? 'var(--red-50)' : 'var(--amber-100)', color: status === 'accepted' ? 'var(--dark)' : status === 'declined' || status === 'failed' ? 'var(--red-600)' : 'var(--amber-600)' }}>{label[status]}</span>;
 }
 
+function SourcePill() {
+  return (
+    <span style={{
+      fontSize: 10,
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      padding: '4px 8px',
+      borderRadius: 999,
+      background: 'var(--amber-100)',
+      color: 'var(--amber-600)',
+      whiteSpace: 'nowrap',
+    }}>
+      Cancelamento
+    </span>
+  );
+}
+
+function MetricCard({ label, value, hint }: { label: string; value: number; hint: string }) {
+  return (
+    <div style={metricCardStyle}>
+      <span style={{ color: '#64748b', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>{label}</span>
+      <strong style={{ color: '#071327', fontSize: 24, lineHeight: 1 }}>{value}</strong>
+      <span style={{ color: '#64748b', fontSize: 12 }}>{hint}</span>
+    </div>
+  );
+}
+
 const panelStyle: CSSProperties = { background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, padding: 20, boxShadow: 'none' };
 const sectionHeaderStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, marginBottom: 16 };
 const sectionTitleStyle: CSSProperties = { fontSize: 17, fontWeight: 800, color: '#071327', margin: 0 };
 const labelStyle: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 };
 const fieldStyle: CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 10, fontSize: 13, background: 'var(--gray-50)' };
-function buttonStyle(background: string, color: string, border: string): CSSProperties {
-  return { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 13px', background, color, border, borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer' };
+const summaryGridStyle: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 18 };
+const metricCardStyle: CSSProperties = { background: '#fff', border: '1px solid #dbe7e2', borderRadius: 12, padding: 14, display: 'grid', gap: 6 };
+const selectedSlotStyle: CSSProperties = { marginBottom: 14, border: '1px solid rgba(0,166,63,0.18)', background: '#f0fdf4', borderRadius: 12, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' };
+const reasonPillStyle: CSSProperties = { borderRadius: 999, background: '#f1f5f9', color: '#334155', padding: '4px 8px', fontSize: 11, fontWeight: 700 };
+
+function slotCardStyle(active: boolean): CSSProperties {
+  return {
+    width: '100%',
+    textAlign: 'left',
+    display: 'grid',
+    gap: 6,
+    padding: 13,
+    borderRadius: 12,
+    border: active ? '2px solid var(--primary)' : '1px solid #dbe7e2',
+    background: active ? '#f0fdf4' : '#fff',
+    color: '#334155',
+    cursor: 'pointer',
+    boxShadow: active ? '0 8px 18px rgba(0,166,63,0.08)' : 'none',
+  };
+}
+
+function buttonStyle(background: string, color: string, border: string, disabled = false): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '9px 13px',
+    background,
+    color,
+    border,
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 800,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.55 : 1,
+  };
 }

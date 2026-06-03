@@ -11,6 +11,7 @@ import { dateToISO, formatDateBR } from '../shared/utils/date';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
 import { formatCep, formatPhoneBR, isValidCep, isValidEmail, isValidPhoneBR, validateImageFile } from '../shared/utils/validation';
 import { initials } from '../shared/utils/text';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
 
 // --- Constantes ---------------------------------------------------------------
 const CONVENIOS: ConvenioType[] = [
@@ -732,12 +733,12 @@ export default function Pacientes({
     if (d.cep && !isValidCep(d.cep)) e.cep = 'Informe um CEP com 8 digitos.';
     if (d.urlRedirecionamento && !/^https?:\/\/\S+$/i.test(d.urlRedirecionamento.trim())) e.urlRedirecionamento = 'Informe uma URL iniciada por http:// ou https://.';
     if (!d.nome.trim()) e.nome = 'Nome obrigatório';
-    if (!d.cpf.trim()) e.cpf = 'CPF obrigatório pela API';
+    if (!d.cpf.trim()) e.cpf = 'CPF obrigatório.';
     if (d.cpf && !isValidCpf(d.cpf)) e.cpf = 'CPF inválido';
     if (!d.dataNasc) e.dataNasc = 'Data de nascimento obrigatória';
     else if (d.dataNasc > maxBirthDate) e.dataNasc = 'A data de nascimento deve ser no mínimo de ontem.';
-    if (!d.email.trim()) e.email = 'E-mail obrigatório pela API';
-    if (!d.telefone.trim()) e.telefone = 'Telefone obrigatório pela API';
+    if (!d.email.trim()) e.email = 'E-mail obrigatório.';
+    if (!d.telefone.trim()) e.telefone = 'Telefone obrigatório.';
     return e;
   };
 
@@ -765,7 +766,7 @@ export default function Pacientes({
       setSaving(false);
       closeModal();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao salvar paciente.';
+      const msg = toUserFacingErrorMessage(err, 'Erro ao salvar paciente. Confira os dados e tente novamente.');
       setSubmitError(msg);
       setSaving(false);
     }
@@ -781,7 +782,7 @@ export default function Pacientes({
       await onDelete(confirmDelete);
       setConfirmDelete(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Erro ao excluir paciente.');
+      setDeleteError(toUserFacingErrorMessage(err, 'Erro ao excluir paciente. Tente novamente em instantes.'));
     } finally {
       setDeleting(false);
     }

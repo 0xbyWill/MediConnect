@@ -105,7 +105,7 @@ export default function Relatorios({ pacientes, agendamentos, laudos }: Relatori
             {isGestao ? 'Relatórios Gerenciais' : 'Relatórios Médicos'}
           </h1>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>
-            Período de {formatDateBR(start)} até {formatDateBR(end)}, usando dados carregados da API.
+            Período de {formatDateBR(start)} até {formatDateBR(end)}, usando dados carregados do sistema.
           </p>
         </div>
         <select value={periodo} onChange={e => setPeriodo(e.target.value as Periodo)}
