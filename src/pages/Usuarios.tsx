@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { HTMLAttributes } from 'react';
 import { UserCog, Plus, Pencil, Trash2, X, Shield, Search, RefreshCw } from 'lucide-react';
 import { doctorsApi, usersApi } from '../lib/api';
-import type { ApiDoctor, ApiManagedUser, ApiRole, CreateUserResponse } from '../lib/api';
+import type { ApiDoctor, ApiManagedUser, ApiRole, CreateDoctorPayload, CreateUserResponse, CreateUserWithPasswordPayload } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { UserRole } from '../types';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
@@ -19,6 +19,7 @@ interface UsuarioItem {
   role: StaffRole;
   status: 'ativo' | 'inativo';
   cpf?: string;
+  department?: string;
   telefone?: string;
   senha?: string;
   crm?: string;
@@ -88,6 +89,7 @@ const emptyForm: UsuarioForm = {
   role: 'secretaria',
   status: 'ativo',
   cpf: '',
+  department: '',
   telefone: '',
   senha: '',
   crm: '',
@@ -124,6 +126,10 @@ const feedbackStyle: React.CSSProperties = {
 function formatSaveError(err: unknown): string {
   const msg = err instanceof Error ? err.message : 'Erro ao salvar usuário.';
   const lower = msg.toLowerCase();
+  if (lower.includes('cpf:') || lower.includes('cpf ')) return 'Informe um CPF valido para este usuario.';
+  if (lower.includes('department:') || lower.includes('department')) return 'Informe o departamento.';
+  if (lower.includes('crm_uf:') || lower.includes('crm uf')) return 'Informe a UF do CRM.';
+  if (lower.includes('crm:') || lower.includes(' crm')) return 'Informe o CRM.';
   if (lower.includes('invalid') && lower.includes('email')) {
     return 'Informe um e-mail válido. Ex: usuario@clinica.com';
   }
@@ -219,14 +225,19 @@ function managedUserToUsuario(user: ApiManagedUser): UsuarioItem | null {
     role,
     status: user.active === false ? 'inativo' : 'ativo',
     cpf: user.cpf,
+    department: user.department,
     telefone: user.phone,
   };
 }
 
 function mergeUsuarios(items: UsuarioItem[]) {
-  return Array.from(
-    new Map(items.map(item => [`${item.role}:${item.email || item.id}`, item])).values()
-  );
+  const merged = new Map<string, UsuarioItem>();
+  for (const item of items) {
+    const key = `${item.role}:${item.email || item.id}`;
+    const current = merged.get(key);
+    merged.set(key, current ? { ...item, ...current } : item);
+  }
+  return Array.from(merged.values());
 }
 
 export default function Usuarios() {
@@ -347,14 +358,15 @@ export default function Usuarios() {
       return 'Informe um CPF valido.';
     }
     if (d.role === 'gestao' && digitsOnly(d.cpf).length !== 11) return 'Informe o CPF do gestor com 11 dígitos.';
+    if (d.role === 'gestao' && !d.department?.trim()) return 'Informe o departamento do gestor.';
     if (d.role === 'secretaria' && digitsOnly(d.cpf).length !== 11) {
       return 'Informe o CPF da secretária com 11 dígitos.';
     }
+    if (d.role === 'secretaria' && !d.department?.trim()) return 'Informe o departamento da secretaria.';
     if (d.role === 'medico') {
       if (digitsOnly(d.cpf).length !== 11) return 'Informe um CPF válido com 11 dígitos.';
       if (!d.crm?.trim()) return 'Informe o CRM.';
       if (!d.crmUf?.trim()) return 'Informe a UF do CRM.';
-      if (!normalizedSpecialty(d.especialidade)) return 'Selecione ou informe a especialidade.';
     }
     return null;
   };
@@ -393,7 +405,8 @@ export default function Usuarios() {
             phone: digitsOnly(data.telefone),
             phone_mobile: digitsOnly(data.telefone),
             role: ROLE_API[data.role],
-            ...(data.cpf?.trim() ? { cpf: digitsOnly(data.cpf) } : {}),
+            cpf: digitsOnly(data.cpf),
+            department: data.department?.trim(),
             active: data.status !== 'inativo',
           });
         }
@@ -405,20 +418,21 @@ export default function Usuarios() {
       }
 
       if (data.role === 'medico') {
-        const payload = {
+        const payload: CreateDoctorPayload = {
           email: normalizeEmail(data.email),
           password: data.senha?.trim() ?? '',
           full_name: data.nome.trim(),
           phone: digitsOnly(data.telefone),
-          role: ROLE_API[data.role],
+          role: 'medico',
+          roles: ['medico'],
           cpf: digitsOnly(data.cpf),
           crm: data.crm?.trim() ?? '',
           crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
-          specialty: normalizedSpecialty(data.especialidade),
+          ...(normalizedSpecialty(data.especialidade) ? { specialty: normalizedSpecialty(data.especialidade) } : {}),
           phone_mobile: digitsOnly(data.telefone),
         };
 
-        const response = await usersApi.createWithPassword(payload);
+        const response = await doctorsApi.create(payload);
         const doctor = 'full_name' in response ? response as ApiDoctor : null;
         const novo: UsuarioItem = {
           id: responseId(response),
@@ -439,18 +453,19 @@ export default function Usuarios() {
         setSuccessMessage('Médico criado com sucesso.');
         await loadUsuarios([], restoredKeys);
       } else {
-        const payload = {
+        const payload: CreateUserWithPasswordPayload = {
           email: normalizeEmail(data.email),
+          password: data.senha?.trim() ?? '',
           full_name: data.nome.trim(),
           phone: digitsOnly(data.telefone),
           phone_mobile: digitsOnly(data.telefone),
           role: ROLE_API[data.role],
-          ...(data.cpf?.trim() ? { cpf: digitsOnly(data.cpf) } : {}),
+          roles: [ROLE_API[data.role]],
+          cpf: digitsOnly(data.cpf),
+          department: data.department?.trim() ?? '',
         };
 
-        const response = data.senha
-          ? await usersApi.createWithPassword({ ...payload, password: data.senha.trim() })
-          : await usersApi.create(payload);
+        const response = await usersApi.createWithPassword(payload);
         const novo: UsuarioItem = {
           id: responseId(response),
           nome: response.user?.full_name ?? payload.full_name,
@@ -458,6 +473,7 @@ export default function Usuarios() {
           role: data.role,
           status: 'ativo',
           cpf: data.cpf ? digitsOnly(data.cpf) : undefined,
+          department: payload.department,
           telefone: payload.phone,
         };
 
@@ -661,6 +677,7 @@ export default function Usuarios() {
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div title={u.nome} style={{ ...ellipsisStyle, fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{u.nome}</div>
                         {u.especialidade && <div title={u.especialidade} style={{ ...ellipsisStyle, fontSize: 11, color: 'var(--gray-400)' }}>{u.especialidade}</div>}
+                        {!u.especialidade && u.department && <div title={u.department} style={{ ...ellipsisStyle, fontSize: 11, color: 'var(--gray-400)' }}>{u.department}</div>}
                       </div>
                     </div>
                   </td>
@@ -753,7 +770,10 @@ export default function Usuarios() {
               </div>
 
               {(modal.data.role === 'secretaria' || modal.data.role === 'gestao') && (
-                <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', formatCpf(value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                <>
+                  <FormInput label="CPF" value={modal.data.cpf || ''} onChange={value => set('cpf', formatCpf(value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                  <FormInput label="Departamento" value={modal.data.department || ''} onChange={value => set('department', value)} placeholder={modal.data.role === 'gestao' ? 'Ex: Administracao' : 'Ex: Recepcao'} maxLength={80} />
+                </>
               )}
 
               {modal.data.role === 'medico' && (

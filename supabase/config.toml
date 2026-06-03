@@ -14,3 +14,6 @@ verify_jwt = true
 
 [functions.delete-user]
 verify_jwt = true
+
+[functions.process-appointment-sms-reminders]
+verify_jwt = false

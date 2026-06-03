@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   IdCard,
   Loader2,
+  Lock,
   Mail,
   Phone,
   User,
@@ -30,6 +31,8 @@ type FormState = {
   cpf: string;
   phone_mobile: string;
   birth_date: string;
+  password: string;
+  password_confirm: string;
 };
 
 type FieldErrors = Partial<Record<keyof FormState, string>>;
@@ -40,6 +43,8 @@ const emptyForm: FormState = {
   cpf: '',
   phone_mobile: '',
   birth_date: '',
+  password: '',
+  password_confirm: '',
 };
 
 function todayISO() {
@@ -52,6 +57,9 @@ function validate(form: FormState): FieldErrors {
   if (!isValidEmail(form.email)) errors.email = 'E-mail inválido.';
   if (!isValidCpf(form.cpf)) errors.cpf = 'Informe um CPF válido.';
   if (!isValidPhoneBR(form.phone_mobile)) errors.phone_mobile = 'Informe um telefone válido.';
+  if (!form.password.trim()) errors.password = 'Informe uma senha.';
+  if (form.password && form.password.length < 6) errors.password = 'A senha deve ter pelo menos 6 caracteres.';
+  if (form.password_confirm !== form.password) errors.password_confirm = 'As senhas nao conferem.';
   if (!isValidISODate(form.birth_date)) {
     errors.birth_date = 'Informe uma data de nascimento válida.';
   } else if (form.birth_date > todayISO()) {
@@ -107,6 +115,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
 
     const payload: PatientCreatePayload = {
       email: normalizeEmail(form.email),
+      password: form.password,
       full_name: form.full_name.trim(),
       cpf: digitsOnly(form.cpf),
       phone_mobile: normalizePhoneBR(form.phone_mobile),
@@ -119,7 +128,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
     setSuccess('');
     try {
       const response = await usersApi.createPatientAccount(payload);
-      setSuccess(response.message ?? 'Link mágico enviado para seu e-mail. Verifique sua caixa de entrada.');
+      setSuccess(response.message ?? 'Conta criada com sucesso. Use seu e-mail e senha para entrar.');
       setForm(emptyForm);
       setFieldErrors({});
     } catch (err) {
@@ -148,7 +157,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
               <div>
                 <p className="patient-signup-kicker">Novo cadastro</p>
                 <h1 id="patient-signup-title">Criar conta de paciente</h1>
-                <p>Preencha os dados para receber o link mágico de acesso.</p>
+                <p>Preencha os dados para criar seu acesso seguro.</p>
               </div>
               <button type="button" className="patient-signup-back" onClick={onBackToLogin}>
                 <ArrowLeft size={16} aria-hidden="true" />
@@ -239,17 +248,51 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
                     aria-describedby={fieldErrors.birth_date ? 'patient-birth-date-error' : undefined}
                   />
                 </Field>
+
+                <Field id="patient-password" label="Senha" icon={Lock} error={fieldErrors.password}>
+                  <input
+                    id="patient-password"
+                    type="password"
+                    value={form.password}
+                    onChange={event => setField('password', event.target.value)}
+                    placeholder="Minimo 6 caracteres"
+                    autoComplete="new-password"
+                    minLength={6}
+                    maxLength={72}
+                    required
+                    disabled={saving}
+                    aria-invalid={Boolean(fieldErrors.password)}
+                    aria-describedby={fieldErrors.password ? 'patient-password-error' : undefined}
+                  />
+                </Field>
+
+                <Field id="patient-password-confirm" label="Confirmar senha" icon={Lock} error={fieldErrors.password_confirm}>
+                  <input
+                    id="patient-password-confirm"
+                    type="password"
+                    value={form.password_confirm}
+                    onChange={event => setField('password_confirm', event.target.value)}
+                    placeholder="Repita a senha"
+                    autoComplete="new-password"
+                    minLength={6}
+                    maxLength={72}
+                    required
+                    disabled={saving}
+                    aria-invalid={Boolean(fieldErrors.password_confirm)}
+                    aria-describedby={fieldErrors.password_confirm ? 'patient-password-confirm-error' : undefined}
+                  />
+                </Field>
               </div>
 
               <button type="submit" className="patient-signup-submit" disabled={saving} aria-busy={saving}>
                 {saving ? (
                   <>
                     <Loader2 size={18} className="patient-signup-spinner" aria-hidden="true" />
-                    Enviando link...
+                    Criando conta...
                   </>
                 ) : (
                   <>
-                    Enviar link mágico
+                    Criar conta
                     <ArrowRight size={18} aria-hidden="true" />
                   </>
                 )}

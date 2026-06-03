@@ -18,12 +18,14 @@ export interface ApiUser {
     full_name?: string;
     name?: string;
     role?: ApiRole;
+    user_role?: ApiRole;
     roles?: ApiRole[];
     phone?: string;
     patient_id?: string;
   };
   app_metadata?: {
     role?: ApiRole;
+    user_role?: ApiRole;
     roles?: ApiRole[];
     patient_id?: string;
   };
@@ -52,16 +54,18 @@ export interface ApiDoctor {
   active?: boolean;
 }
 
-export type ApiRole = 'admin' | 'gestor' | 'secretaria' | 'medico' | 'paciente';
+export type ApiRole = 'admin' | 'gestor' | 'secretaria' | 'medico' | 'paciente' | 'user';
 
 export interface CreateUserPayload {
   email: string;
   full_name: string;
   phone?: string;
   role: ApiRole;
+  roles?: ApiRole[];
   create_patient_record?: boolean;
-  cpf?: string;
+  cpf: string;
   phone_mobile?: string;
+  department?: string;
   crm?: string;
   crm_uf?: string;
   specialty?: string;
@@ -73,12 +77,16 @@ export interface CreateUserWithPasswordPayload extends CreateUserPayload {
 
 export interface CreateDoctorPayload {
   email: string;
+  password?: string;
   full_name: string;
   cpf: string;
+  phone?: string;
   crm: string;
   crm_uf: string;
-  specialty: string;
-  phone_mobile: string;
+  specialty?: string;
+  phone_mobile?: string;
+  role?: 'medico';
+  roles?: ApiRole[];
 }
 
 export interface CreateUserResponse {
@@ -107,6 +115,7 @@ export interface UpdateUserPayload {
   phone_mobile?: string;
   role?: ApiRole;
   cpf?: string;
+  department?: string;
   active?: boolean;
 }
 
@@ -117,6 +126,7 @@ export interface PasswordResetResponse {
 
 export interface PatientCreatePayload {
   email: string;
+  password: string;
   full_name: string;
   cpf: string;
   phone_mobile: string;
@@ -135,6 +145,8 @@ export interface ApiUserInfo {
   user?: Partial<ApiUser> & {
     full_name?: string;
     name?: string;
+    role?: string;
+    user_role?: string;
     roles?: string[];
     phone?: string;
     patient_id?: string;
@@ -144,6 +156,7 @@ export interface ApiUserInfo {
     name?: string;
     phone?: string;
     role?: string;
+    user_role?: string;
     disabled?: boolean;
   } & Record<string, unknown>;
   roles?: string[];
@@ -157,6 +170,7 @@ export interface ApiManagedUser {
   role: ApiRole | string;
   phone?: string;
   cpf?: string;
+  department?: string;
   active?: boolean;
 }
 
@@ -171,6 +185,7 @@ interface ApiProfileRecord {
   phone?: string;
   phone_mobile?: string;
   cpf?: string;
+  department?: string;
   role?: string;
   roles?: string[];
   active?: boolean;
@@ -574,6 +589,7 @@ export const usersApi = {
             role,
             phone: row.phone ?? row.phone_mobile,
             cpf: row.cpf,
+            department: row.department,
             active: row.disabled === true ? false : row.active !== false,
           };
         })
@@ -626,7 +642,7 @@ export const usersApi = {
   },
 
   createPatientAccount: (data: PatientCreatePayload) =>
-    request<RegisterPatientResponse>('/functions/v1/register-patient', {
+    request<RegisterPatientResponse>('/functions/v1/register-patient-with-password', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -656,6 +672,7 @@ export const usersApi = {
       full_name: data.full_name,
       phone: data.phone ?? data.phone_mobile,
       cpf: data.cpf,
+      department: data.department,
       role: data.role,
       active: data.active,
       disabled: data.active === undefined ? undefined : !data.active,
