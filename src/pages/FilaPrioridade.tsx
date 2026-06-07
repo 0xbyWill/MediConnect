@@ -6,12 +6,11 @@ import type { ApiDoctor } from '../lib/api';
 import { smsApi } from '../lib/api';
 import { queueAiApi } from '../lib/aiApi';
 import { useAuth } from '../contexts/AuthContext';
-import { dateToISO } from '../shared/utils/date';
+import { dateToISO, timeToHHMM } from '../shared/utils/date';
 import { normalizePhoneBRForSms } from '../shared/utils/validation';
 import { toUserFacingErrorMessage } from '../shared/utils/errors';
 import {
   buildAdvanceOfferMessage,
-  buildAllQueueCandidates,
   buildQueueCandidates,
   isSameSpecialty,
   sortQueueCandidates,
@@ -31,6 +30,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [specialtyFilter, setSpecialtyFilter] = useState('');
   const [doctorFilter, setDoctorFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState('');
   const [offers, setOffers] = useState<QueueAdvanceOffer[]>(readOffers);
   const [suggestion, setSuggestion] = useState<QueueSuggestion | null>(null);
   const [sendingId, setSendingId] = useState('');
@@ -39,43 +39,48 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
   const [success, setSuccess] = useState('');
 
   const slots = useMemo(() => buildCancelledSlots({ agendamentos, doctors, offers }), [agendamentos, doctors, offers]);
-  const filteredSlots = useMemo(() => slots.filter(slot =>
+  const reschedulableSlots = useMemo(() => slots.filter(slot =>
+    buildQueueCandidates({
+      slotDoctorId: slot.doctorId,
+      slotSpecialty: slot.specialty,
+      slotDate: slot.date,
+      slotTime: slot.time,
+      patients: pacientes,
+      appointments: agendamentos,
+      doctors,
+    }).length > 0
+  ), [agendamentos, doctors, pacientes, slots]);
+  const filteredSlots = useMemo(() => reschedulableSlots.filter(slot =>
     (!specialtyFilter || slot.specialty === specialtyFilter) &&
-    (!doctorFilter || slot.doctorId === doctorFilter)
-  ), [doctorFilter, slots, specialtyFilter]);
+    (!doctorFilter || slot.doctorId === doctorFilter) &&
+    (!monthFilter || slot.date.startsWith(monthFilter))
+  ), [doctorFilter, monthFilter, reschedulableSlots, specialtyFilter]);
   const selectedSlot = slots.find(slot => slot.id === selectedSlotId) ?? null;
   const doctorSpecialties = useMemo(() => Array.from(new Set(doctors.map(doctor => doctor.specialty).filter(Boolean))).sort((a, b) => a.localeCompare(b)), [doctors]);
   const doctorOptions = useMemo(() => {
-    const doctorIdsWithSlots = new Set(slots.map(slot => slot.doctorId));
+    const doctorIdsWithSlots = new Set(reschedulableSlots.map(slot => slot.doctorId));
     return doctors
       .filter(doctor => doctorIdsWithSlots.has(doctor.id))
       .sort((a, b) => a.full_name.localeCompare(b.full_name));
-  }, [doctors, slots]);
+  }, [doctors, reschedulableSlots]);
   const refusalCounts = useMemo(() => offers.reduce<Record<string, number>>((acc, offer) => {
     if (offer.status === 'declined') acc[offer.candidatePatientId] = (acc[offer.candidatePatientId] ?? 0) + 1;
     return acc;
   }, {}), [offers]);
   const candidates = useMemo(() => {
-    const base = selectedSlot
-      ? buildQueueCandidates({
-          slotDoctorId: selectedSlot.doctorId,
-          slotSpecialty: selectedSlot.specialty,
-          slotDate: selectedSlot.date,
-          slotTime: selectedSlot.time,
-          patients: pacientes,
-          appointments: agendamentos,
-          doctors,
-          refusalCounts,
-        })
-      : buildAllQueueCandidates({
-          patients: pacientes,
-          appointments: agendamentos,
-          doctors,
-          refusalCounts,
-    });
-    return base.filter(candidate =>
-      (!selectedSlot || candidate.doctorId === selectedSlot.doctorId) &&
-      (!selectedSlot || isSameSpecialty(candidate.specialty, selectedSlot.specialty)) &&
+    if (!selectedSlot) return [];
+    return buildQueueCandidates({
+      slotDoctorId: selectedSlot.doctorId,
+      slotSpecialty: selectedSlot.specialty,
+      slotDate: selectedSlot.date,
+      slotTime: selectedSlot.time,
+      patients: pacientes,
+      appointments: agendamentos,
+      doctors,
+      refusalCounts,
+    }).filter(candidate =>
+      candidate.doctorId === selectedSlot.doctorId &&
+      (!selectedSlot.specialty || isSameSpecialty(candidate.specialty, selectedSlot.specialty)) &&
       (!specialtyFilter || candidate.specialty === specialtyFilter)
     );
   }, [agendamentos, doctors, pacientes, refusalCounts, selectedSlot, specialtyFilter]);
@@ -84,7 +89,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
     const byId = new Map(candidates.map(candidate => [candidate.patientId, candidate]));
     return suggestion.orderedPatientIds
       .map(id => byId.get(id))
-      .filter((candidate): candidate is QueueCandidate => Boolean(candidate && isSameSpecialty(candidate.specialty, selectedSlot.specialty)));
+      .filter((candidate): candidate is QueueCandidate => Boolean(candidate && (!selectedSlot.specialty || isSameSpecialty(candidate.specialty, selectedSlot.specialty))));
   }, [candidates, selectedSlot, suggestion]);
   const sentOffersCount = offers.filter(offer => ['sent', 'accepted'].includes(offer.status)).length;
   const acceptedOffersCount = offers.filter(offer => offer.status === 'accepted').length;
@@ -139,11 +144,12 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
     if (!selectedSlot) return;
     if (
       (specialtyFilter && selectedSlot.specialty !== specialtyFilter) ||
-      (doctorFilter && selectedSlot.doctorId !== doctorFilter)
+      (doctorFilter && selectedSlot.doctorId !== doctorFilter) ||
+      (monthFilter && !selectedSlot.date.startsWith(monthFilter))
     ) {
       setSelectedSlotId('');
     }
-  }, [doctorFilter, selectedSlot, specialtyFilter]);
+  }, [doctorFilter, monthFilter, selectedSlot, specialtyFilter]);
 
   useEffect(() => {
     if (selectedSlotId || filteredSlots.length === 0) return;
@@ -186,7 +192,8 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
     const offerId = `${selectedSlot.id}:${candidate.patientId}:${candidate.appointmentId}:${Date.now()}`;
     const message = buildAdvanceOfferMessage({
       patientName: candidate.patientName,
-      specialty: selectedSlot.specialty,
+      specialty: selectedSlot.specialty || candidate.specialty,
+      doctorName: candidate.doctorName || selectedSlot.doctorName,
       date: selectedSlot.date,
       time: selectedSlot.time,
     });
@@ -326,6 +333,23 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
                 {doctorOptions.map(doctor => <option key={doctor.id} value={doctor.id}>{doctor.full_name}</option>)}
               </select>
             </div>
+            <div>
+              <label htmlFor="queue-month-filter" style={labelStyle}>Mês</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  id="queue-month-filter"
+                  type="month"
+                  value={monthFilter}
+                  onChange={event => setMonthFilter(event.target.value)}
+                  style={{ ...fieldStyle, flex: 1 }}
+                />
+                {monthFilter && (
+                  <button type="button" onClick={() => setMonthFilter('')} style={buttonStyle('#fff', 'var(--gray-600)', '1px solid var(--gray-200)')}>
+                    Limpar
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gap: 10, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
@@ -344,7 +368,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
                 <span style={{ color: '#0f172a', fontWeight: 800 }}>{formatDateBR(slot.date)} às {slot.time}</span>
               </button>
             ))}
-            {filteredSlots.length === 0 && <Empty text="Nenhum cancelamento encontrado para os filtros selecionados." />}
+            {filteredSlots.length === 0 && <Empty text="Nenhum cancelamento com paciente disponível para remarcação nos filtros selecionados." />}
           </div>
         </section>
 
@@ -411,9 +435,7 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
                 </article>
               );
             })}
-            {!selectedSlot && orderedCandidates.length > 0 && <Empty text="Selecione uma vaga para enviar oferta ou confirmar antecipação." />}
             {selectedSlot && orderedCandidates.length === 0 && <Empty text="Nenhum paciente elegível do mesmo médico para esta vaga." />}
-            {!selectedSlot && orderedCandidates.length === 0 && <Empty text="Nenhum paciente futuro encontrado para os filtros atuais." />}
           </div>
         </section>
       </div>
@@ -424,28 +446,41 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
 }
 
 function buildCancelledSlots(params: { agendamentos: Agendamento[]; doctors: ApiDoctor[]; offers: QueueAdvanceOffer[] }): QueueAvailableSlot[] {
-  const today = dateToISO(new Date());
+  const now = new Date();
+  const today = dateToISO(now);
+  const nowKey = `${today} ${timeToHHMM(now)}`;
+  const isFuture = (date: string, time: string) => `${date} ${time}` >= nowKey;
   const doctorById = new Map(params.doctors.map(doctor => [doctor.id, doctor]));
   const slots: QueueAvailableSlot[] = [];
 
   params.agendamentos
-    .filter(appt => appt.status === 'cancelado' && appt.data >= today && appt.medicoId)
+    .filter(appt => appt.status === 'cancelado' && appt.medicoId && isFuture(appt.data, appt.hora))
     .forEach(appt => {
-      const doctor = appt.medicoId ? doctorById.get(appt.medicoId) : undefined;
-      if (!doctor?.specialty || hasConflict(params.agendamentos, { doctorId: doctor.id, date: appt.data, time: appt.hora }, appt.id)) return;
-      slots.push({ id: `cancelled:${appt.id}`, doctorId: doctor.id, doctorName: doctor.full_name, specialty: doctor.specialty, date: appt.data, time: appt.hora, source: 'cancelled', cancelledAppointmentId: appt.id });
+      const doctorId = appt.medicoId!;
+      const doctor = doctorById.get(doctorId);
+      if (hasConflict(params.agendamentos, { doctorId, date: appt.data, time: appt.hora }, appt.id)) return;
+      slots.push({
+        id: `cancelled:${appt.id}`,
+        doctorId,
+        doctorName: doctor?.full_name ?? 'Médico não identificado',
+        specialty: doctor?.specialty ?? '',
+        date: appt.data,
+        time: appt.hora,
+        source: 'cancelled',
+        cancelledAppointmentId: appt.id,
+      });
     });
 
   params.offers
     .filter(offer => offer.slotDoctorId && offer.slotDate && offer.slotTime && offer.slotSpecialty)
-    .filter(offer => offer.slotDate! >= today)
+    .filter(offer => isFuture(offer.slotDate!, offer.slotTime!))
     .forEach(offer => {
       const doctor = offer.slotDoctorId ? doctorById.get(offer.slotDoctorId) : undefined;
-      if (!doctor || hasConflict(params.agendamentos, { doctorId: offer.slotDoctorId!, date: offer.slotDate!, time: offer.slotTime! }, offer.appointmentId)) return;
+      if (hasConflict(params.agendamentos, { doctorId: offer.slotDoctorId!, date: offer.slotDate!, time: offer.slotTime! }, '')) return;
       slots.push({
         id: offer.slotId,
         doctorId: offer.slotDoctorId!,
-        doctorName: doctor.full_name,
+        doctorName: doctor?.full_name ?? 'Médico não identificado',
         specialty: offer.slotSpecialty!,
         date: offer.slotDate!,
         time: offer.slotTime!,
