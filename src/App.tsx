@@ -538,6 +538,7 @@ export default function App() {
         message: buildAdvanceOfferMessage({
           patientName: candidate.patientName,
           specialty: doctor.specialty,
+          doctorName: doctor.full_name,
           date: cancelled.data,
           time: cancelled.hora,
         }),

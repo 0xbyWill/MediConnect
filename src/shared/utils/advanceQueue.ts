@@ -67,7 +67,8 @@ export function buildQueueCandidates(params: {
       const patient = patientById.get(appt.pacienteId);
       const doctor = appt.medicoId ? doctorById.get(appt.medicoId) : undefined;
       if (slotDoctorId && doctor?.id !== slotDoctorId) return null;
-      if (!patient || !doctor || !isSameSpecialty(doctor.specialty, slotSpecialty)) return null;
+      if (!patient || !doctor) return null;
+      if (slotSpecialty && !isSameSpecialty(doctor.specialty, slotSpecialty)) return null;
 
       const priority = calculatePatientPriority(patient);
       const normalized = normalizePriorityInput(patient);
@@ -165,7 +166,7 @@ export function validateGeminiQueueSuggestion(candidateIds: string[], rawIds: un
   const ordered = raw
     .map(id => String(id))
     .filter(id => validIds.has(id))
-    .filter(id => isSameSpecialty(candidateById.get(id)?.specialty, slotSpecialty));
+    .filter(id => !slotSpecialty || isSameSpecialty(candidateById.get(id)?.specialty, slotSpecialty));
   const unique = Array.from(new Set(ordered));
   const missing = candidateIds.filter(id => !unique.includes(id));
   return {
@@ -175,11 +176,26 @@ export function validateGeminiQueueSuggestion(candidateIds: string[], rawIds: un
   };
 }
 
-export function buildAdvanceOfferMessage(params: { patientName: string; date: string; time: string; specialty: string }) {
+export function buildAdvanceOfferMessage(params: { patientName: string; date: string; time: string; specialty?: string; doctorName?: string }) {
+  const patientName = params.patientName?.trim().split(' ')[0];
+  const specialty = params.specialty?.trim();
+  const doctorName = sanitizeDoctorName(params.doctorName);
+
+  const greeting = patientName ? `Ola, ${patientName}!` : 'Ola!';
+  const consulta = specialty ? `consulta de ${specialty}` : 'consulta';
+  const comMedico = doctorName ? ` com Dr(a). ${doctorName}` : '';
+
   return [
-    `MediConnect: surgiu uma vaga para antecipar sua consulta de ${params.specialty} para ${formatDateBR(params.date)} às ${params.time}.`,
-    'Responda SIM para aceitar ou NAO para recusar. Sua consulta original sera mantida ate confirmacao.',
+    `MediConnect: ${greeting} Abriu uma vaga para antecipar sua ${consulta}${comMedico} para ${formatDateBR(params.date)} as ${params.time}.`,
+    'Para confirmar, responda SIM. Para recusar, responda NAO.',
+    'Sua consulta atual sera mantida ate a confirmacao.',
   ].join(' ');
+}
+
+function sanitizeDoctorName(value?: string) {
+  const name = value?.trim();
+  if (!name || name.toLowerCase().includes('nao identificado')) return '';
+  return name.replace(/^dr[a]?\.?\s+/i, '');
 }
 
 export function parseWaitingDays(value?: string, fallbackDate?: string) {
