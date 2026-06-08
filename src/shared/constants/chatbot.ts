@@ -1,7 +1,7 @@
 import type { ChatbotIntent, ChatbotOption } from '../../types';
 
 export const CHATBOT_INITIAL_MESSAGE =
-  'Olá! Eu sou a Panaceia, atendente virtual do MediConnect. Já estou aqui com você e posso ajudar com dúvidas sobre consultas, laudos, cadastro e acesso ao sistema.';
+  'Olá! Eu sou a Panaceia, sua assistente do MediConnect. Posso consultar seus dados reais e responder, por exemplo: "Tenho consultas marcadas?", "Tenho algum laudo liberado?" ou "Qual meu telefone cadastrado?". Como posso ajudar?';
 
 export const CHATBOT_RESOLUTION_PROMPT = 'Isso resolveu sua dúvida?';
 

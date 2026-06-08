@@ -166,6 +166,101 @@ async function askDevGemini(system: string, userText: string, maxOutputTokens = 
   throw new AIError(lastError);
 }
 
+// ─── Function calling do Gemini (modo direto no navegador) ────────────────────
+export interface GeminiFunctionCall {
+  name: string;
+  args?: Record<string, unknown>;
+}
+
+export interface GeminiFunctionResponse {
+  name: string;
+  response: Record<string, unknown>;
+}
+
+export interface GeminiPart {
+  text?: string;
+  functionCall?: GeminiFunctionCall;
+  functionResponse?: GeminiFunctionResponse;
+  thoughtSignature?: string;
+}
+
+export interface GeminiContent {
+  role: 'user' | 'model' | 'function';
+  parts: GeminiPart[];
+}
+
+export interface GeminiToolDeclaration {
+  functionDeclarations: ReadonlyArray<{
+    name: string;
+    description: string;
+    parameters?: Record<string, unknown>;
+  }>;
+}
+
+export function isGeminiBrowserDirectAvailable(): boolean {
+  return canUseGeminiFallback();
+}
+
+/**
+ * Chamada de baixo nível ao Gemini (modo direto no navegador) com suporte a
+ * function calling. Reaproveita a chave/modelo já configurados (VITE_GEMINI_*).
+ * Retorna o `content` do candidato (que pode conter `functionCall`s ou texto).
+ */
+export async function geminiGenerateContent(params: {
+  system: string;
+  contents: GeminiContent[];
+  tools?: GeminiToolDeclaration[];
+  maxOutputTokens?: number;
+  temperature?: number;
+}): Promise<GeminiContent | null> {
+  if (!canUseGeminiFallback()) {
+    throw new AIError('Assistente indisponível neste ambiente.');
+  }
+
+  const models = Array.from(new Set([GEMINI_FALLBACK_MODEL, ...GEMINI_MODEL_FALLBACKS].filter(Boolean)));
+  let lastError = 'Não foi possível consultar o assistente agora.';
+
+  for (const model of models) {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': GEMINI_FALLBACK_KEY,
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: params.system }] },
+        contents: params.contents,
+        ...(params.tools && params.tools.length ? { tools: params.tools } : {}),
+        generationConfig: {
+          temperature: params.temperature ?? 0.2,
+          maxOutputTokens: params.maxOutputTokens ?? 700,
+        },
+      }),
+    });
+
+    if (response.status === 404 || response.status === 400) {
+      lastError = 'Modelo do assistente indisponível.';
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new AIError('Não foi possível consultar o assistente agora.');
+    }
+
+    const data = await response.json();
+    const content = data?.candidates?.[0]?.content;
+    if (content && Array.isArray(content.parts)) {
+      return {
+        role: content.role === 'model' || content.role === 'user' || content.role === 'function' ? content.role : 'model',
+        parts: content.parts as GeminiPart[],
+      };
+    }
+    lastError = 'O assistente não retornou resposta.';
+  }
+
+  throw new AIError(lastError);
+}
+
 function sourceForAction(action: ManagerSearchAssistantRequest['action']): ManagerSearchAssistantResponse['source'] {
   if (action === 'financial_summary') return 'financial';
   if (action === 'doctor_performance') return 'doctors';

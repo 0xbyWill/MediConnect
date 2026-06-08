@@ -777,6 +777,10 @@ export default function App() {
       </div>
       {user.role === 'paciente' && (
         <PatientChatbot
+          pacientes={pacientes}
+          agendamentos={agendamentos}
+          laudos={laudos}
+          doctors={doctors}
           onNavigate={handleNavigate}
           onOpenSecretaryChat={() => {
             setPage('mensagens');

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { HelpCircle, Loader2, MessageCircle, Send, X } from 'lucide-react';
-import type { ChatbotMessage, PageType } from '../types';
+import type { Agendamento, ChatbotMessage, Laudo, Paciente, PageType } from '../types';
+import type { ApiDoctor } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { patientChatbotAiApi } from '../lib/aiApi';
+import { askPatientAssistant } from '../lib/patientAssistant';
+import type { PatientAssistantContext } from '../lib/patientAssistantTools';
 import {
   CHATBOT_EMERGENCY_KEYWORDS,
   CHATBOT_EMERGENCY_MESSAGE,
@@ -19,6 +21,10 @@ const PANACEIA_AVATAR_SRC = '/WhatsApp Image 2026-05-07 at 19.38.48.jpeg';
 interface PatientChatbotProps {
   onOpenSecretaryChat: () => void;
   onNavigate: (page: PageType) => void;
+  pacientes?: Paciente[];
+  agendamentos?: Agendamento[];
+  laudos?: Laudo[];
+  doctors?: ApiDoctor[];
 }
 
 function nowISO() {
@@ -35,7 +41,61 @@ function createMessage(sender: ChatbotMessage['sender'], text: string, kind?: Ch
   };
 }
 
-export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: PatientChatbotProps) {
+// Renderizador leve de markdown (negrito + listas) — sem dependências externas
+// e sem dangerouslySetInnerHTML, para manter a segurança.
+function renderInline(text: string, keyPrefix: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    const bold = part.match(/^\*\*([^*]+)\*\*$/);
+    if (bold) return <strong key={`${keyPrefix}-b-${index}`}>{bold[1]}</strong>;
+    return <span key={`${keyPrefix}-t-${index}`}>{part}</span>;
+  });
+}
+
+function renderRichText(text: string, idPrefix: string): ReactNode {
+  const lines = text.split('\n');
+  const blocks: ReactNode[] = [];
+  let listItems: string[] = [];
+
+  const flushList = () => {
+    if (listItems.length === 0) return;
+    const items = [...listItems];
+    blocks.push(
+      <ul key={`${idPrefix}-ul-${blocks.length}`} className="patient-chatbot-list">
+        {items.map((item, index) => (
+          <li key={`${idPrefix}-li-${blocks.length}-${index}`}>{renderInline(item, `${idPrefix}-li-${blocks.length}-${index}`)}</li>
+        ))}
+      </ul>,
+    );
+    listItems = [];
+  };
+
+  lines.forEach((rawLine, index) => {
+    const line = rawLine.trimEnd();
+    const bulletMatch = line.match(/^\s*[-*•]\s+(.*)$/);
+    if (bulletMatch) {
+      listItems.push(bulletMatch[1]);
+      return;
+    }
+    flushList();
+    if (line.trim()) {
+      blocks.push(
+        <p key={`${idPrefix}-p-${index}`}>{renderInline(line, `${idPrefix}-p-${index}`)}</p>,
+      );
+    }
+  });
+  flushList();
+
+  return blocks.length ? blocks : <p>{text}</p>;
+}
+
+export default function PatientChatbot({
+  onOpenSecretaryChat,
+  onNavigate,
+  pacientes = [],
+  agendamentos = [],
+  laudos = [],
+  doctors = [],
+}: PatientChatbotProps) {
   const { user } = useAuth();
   const isPatient = user?.role === 'paciente';
   const [open, setOpen] = useState(false);
@@ -48,12 +108,20 @@ export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: Pati
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const patientName = useMemo(() => user?.full_name?.split(' ')[0] || 'paciente', [user?.full_name]);
 
+  // Localiza o cadastro do próprio paciente entre os dados já carregados pelo App.
+  const ownPaciente = useMemo<Paciente | null>(() => {
+    if (!user) return null;
+    const byEmail = pacientes.find(p => p.email?.toLowerCase() === user.email.toLowerCase());
+    const byId = pacientes.find(p => p.id === user.patient_id || p.id === user.id);
+    return byEmail ?? byId ?? pacientes[0] ?? null;
+  }, [pacientes, user]);
+
   useEffect(() => {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [open, messages]);
+  }, [open, messages, aiLoading]);
 
-  if (!isPatient) return null;
+  if (!isPatient || !user) return null;
 
   const pushMessages = (...nextMessages: ChatbotMessage[]) => {
     setMessages(prev => [...prev, ...nextMessages].slice(-30));
@@ -99,23 +167,7 @@ export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: Pati
       return;
     }
 
-    if (!isSystemRelatedQuestion(message)) {
-      pushMessages(createMessage('bot', 'Posso ajudar apenas com assuntos do MediConnect: consultas, laudos liberados, cadastro, login, mensagens e contato com a secretaria.', 'safety'));
-      setAwaitingResolution(true);
-      return;
-    }
-
-    const navigationIntent = getNavigationIntent(message);
-    if (navigationIntent) {
-      pushMessages(createMessage('bot', navigationIntent.message, 'answer'));
-      setAwaitingResolution(false);
-      window.setTimeout(() => {
-        setOpen(false);
-        onNavigate(navigationIntent.page);
-      }, 550);
-      return;
-    }
-
+    // Emergência e bloqueio clínico têm prioridade máxima (segurança).
     if (CHATBOT_EMERGENCY_KEYWORDS.some(keyword => normalized.includes(keyword))) {
       pushMessages(createMessage('bot', CHATBOT_EMERGENCY_MESSAGE, 'safety'));
       setAwaitingResolution(true);
@@ -128,18 +180,44 @@ export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: Pati
       return;
     }
 
+    // Navegação apenas quando há pedido explícito (ex.: "abrir agenda").
+    const navigationIntent = getExplicitNavigationIntent(message);
+    if (navigationIntent) {
+      pushMessages(createMessage('bot', navigationIntent.message, 'answer'));
+      setAwaitingResolution(false);
+      window.setTimeout(() => {
+        setOpen(false);
+        onNavigate(navigationIntent.page);
+      }, 550);
+      return;
+    }
+
+    // Ações que exigem a secretaria (agendar, remarcar, cancelar, alterar dados).
     if (needsSecretary(message)) {
       pushMessages(createMessage('bot', 'Esse pedido precisa da secretaria para confirmar dados e registrar a solicitação. Posso abrir a conversa direta para você continuar por lá.', 'support'));
       setAwaitingResolution(true);
       return;
     }
 
+    if (!isSystemRelatedQuestion(message)) {
+      pushMessages(createMessage('bot', 'Posso ajudar apenas com assuntos do MediConnect: suas consultas, laudos liberados, dados de cadastro, lembretes, login, mensagens e contato com a secretaria.', 'safety'));
+      setAwaitingResolution(true);
+      return;
+    }
+
     setAiLoading(true);
     try {
-      const response = await patientChatbotAiApi.ask({
-        userId: user.id,
+      const context: PatientAssistantContext = {
+        user,
+        paciente: ownPaciente,
+        agendamentos,
+        laudos,
+        doctors,
+        now: new Date(),
+      };
+      const response = await askPatientAssistant({
+        context,
         message,
-        patientName,
         history: messages.slice(-8).map(item => ({ sender: item.sender, text: item.text })),
       });
       pushMessages(createMessage('bot', response.answer, 'answer'));
@@ -227,12 +305,20 @@ export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: Pati
                     </span>
                   )}
                   <div className={`patient-chatbot-message patient-chatbot-message-${message.sender}`}>
-                    {message.text.split('\n').map((line, index) => (
-                      <p key={`${message.id}-${index}`}>{line}</p>
-                    ))}
+                    {renderRichText(message.text, message.id)}
                   </div>
                 </div>
               ))}
+              {aiLoading && (
+                <div className="patient-chatbot-row patient-chatbot-row-bot">
+                  <span className="patient-chatbot-bubble-avatar" aria-hidden="true">
+                    <img src={PANACEIA_AVATAR_SRC} alt="" />
+                  </span>
+                  <div className="patient-chatbot-message patient-chatbot-message-bot patient-chatbot-typing" aria-label="Panaceia está digitando">
+                    <span /><span /><span />
+                  </div>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
           </div>
@@ -430,6 +516,49 @@ export default function PatientChatbot({ onOpenSecretaryChat, onNavigate }: Pati
               margin-top: 7px;
             }
 
+            .patient-chatbot-message strong {
+              font-weight: 800;
+            }
+
+            .patient-chatbot-list {
+              margin: 6px 0 0;
+              padding-left: 18px;
+              display: grid;
+              gap: 4px;
+            }
+
+            .patient-chatbot-list li {
+              list-style: disc;
+            }
+
+            .patient-chatbot-typing {
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              padding: 12px 14px;
+            }
+
+            .patient-chatbot-typing span {
+              width: 7px;
+              height: 7px;
+              border-radius: 50%;
+              background: var(--gray-400, #94a3b8);
+              animation: patient-chatbot-bounce 1.2s infinite ease-in-out;
+            }
+
+            .patient-chatbot-typing span:nth-child(2) {
+              animation-delay: 0.2s;
+            }
+
+            .patient-chatbot-typing span:nth-child(3) {
+              animation-delay: 0.4s;
+            }
+
+            @keyframes patient-chatbot-bounce {
+              0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+              30% { transform: translateY(-4px); opacity: 1; }
+            }
+
             .patient-chatbot-message-bot {
               background: #fff;
               border: 1px solid var(--gray-100);
@@ -585,6 +714,35 @@ function needsSecretary(message: string) {
     'falar com secretaria',
     'secretaria',
   ].some(term => normalized.includes(term));
+}
+
+const NAVIGATION_VERBS = [
+  'abrir',
+  'abre',
+  'abra',
+  'ir para',
+  'ir pra',
+  'ir a',
+  'me leva',
+  'me leve',
+  'leva para',
+  'leve para',
+  'acessar',
+  'acesse',
+  'navegar',
+  'mostrar a tela',
+  'mostra a tela',
+  'ver a tela',
+  'abrir a tela',
+  'abrir a area',
+  'abrir a área',
+];
+
+function getExplicitNavigationIntent(message: string): { page: PageType; message: string } | null {
+  const normalized = message.toLowerCase();
+  // Só navega quando o paciente pede explicitamente para abrir/ir até uma tela.
+  if (!NAVIGATION_VERBS.some(verb => normalized.includes(verb))) return null;
+  return getNavigationIntent(message);
 }
 
 function getNavigationIntent(message: string): { page: PageType; message: string } | null {
