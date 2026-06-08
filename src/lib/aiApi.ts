@@ -98,9 +98,9 @@ export class AIError extends Error {
   }
 }
 
-const DEV_GEMINI_KEY = import.meta.env.DEV ? String(import.meta.env.VITE_GEMINI_API_KEY ?? '').trim() : '';
-const DEV_GEMINI_MODEL = import.meta.env.DEV ? String(import.meta.env.VITE_GEMINI_MODEL ?? 'gemini-1.5-flash').trim() : '';
-const DEV_GEMINI_MODEL_FALLBACKS = [
+const GEMINI_FALLBACK_KEY = String(import.meta.env.VITE_GEMINI_API_KEY ?? '').trim();
+const GEMINI_FALLBACK_MODEL = String(import.meta.env.VITE_GEMINI_MODEL ?? 'gemini-1.5-flash').trim();
+const GEMINI_MODEL_FALLBACKS = [
   'gemini-1.5-flash',
   'gemini-1.5-flash-latest',
   'gemini-2.0-flash',
@@ -115,16 +115,16 @@ function qs(params: Record<string, string | undefined>) {
   return search.toString();
 }
 
-function canUseDevGeminiFallback() {
-  return import.meta.env.DEV && Boolean(DEV_GEMINI_KEY);
+function canUseGeminiFallback() {
+  return Boolean(GEMINI_FALLBACK_KEY);
 }
 
 async function askDevGemini(system: string, userText: string, maxOutputTokens = 700): Promise<string> {
-  if (!canUseDevGeminiFallback()) {
+  if (!canUseGeminiFallback()) {
     throw new AIError('Assistente indisponível neste ambiente.');
   }
 
-  const models = Array.from(new Set([DEV_GEMINI_MODEL, ...DEV_GEMINI_MODEL_FALLBACKS].filter(Boolean)));
+  const models = Array.from(new Set([GEMINI_FALLBACK_MODEL, ...GEMINI_MODEL_FALLBACKS].filter(Boolean)));
   let lastError = 'Não foi possível consultar o assistente agora.';
 
   for (const model of models) {
@@ -132,7 +132,7 @@ async function askDevGemini(system: string, userText: string, maxOutputTokens = 
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-goog-api-key': DEV_GEMINI_KEY,
+        'x-goog-api-key': GEMINI_FALLBACK_KEY,
       },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
@@ -276,7 +276,7 @@ export const patientChatbotAiApi = {
         answer: answer.answer || 'Não consegui responder agora. A secretaria pode te ajudar pelo atendimento direto.',
       };
     } catch (err) {
-      if (!canUseDevGeminiFallback()) throw err;
+      if (!canUseGeminiFallback()) throw err;
 
       const now = new Date();
       const currentDate = new Intl.DateTimeFormat('pt-BR', {
@@ -322,7 +322,7 @@ export const managerSearchAssistantApi = {
         body: JSON.stringify(data),
       });
     } catch (err) {
-      if (!canUseDevGeminiFallback()) throw err;
+      if (!canUseGeminiFallback()) throw err;
 
       const currentDate = new Intl.DateTimeFormat('pt-BR', {
         dateStyle: 'full',
@@ -350,7 +350,7 @@ export const managerSearchAssistantApi = {
 
       return {
         answer: await askDevGemini(system, userText, 900),
-        warnings: ['Resposta gerada pelo modo local de desenvolvimento.'],
+        warnings: ['Resposta gerada diretamente pelo modelo de IA (modo direto, sem a função do servidor).'],
         source: sourceForAction(data.action),
       };
     }
@@ -366,7 +366,7 @@ export const queueAiApi = {
       (b.age ?? 0) - (a.age ?? 0) ||
       a.refusalCount - b.refusalCount
     );
-    if (canUseDevGeminiFallback() && ordered.length > 0) {
+    if (canUseGeminiFallback() && ordered.length > 0) {
       try {
         const sanitized = ordered.slice(0, 20).map(candidate => ({
           patient_id: candidate.patientId,
