@@ -4,12 +4,20 @@ import {
   Pencil, Phone, Plus, Search, Trash2, Users, X,
 } from 'lucide-react';
 import type { Agendamento, Paciente, TipoConsulta } from '../types';
-import { availabilityApi } from '../lib/api';
+import { availabilityApi, doctorsApi } from '../lib/api';
 import type { ApiDoctor, ApiDoctorAvailability, DoctorAppointmentType } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { dateToISO } from '../shared/utils/date';
 import { initials } from '../shared/utils/text';
 import { toUserFacingErrorMessage } from '../shared/utils/errors';
+import { SpecialtySelector } from '../components/patient-scheduling/SpecialtySelector';
+import { AvailableDates, type AvailableDateItem } from '../components/patient-scheduling/AvailableDates';
+import { DoctorSelector, type DoctorAvailabilityItem } from '../components/patient-scheduling/DoctorSelector';
+import { TimeSlotSelector } from '../components/patient-scheduling/TimeSlotSelector';
+import { AppointmentConfirmationModal } from '../components/patient-scheduling/AppointmentConfirmationModal';
+import { UpcomingAppointmentCard } from '../components/patient-scheduling/UpcomingAppointmentCard';
+import { MyAppointments } from '../components/patient-scheduling/MyAppointments';
+import { formatSpecialty } from '../components/patient-scheduling/format';
 
 const TIPOS: TipoConsulta[] = ['Primeira Consulta', 'Retorno', 'Check-up', 'Urgência'];
 const SLOT_STEP_MINUTES = 30;
@@ -42,6 +50,7 @@ interface AgendaProps {
   doctors?: ApiDoctor[];
   onAdd: (a: Omit<Agendamento, 'id'>) => Promise<void>;
   onUpdate: (a: Agendamento) => Promise<void>;
+  onConfirm?: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   initialOpen?: boolean;
   initialPatientId?: string | null;
@@ -188,12 +197,525 @@ const PERIOD_OPTIONS: Array<{ value: 'dia' | 'semana' | 'mes' | 'todos'; label: 
   { value: 'todos', label: 'Lista' },
 ];
 
-export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onDelete, initialOpen, initialPatientId, readOnly = false }: AgendaProps) {
+type PatientFlowDoctor = Pick<ApiDoctor, 'id' | 'full_name' | 'specialty' | 'active'>;
+
+function formatDateAndTimeBR(date: string, time: string) {
+  return `${formatDateBR(date)} às ${time}`;
+}
+
+function formatRelativeDateLabel(date: string) {
+  const today = dateToISO(new Date());
+  const tomorrowDate = new Date(`${today}T00:00:00`);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = dateToISO(tomorrowDate);
+  const dayMonth = `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+
+  if (date === today) return `Hoje · ${dayMonth}`;
+  if (date === tomorrow) return `Amanhã · ${dayMonth}`;
+
+  const weekday = new Date(`${date}T00:00:00`)
+    .toLocaleDateString('pt-BR', { weekday: 'long' })
+    .replace(/^./, letter => letter.toUpperCase());
+  return `${weekday} · ${dayMonth}`;
+}
+
+function statusToLabel(status: Agendamento['status']) {
+  const map: Record<Agendamento['status'], string> = {
+    pendente: 'Pendente',
+    confirmado: 'Confirmada',
+    cancelado: 'Cancelada',
+    realizado: 'Realizada',
+  };
+  return map[status];
+}
+
+function PatientSchedulingExperience({
+  agendamentos,
+  pacientes,
+  doctors,
+  onAdd,
+  onConfirm,
+  userName,
+  userId,
+  userPatientId,
+}: {
+  agendamentos: Agendamento[];
+  pacientes: Paciente[];
+  doctors: ApiDoctor[];
+  onAdd: (a: Omit<Agendamento, 'id'>) => Promise<void>;
+  onConfirm?: (id: string) => Promise<void>;
+  userName: string;
+  userId: string;
+  userPatientId?: string;
+}) {
+  const ownPatientId = userPatientId || pacientes[0]?.id || userId;
+  const myAppointments = agendamentos
+    .filter(appt => appt.pacienteId === ownPatientId)
+    .sort(byChronology);
+
+  const [specialties, setSpecialties] = useState<Array<{ id: string; name: string; doctorCount: number }>>([]);
+  const [specialtiesLoading, setSpecialtiesLoading] = useState(false);
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string | null>(null);
+  const [specialtyDoctors, setSpecialtyDoctors] = useState<PatientFlowDoctor[]>([]);
+  const [specialtyDoctorsLoading, setSpecialtyDoctorsLoading] = useState(false);
+  const [availabilityByDoctor, setAvailabilityByDoctor] = useState<Record<string, ApiDoctorAvailability[]>>({});
+  const [availableDates, setAvailableDates] = useState<AvailableDateItem[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [availableDoctors, setAvailableDoctors] = useState<DoctorAvailabilityItem[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
+  const [timeSlots, setTimeSlots] = useState<string[]>([]);
+  const [timeSlotsLoading, setTimeSlotsLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [savingAppointment, setSavingAppointment] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  const datesRef = useRef<HTMLDivElement>(null);
+  const doctorsRef = useRef<HTMLDivElement>(null);
+  const slotsRef = useRef<HTMLDivElement>(null);
+
+  const scrollToRef = (ref: React.RefObject<HTMLDivElement | null>) => {
+    window.requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setSpecialtiesLoading(true);
+    setError('');
+
+    void doctorsApi
+      .listForScheduling()
+      .then(rows => {
+        if (cancelled) return;
+        const activeRows = rows.filter(doctor => doctor.active !== false);
+        const counter = new Map<string, { label: string; count: number }>();
+        for (const doctor of activeRows) {
+          const specialty = doctor.specialty?.trim() || 'Clínica geral';
+          const key = specialty.toLowerCase();
+          const current = counter.get(key);
+          if (current) current.count += 1;
+          else counter.set(key, { label: specialty, count: 1 });
+        }
+        const sorted = Array.from(counter.entries())
+          .map(([id, value]) => ({ id, name: value.label, doctorCount: value.count }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        setSpecialties(sorted);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setError(toUserFacingErrorMessage(err, 'Não foi possível carregar as especialidades.'));
+      })
+      .finally(() => {
+        if (!cancelled) setSpecialtiesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const computeFreeSlotsForDoctorDate = useCallback(
+    (doctorId: string, date: string) => {
+      const weekday = new Date(`${date}T00:00:00`).getDay();
+      const availabilities = availabilityByDoctor[doctorId] ?? [];
+      const dayAvailabilities = availabilities.filter(item => item.weekday === weekday && item.active !== false);
+      const baseSlots = buildTimeSlotsFromAvailability(dayAvailabilities);
+      const occupied = new Set(
+        agendamentos
+          .filter(appt => appt.medicoId === doctorId && appt.data === date && appt.status !== 'cancelado')
+          .map(appt => normalizeTime(appt.hora))
+          .filter(Boolean)
+      );
+      return baseSlots.filter(slot => !occupied.has(slot) && !isPastAppointmentSlot(date, slot));
+    },
+    [agendamentos, availabilityByDoctor]
+  );
+
+  const buildAvailabilitySteps = useCallback(
+    (doctorsList: PatientFlowDoctor[], map: Record<string, ApiDoctorAvailability[]>) => {
+      const dates: AvailableDateItem[] = [];
+      const now = new Date();
+      for (let i = 0; i < 30; i += 1) {
+        const date = new Date(now);
+        date.setDate(date.getDate() + i);
+        const isoDate = dateToISO(date);
+        let totalSlots = 0;
+        for (const doctor of doctorsList) {
+          const weekday = date.getDay();
+          const dayAvailabilities = (map[doctor.id] ?? []).filter(item => item.weekday === weekday && item.active !== false);
+          const baseSlots = buildTimeSlotsFromAvailability(dayAvailabilities);
+          if (baseSlots.length === 0) continue;
+          const occupied = new Set(
+            agendamentos
+              .filter(appt => appt.medicoId === doctor.id && appt.data === isoDate && appt.status !== 'cancelado')
+              .map(appt => normalizeTime(appt.hora))
+              .filter(Boolean)
+          );
+          totalSlots += baseSlots.filter(slot => !occupied.has(slot) && !isPastAppointmentSlot(isoDate, slot)).length;
+        }
+        if (totalSlots > 0) {
+          dates.push({
+            date: isoDate,
+            label: formatRelativeDateLabel(isoDate),
+            slotsCount: totalSlots,
+          });
+        }
+        if (dates.length >= 8) break;
+      }
+      setAvailableDates(dates);
+      setSelectedDate(null);
+    },
+    [agendamentos]
+  );
+
+  const handleSelectSpecialty = useCallback(
+    async (specialtyId: string) => {
+      setSelectedSpecialty(specialtyId);
+      setSelectedDate(null);
+      setSelectedDoctorId(null);
+      setSelectedSlot(null);
+      setTimeSlots([]);
+      setAvailableDoctors([]);
+      setAvailableDates([]);
+      setError('');
+      setSuccessMessage('');
+      setSpecialtyDoctorsLoading(true);
+
+      try {
+        const querySpecialty = specialtyId === '__all__'
+          ? undefined
+          : specialties.find(item => item.id === specialtyId)?.name;
+        const rows = await doctorsApi.listForScheduling({ specialty: querySpecialty });
+        const normalizedDoctors: PatientFlowDoctor[] = rows
+          .filter(item => item.active !== false)
+          .map(item => ({
+            id: item.id,
+            full_name: item.full_name,
+            specialty: item.specialty || 'Clínica geral',
+            active: item.active,
+          }));
+        setSpecialtyDoctors(normalizedDoctors);
+
+        const availabilityPairs = await Promise.all(
+          normalizedDoctors.map(async doctor => {
+            const list = await availabilityApi.list({ doctor_id: doctor.id, active: true });
+            return [doctor.id, list] as const;
+          })
+        );
+        const nextMap = Object.fromEntries(availabilityPairs);
+        setAvailabilityByDoctor(nextMap);
+        buildAvailabilitySteps(normalizedDoctors, nextMap);
+        scrollToRef(datesRef);
+      } catch (err) {
+        setError(toUserFacingErrorMessage(err, 'Não foi possível carregar disponibilidade para a especialidade.'));
+      } finally {
+        setSpecialtyDoctorsLoading(false);
+      }
+    },
+    [buildAvailabilitySteps, specialties]
+  );
+
+  useEffect(() => {
+    if (!selectedDate) return;
+    const doctorsByDate = specialtyDoctors
+      .map(doctor => {
+        const free = computeFreeSlotsForDoctorDate(doctor.id, selectedDate);
+        if (free.length === 0) return null;
+        return {
+          doctorId: doctor.id,
+          doctorName: doctor.full_name,
+          specialty: doctor.specialty || 'Clínica geral',
+          nextSlot: free[0],
+        } satisfies DoctorAvailabilityItem;
+      })
+      .filter((item): item is DoctorAvailabilityItem => Boolean(item));
+    setAvailableDoctors(doctorsByDate);
+    setSelectedDoctorId(previous => (
+      previous && doctorsByDate.some(item => item.doctorId === previous) ? previous : null
+    ));
+    setSelectedSlot(null);
+    setTimeSlots([]);
+  }, [computeFreeSlotsForDoctorDate, selectedDate, specialtyDoctors]);
+
+  const handleSelectDoctor = useCallback(
+    async (doctorId: string) => {
+      if (!selectedDate) return;
+      setSelectedDoctorId(doctorId);
+      setSelectedSlot(null);
+      setTimeSlotsLoading(true);
+      setError('');
+      scrollToRef(slotsRef);
+      try {
+        const response = await availabilityApi.getAvailableSlots({ doctor_id: doctorId, date: selectedDate });
+        const payload = Array.isArray(response.data)
+          ? response.data
+          : response.data && typeof response.data === 'object'
+          ? response.data.slots ?? response.data.available_slots ?? []
+          : response.slots ?? response.available_slots ?? [];
+        const freeSlots = payload.map(normalizeTime).filter(Boolean);
+        setTimeSlots(freeSlots.length > 0 ? freeSlots : computeFreeSlotsForDoctorDate(doctorId, selectedDate));
+      } catch {
+        setTimeSlots(computeFreeSlotsForDoctorDate(doctorId, selectedDate));
+      } finally {
+        setTimeSlotsLoading(false);
+      }
+    },
+    [computeFreeSlotsForDoctorDate, selectedDate]
+  );
+
+  const selectedDoctor = availableDoctors.find(item => item.doctorId === selectedDoctorId) ?? null;
+  const selectedSpecialtyRaw = specialties.find(item => item.id === selectedSpecialty)?.name ?? 'Especialidade';
+  const selectedSpecialtyLabel = selectedSpecialty === '__all__' ? selectedSpecialtyRaw : formatSpecialty(selectedSpecialtyRaw);
+  const nextAppointment = myAppointments.find(appt => !isPastAppointmentSlot(appt.data, appt.hora) && appt.status !== 'cancelado') ?? null;
+  const allDoctorList = [...doctors, ...specialtyDoctors.map(doc => ({
+    id: doc.id,
+    full_name: doc.full_name,
+    specialty: doc.specialty,
+  } as ApiDoctor))];
+  const uniqueDoctors = Array.from(new Map(allDoctorList.map(item => [item.id, item])).values());
+
+  const doctorById = (doctorId?: string) => uniqueDoctors.find(doctor => doctor.id === doctorId);
+
+  const upcomingLabel = nextAppointment ? formatDateAndTimeBR(nextAppointment.data, normalizeTime(nextAppointment.hora)) : '';
+  const myUpcomingAppointments = myAppointments
+    .filter(appt => !isPastAppointmentSlot(appt.data, appt.hora) && appt.status !== 'cancelado')
+    .slice(0, 10)
+    .map(appt => {
+      const doctor = doctorById(appt.medicoId);
+      return {
+        id: appt.id,
+        specialty: doctor?.specialty ? formatSpecialty(doctor.specialty) : 'Especialidade não informada',
+        doctorName: doctor?.full_name || 'Médico não informado',
+        dateLabel: formatDateAndTimeBR(appt.data, normalizeTime(appt.hora)),
+        statusLabel: statusToLabel(appt.status),
+      };
+    });
+
+  const handleConfirmAppointment = useCallback(async () => {
+    if (!selectedDate || !selectedDoctorId || !selectedSlot) return;
+    setSavingAppointment(true);
+    setError('');
+    try {
+      await onAdd({
+        pacienteId: ownPatientId,
+        medicoId: selectedDoctorId,
+        data: selectedDate,
+        hora: selectedSlot,
+        tipo: 'Primeira Consulta',
+        status: 'pendente',
+        observacoes: 'Agendamento feito pela área do paciente.',
+        duracao: '30 min',
+        enviarEmail: true,
+        enviarWhatsapp: true,
+      });
+      setConfirmOpen(false);
+      setSuccessMessage('Consulta agendada com sucesso.');
+      setSelectedDoctorId(null);
+      setSelectedSlot(null);
+      setTimeSlots([]);
+      await handleSelectSpecialty(selectedSpecialty ?? '__all__');
+    } catch (err) {
+      setError(toUserFacingErrorMessage(err, 'Erro ao agendar consulta. Tente novamente.'));
+    } finally {
+      setSavingAppointment(false);
+    }
+  }, [handleSelectSpecialty, onAdd, ownPatientId, selectedDate, selectedDoctorId, selectedSlot, selectedSpecialty]);
+
+  const handleConfirmMyAppointment = useCallback(async (appointmentId: string) => {
+    if (!onConfirm || confirmingId) return;
+    setConfirmingId(appointmentId);
+    setError('');
+    setSuccessMessage('');
+    try {
+      await onConfirm(appointmentId);
+      setSuccessMessage('Consulta confirmada com sucesso.');
+    } catch (err) {
+      setError(toUserFacingErrorMessage(err, 'Erro ao confirmar consulta. Tente novamente.'));
+    } finally {
+      setConfirmingId(null);
+    }
+  }, [confirmingId, onConfirm]);
+
+  const selectedDateLabel = selectedDate ? formatDateBR(selectedDate) : '';
+  const selectedDoctorName = selectedDoctor?.doctorName ?? 'Médico';
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', padding: '20px clamp(14px, 4vw, 36px) 24px' }}>
+      <div style={{ display: 'grid', gap: 16, maxWidth: 980, margin: '0 auto' }}>
+        <header style={{ display: 'grid', gap: 6 }}>
+          <h1 style={{ margin: 0, fontSize: 30, color: '#071327' }}>Agendar consulta</h1>
+          <p style={{ margin: 0, color: '#475569', fontSize: 14 }}>
+            Encontre o melhor horário em poucos passos.
+          </p>
+        </header>
+
+        {nextAppointment && (
+          <UpcomingAppointmentCard
+            specialty={doctorById(nextAppointment.medicoId)?.specialty ? formatSpecialty(doctorById(nextAppointment.medicoId)?.specialty) : 'Especialidade não informada'}
+            dateLabel={upcomingLabel}
+            doctorName={doctorById(nextAppointment.medicoId)?.full_name || 'Médico não informado'}
+            onViewDetails={() => {
+              const element = document.getElementById('patient-my-appointments');
+              if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+          />
+        )}
+
+        {error && (
+          <div
+            role="alert"
+            style={{
+              border: '1px solid var(--red-100)',
+              background: 'var(--red-50)',
+              color: 'var(--red-600)',
+              borderRadius: 10,
+              padding: '10px 12px',
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {successMessage && (
+          <div
+            style={{
+              border: '1px solid rgba(0,166,63,0.2)',
+              background: 'rgba(0,166,63,0.08)',
+              color: '#065f46',
+              borderRadius: 12,
+              padding: 14,
+              display: 'grid',
+              gap: 10,
+            }}
+          >
+            <strong>{successMessage}</strong>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const element = document.getElementById('patient-my-appointments');
+                  if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                style={{
+                  border: '1px solid var(--primary)',
+                  background: '#fff',
+                  color: 'var(--primary)',
+                  borderRadius: 10,
+                  padding: '8px 12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Ver minhas consultas
+              </button>
+              <button
+                type="button"
+                onClick={() => setSuccessMessage('')}
+                style={{
+                  border: 'none',
+                  background: 'var(--primary)',
+                  color: '#fff',
+                  borderRadius: 10,
+                  padding: '8px 12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Agendar outra consulta
+              </button>
+            </div>
+          </div>
+        )}
+
+        {specialtiesLoading ? (
+          <div style={{ fontSize: 14, color: '#64748b' }}>Carregando especialidades...</div>
+        ) : (
+          <SpecialtySelector
+            specialties={specialties}
+            selectedSpecialty={selectedSpecialty}
+            onSelect={handleSelectSpecialty}
+          />
+        )}
+
+        {selectedSpecialty && (
+          <div ref={datesRef} style={{ scrollMarginTop: 16 }}>
+            <AvailableDates
+              dates={availableDates}
+              selectedDate={selectedDate}
+              onSelect={date => {
+                setSelectedDate(date);
+                setSelectedDoctorId(null);
+                setSelectedSlot(null);
+                setTimeSlots([]);
+                scrollToRef(doctorsRef);
+              }}
+              loading={specialtyDoctorsLoading}
+            />
+          </div>
+        )}
+
+        {selectedSpecialty && selectedDate && (
+          <div ref={doctorsRef} style={{ scrollMarginTop: 16 }}>
+            <DoctorSelector
+              doctors={availableDoctors}
+              selectedDoctorId={selectedDoctorId}
+              onSelect={handleSelectDoctor}
+              loading={specialtyDoctorsLoading}
+            />
+          </div>
+        )}
+
+        {selectedDoctorId && (
+          <div ref={slotsRef} style={{ scrollMarginTop: 16 }}>
+            <TimeSlotSelector
+              slots={timeSlots}
+              selectedSlot={selectedSlot}
+              onSelect={slot => {
+                setSelectedSlot(slot);
+                setConfirmOpen(true);
+              }}
+              loading={timeSlotsLoading}
+            />
+          </div>
+        )}
+
+        <div id="patient-my-appointments">
+          <MyAppointments
+            appointments={myUpcomingAppointments}
+            onConfirm={onConfirm ? handleConfirmMyAppointment : undefined}
+            confirmingId={confirmingId}
+          />
+        </div>
+      </div>
+
+      <AppointmentConfirmationModal
+        open={confirmOpen}
+        specialty={selectedSpecialtyLabel}
+        doctorName={selectedDoctorName}
+        dateLabel={selectedDateLabel}
+        time={selectedSlot || ''}
+        patientName={userName}
+        loading={savingAppointment}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => void handleConfirmAppointment()}
+      />
+    </div>
+  );
+}
+
+export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, onUpdate, onConfirm, onDelete, initialOpen, initialPatientId, readOnly = false }: AgendaProps) {
   const { user } = useAuth();
   const isGestao = user?.role === 'gestao';
   const isMedico = user?.role === 'medico';
   const isSecretaria = user?.role === 'secretaria';
   const isPaciente = user?.role === 'paciente' || readOnly;
+  const isPatientOnlyExperience = user?.role === 'paciente';
   const canPatientSchedule = user?.role === 'paciente' && !readOnly;
   const canCreateAgendamento = canPatientSchedule || (!isPaciente && !isMedico);
   const canCancelAgendamento = canPatientSchedule || isGestao || isMedico || isSecretaria;
@@ -836,7 +1358,11 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
     setConfirmingId(appt.id);
     setApiError('');
     try {
-      await onUpdate({ ...appt, status: 'confirmado' });
+      if (canPatientSchedule && onConfirm) {
+        await onConfirm(appt.id);
+      } else {
+        await onUpdate({ ...appt, status: 'confirmado' });
+      }
     } catch (err) {
       setApiError(toUserFacingErrorMessage(err, 'Erro ao confirmar consulta. Tente novamente em instantes.'));
     } finally {
@@ -849,6 +1375,21 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         .filter(appt => appt.data === detailsSlot.date && normalizeTime(appt.hora) === detailsSlot.slot)
         .sort(byChronology)
     : [];
+
+  if (isPatientOnlyExperience) {
+    return (
+      <PatientSchedulingExperience
+        agendamentos={agendamentos}
+        pacientes={pacientes}
+        doctors={doctors}
+        onAdd={onAdd}
+        onConfirm={onConfirm}
+        userName={user?.full_name || 'Paciente'}
+        userId={user?.id || ''}
+        userPatientId={user?.patient_id}
+      />
+    );
+  }
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'block', background: 'transparent', overflowY: 'auto', overflowX: 'hidden' }}>

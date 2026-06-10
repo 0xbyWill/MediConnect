@@ -1,9 +1,18 @@
 import { useState } from 'react';
-import { BarChart2, Calendar, FileText, TrendingDown, TrendingUp, Users } from 'lucide-react';
+import { BarChart2, Calendar, Download, FileText, TrendingDown, TrendingUp, Users } from 'lucide-react';
 import type { ElementType } from 'react';
 import type { Agendamento, Laudo, Paciente } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { dateToISO, formatDateBR } from '../shared/utils/date';
+import { downloadHtmlAsPdf } from '../shared/utils/pdf';
+import { toUserFacingErrorMessage } from '../shared/utils/errors';
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
 interface RelatoriosProps {
   pacientes: Paciente[];
@@ -64,6 +73,8 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
 export default function Relatorios({ pacientes, agendamentos, laudos }: RelatoriosProps) {
   const { user } = useAuth();
   const [periodo, setPeriodo] = useState<Periodo>('mensal');
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState('');
   const isGestao = user?.role === 'gestao';
   const end = dateToISO(new Date());
   const start = dateToISO(addDays(new Date(), -(PERIODOS[periodo].days - 1)));
@@ -97,6 +108,126 @@ export default function Relatorios({ pacientes, agendamentos, laudos }: Relatori
   const maxPatient = Math.max(1, ...byPatient.map(([, value]) => value));
   const maxHour = Math.max(1, ...byHour.map(([, value]) => value));
 
+  const buildReportHtml = () => {
+    const titulo = isGestao ? 'Relatório Gerencial' : 'Relatório Médico';
+    const periodoLabel = PERIODOS[periodo].label;
+    const geradoEm = new Date().toLocaleString('pt-BR');
+    const responsavel = user?.full_name || 'Equipe MediConnect';
+
+    const kpis = [
+      { label: 'Consultas no período', value: String(appts.length), sub: `${growth >= 0 ? '+' : ''}${growth}% vs. período anterior` },
+      { label: 'Pacientes atendidos', value: String(novosPacientes), sub: '' },
+      { label: 'Laudos no período', value: String(reports.length), sub: `${reports.filter(l => l.status === 'liberado').length} liberados` },
+      { label: 'Comparecimento', value: `${comparecimento}%`, sub: '' },
+    ];
+
+    const kpiHtml = kpis.map(k => `
+      <div class="kpi">
+        <span class="kpi-label">${escapeHtml(k.label)}</span>
+        <span class="kpi-value">${escapeHtml(k.value)}</span>
+        ${k.sub ? `<span class="kpi-sub">${escapeHtml(k.sub)}</span>` : ''}
+      </div>`).join('');
+
+    const barRows = (rows: [string, number][], max: number) =>
+      rows.length
+        ? rows.map(([label, value]) => `
+            <div class="bar-row">
+              <span class="bar-label">${escapeHtml(label)}</span>
+              <span class="bar-track"><span class="bar-fill" style="width:${max > 0 ? (value / max) * 100 : 0}%"></span></span>
+              <span class="bar-value">${value}</span>
+            </div>`).join('')
+        : '<div class="empty">Sem dados para este período.</div>';
+
+    return `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(titulo)} - ${escapeHtml(periodoLabel)}</title>
+          <style>
+            @page { size: A4; margin: 0; }
+            * { box-sizing: border-box; }
+            body { margin: 0; background: #eef2f7; font-family: Arial, Helvetica, sans-serif; color: #101828; }
+            .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 16mm; position: relative; }
+            .topline { position: absolute; left: 0; right: 0; top: 0; height: 5mm; background: linear-gradient(135deg, #00A63F 0%, #009E57 100%); }
+            header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #009E57; padding: 8mm 0 5mm; margin-bottom: 8mm; }
+            header h1 { margin: 0; font-size: 22px; color: #101828; }
+            header .meta { font-size: 11px; color: #475467; text-align: right; line-height: 1.6; }
+            header .brand { font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #009E57; margin-bottom: 4px; }
+            .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10mm; }
+            .kpi { border: 1px solid #e4e7ec; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; }
+            .kpi-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #667085; }
+            .kpi-value { font-size: 26px; font-weight: 800; color: #101828; margin-top: 4px; }
+            .kpi-sub { font-size: 10px; color: #98a2b3; margin-top: 2px; }
+            section.block { margin-bottom: 8mm; }
+            section.block h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #009E57; border-bottom: 1px solid #e4e7ec; padding-bottom: 5px; margin: 0 0 10px; }
+            .bar-row { display: grid; grid-template-columns: 45mm 1fr 14mm; align-items: center; gap: 8px; margin-bottom: 7px; font-size: 11px; }
+            .bar-label { color: #344054; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .bar-track { height: 9px; background: #eef2f7; border-radius: 999px; overflow: hidden; }
+            .bar-fill { display: block; height: 100%; background: #009E57; border-radius: 999px; }
+            .bar-value { font-weight: 800; color: #101828; text-align: right; }
+            .info { display: flex; justify-content: space-between; border-bottom: 1px solid #f2f4f7; padding: 6px 0; font-size: 12px; }
+            .info span { color: #667085; }
+            .info strong { color: #101828; }
+            .empty { font-size: 12px; color: #98a2b3; padding: 8px 0; }
+            footer { margin-top: 10mm; border-top: 1px solid #e4e7ec; padding-top: 5mm; font-size: 9px; color: #98a2b3; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <section class="page">
+            <div class="topline"></div>
+            <header>
+              <div>
+                <div class="brand">MediConnect</div>
+                <h1>${escapeHtml(titulo)}</h1>
+              </div>
+              <div class="meta">
+                Período: <strong>${escapeHtml(periodoLabel)}</strong><br>
+                ${escapeHtml(formatDateBR(start))} a ${escapeHtml(formatDateBR(end))}<br>
+                Responsável: ${escapeHtml(responsavel)}<br>
+                Gerado em: ${escapeHtml(geradoEm)}
+              </div>
+            </header>
+
+            <div class="kpis">${kpiHtml}</div>
+
+            <section class="block">
+              <h2>Consultas por paciente</h2>
+              ${barRows(byPatient as [string, number][], maxPatient)}
+            </section>
+
+            <section class="block">
+              <h2>Horários com maior volume</h2>
+              ${barRows(byHour as [string, number][], maxHour)}
+            </section>
+
+            <section class="block">
+              <h2>Evolução recente</h2>
+              <div class="info"><span>Período atual</span><strong>${appts.length} consulta${appts.length === 1 ? '' : 's'}</strong></div>
+              <div class="info"><span>Período anterior</span><strong>${prevAppts.length} consulta${prevAppts.length === 1 ? '' : 's'}</strong></div>
+              <div class="info"><span>Tendência</span><strong>${growth >= 0 ? 'Crescimento' : 'Queda'} de ${Math.abs(growth)}%</strong></div>
+              <div class="info"><span>Cancelamentos</span><strong>${appts.filter(a => a.status === 'cancelado').length}</strong></div>
+            </section>
+
+            <footer>Documento gerado automaticamente pelo MediConnect · Uso interno e demonstrativo.</footer>
+          </section>
+        </body>
+      </html>`;
+  };
+
+  const handleDownloadPdf = async () => {
+    if (generatingPdf) return;
+    setGeneratingPdf(true);
+    setPdfError('');
+    try {
+      const titulo = isGestao ? 'Relatorio Gerencial' : 'Relatorio Medico';
+      await downloadHtmlAsPdf(buildReportHtml(), `${titulo} - ${PERIODOS[periodo].label} - ${end}.pdf`);
+    } catch (err) {
+      setPdfError(toUserFacingErrorMessage(err, 'Não foi possível gerar o PDF do relatório. Tente novamente.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   return (
     <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
@@ -108,11 +239,22 @@ export default function Relatorios({ pacientes, agendamentos, laudos }: Relatori
             Período de {formatDateBR(start)} até {formatDateBR(end)}, usando dados carregados do sistema.
           </p>
         </div>
-        <select value={periodo} onChange={e => setPeriodo(e.target.value as Periodo)}
-          style={{ minWidth: 190, padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 10, background: '#fff', fontSize: 13, fontWeight: 700, color: 'var(--gray-700)' }}>
-          {Object.entries(PERIODOS).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
-        </select>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={periodo} onChange={e => setPeriodo(e.target.value as Periodo)}
+            style={{ minWidth: 190, padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 10, background: '#fff', fontSize: 13, fontWeight: 700, color: 'var(--gray-700)' }}>
+            {Object.entries(PERIODOS).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
+          </select>
+          <button type="button" onClick={() => { void handleDownloadPdf(); }} disabled={generatingPdf}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', border: 'none', borderRadius: 10, background: generatingPdf ? 'var(--gray-300)' : 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: generatingPdf ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(58,170,53,0.3)' }}>
+            <Download size={15} /> {generatingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
+          </button>
+        </div>
       </div>
+      {pdfError && (
+        <div role="alert" style={{ marginBottom: 16, padding: '10px 12px', border: '1px solid var(--red-100)', borderRadius: 10, background: 'var(--red-50)', color: 'var(--red-600)', fontSize: 12, fontWeight: 700 }}>
+          {pdfError}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 22 }}>
         <KPI label="Consultas no período" value={appts.length} sub={`${growth >= 0 ? '+' : ''}${growth}% vs. período anterior`} icon={Calendar} />
