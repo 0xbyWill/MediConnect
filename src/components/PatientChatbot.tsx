@@ -1,8 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
-import { HelpCircle, Loader2, MessageCircle, Send, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, ComponentType, FormEvent, KeyboardEvent, ReactNode } from 'react';
+import {
+  AlertTriangle,
+  ArrowUp,
+  CalendarCheck,
+  CalendarClock,
+  CalendarX,
+  CheckCircle2,
+  FileText,
+  Headset,
+  KeyRound,
+  Loader2,
+  Mic,
+  Paperclip,
+  Sparkles,
+  UserCog,
+  X,
+} from 'lucide-react';
 import type { Agendamento, ChatbotMessage, Laudo, Paciente, PageType } from '../types';
-import type { ApiDoctor } from '../lib/api';
+import { messagesApi, type ApiDoctor } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { askPatientAssistant } from '../lib/patientAssistant';
 import type { PatientAssistantContext } from '../lib/patientAssistantTools';
@@ -17,6 +33,87 @@ import {
 } from '../shared/constants/chatbot';
 
 const PANACEIA_AVATAR_SRC = '/WhatsApp Image 2026-05-07 at 19.38.48.jpeg';
+
+type LucideIcon = ComponentType<{ size?: number | string; 'aria-hidden'?: boolean | 'true' | 'false' }>;
+
+// Anexos: validados no frontend por MIME e tamanho (barreira inicial, não única).
+const ATTACHMENT_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,application/pdf';
+const ATTACHMENT_ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'];
+const ATTACHMENT_MAX_SIZE = 10 * 1024 * 1024;
+const ATTACHMENT_MAX_COUNT = 5;
+
+interface ChatAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  url: string;
+  isImage: boolean;
+}
+
+// Tipagem mínima da Web Speech API (não faz parte do lib.dom padrão de forma estável).
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+interface SpeechRecognitionResultLike {
+  0: SpeechRecognitionAlternativeLike;
+  isFinal: boolean;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  onstart: (() => void) | null;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Metadados puramente visuais para transformar as opções em cards ricos.
+// Não altera a lógica de atendimento — apenas ícone e descrição curta.
+const OPTION_META: Record<string, { icon: LucideIcon; hint: string }> = {
+  appointments: { icon: CalendarCheck, hint: 'Veja suas consultas marcadas' },
+  reschedule: { icon: CalendarClock, hint: 'Encontre um novo horário' },
+  cancel: { icon: CalendarX, hint: 'Cancele com a secretaria' },
+  reports: { icon: FileText, hint: 'Acesse laudos liberados' },
+  'update-data': { icon: UserCog, hint: 'Atualize seu cadastro' },
+  'login-issues': { icon: KeyRound, hint: 'Resolva problemas de acesso' },
+  secretary: { icon: Headset, hint: 'Fale com a equipe' },
+};
+
+// Sugestões em destaque: apenas as ações mais usadas pelo paciente.
+// As demais opções continuam acessíveis pelo texto livre e pela lógica existente.
+const FEATURED_OPTION_IDS = ['appointments', 'reports', 'reschedule', 'secretary'];
+
+// Realce visual de mensagens sensíveis (segurança, suporte, sucesso).
+const KIND_META: Partial<Record<NonNullable<ChatbotMessage['kind']>, { icon: LucideIcon; label: string; tone: string }>> = {
+  safety: { icon: AlertTriangle, label: 'Atenção', tone: 'safety' },
+  support: { icon: Headset, label: 'Atendimento', tone: 'support' },
+  success: { icon: CheckCircle2, label: 'Concluído', tone: 'success' },
+};
 
 interface PatientChatbotProps {
   onOpenSecretaryChat: () => void;
@@ -105,7 +202,17 @@ export default function PatientChatbot({
   const [awaitingResolution, setAwaitingResolution] = useState(false);
   const [freeText, setFreeText] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceBaseTextRef = useRef('');
+  const attachmentsRef = useRef<ChatAttachment[]>([]);
+  attachmentsRef.current = attachments;
+  const voiceSupported = useMemo(() => getSpeechRecognitionCtor() !== null, []);
   const patientName = useMemo(() => user?.full_name?.split(' ')[0] || 'paciente', [user?.full_name]);
 
   // Localiza o cadastro do próprio paciente entre os dados já carregados pelo App.
@@ -119,12 +226,126 @@ export default function PatientChatbot({
   useEffect(() => {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [open, messages, aiLoading]);
+  }, [open, messages, aiLoading, attachments]);
 
+  // Encerra reconhecimento de voz e libera os object URLs ao desmontar.
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+      attachmentsRef.current.forEach(item => URL.revokeObjectURL(item.url));
+    };
+  }, []);
+
+  // Registra a solicitação no chat interno para que a secretaria veja o contato.
+  const persistSecretaryHandoff = useCallback(async (text: string) => {
+    const patientId = ownPaciente?.id;
+    if (!patientId) return;
+    try {
+      await messagesApi.create({ patient_id: patientId, author: 'paciente', body: text });
+    } catch {
+      // Envio é best-effort: a navegação para o chat acontece de qualquer forma.
+    }
+  }, [ownPaciente?.id]);
+
+  // Mantido após os hooks para respeitar a ordem fixa de hooks do React.
   if (!isPatient || !user) return null;
 
   const pushMessages = (...nextMessages: ChatbotMessage[]) => {
     setMessages(prev => [...prev, ...nextMessages].slice(-30));
+  };
+
+  // ----- Comando por voz (Web Speech API) -----
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+  };
+
+  const toggleVoice = () => {
+    if (aiLoading || !voiceSupported) return;
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    const Recognition = getSpeechRecognitionCtor();
+    if (!Recognition) return;
+    const recognition = new Recognition();
+    recognition.lang = 'pt-BR';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    voiceBaseTextRef.current = freeText.trim();
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognition.onresult = event => {
+      let transcript = '';
+      for (let i = 0; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      const base = voiceBaseTextRef.current;
+      const combined = base ? `${base} ${transcript}` : transcript;
+      setFreeText(combined.slice(0, 600));
+    };
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      setIsListening(false);
+    }
+  };
+
+  // ----- Anexar arquivos -----
+  const openFilePicker = () => {
+    if (aiLoading) return;
+    setAttachError(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+    event.target.value = '';
+    if (!fileList || fileList.length === 0) return;
+
+    const accepted: ChatAttachment[] = [];
+    let invalid = false;
+    Array.from(fileList).forEach(file => {
+      const okType = ATTACHMENT_ACCEPTED_TYPES.includes(file.type);
+      const okSize = file.size <= ATTACHMENT_MAX_SIZE;
+      if (!okType || !okSize) {
+        invalid = true;
+        return;
+      }
+      accepted.push({
+        id: `att-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: URL.createObjectURL(file),
+        isImage: file.type.startsWith('image/'),
+      });
+    });
+
+    setAttachments(prev => {
+      const room = Math.max(0, ATTACHMENT_MAX_COUNT - prev.length);
+      const allowed = accepted.slice(0, room);
+      accepted.slice(allowed.length).forEach(item => URL.revokeObjectURL(item.url));
+      return [...prev, ...allowed];
+    });
+    setAttachError(invalid ? 'Use imagens (PNG, JPG, WEBP, GIF) ou PDF de até 10 MB.' : null);
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => {
+      const target = prev.find(item => item.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter(item => item.id !== id);
+    });
+  };
+
+  const clearAttachments = () => {
+    setAttachments(prev => {
+      prev.forEach(item => URL.revokeObjectURL(item.url));
+      return [];
+    });
+    setAttachError(null);
   };
 
   const handleOption = (optionId: string) => {
@@ -137,6 +358,7 @@ export default function PatientChatbot({
         createMessage('bot', 'Vou abrir sua conversa com a secretaria agora. Por lá, você fala diretamente com a equipe administrativa.', 'support')
       );
       setAwaitingResolution(false);
+      void persistSecretaryHandoff('Olá, gostaria de falar com a secretaria.');
       window.setTimeout(() => {
         setOpen(false);
         onOpenSecretaryChat();
@@ -153,8 +375,30 @@ export default function PatientChatbot({
 
   const handleFreeText = async (event: FormEvent) => {
     event.preventDefault();
+    if (aiLoading) return;
+    if (isListening) stopListening();
     const message = freeText.trim();
-    if (!message || aiLoading) return;
+
+    // Anexos vão para a secretaria: a IA ainda não interpreta arquivos.
+    if (attachments.length > 0) {
+      const names = attachments.map(item => item.name).join(', ');
+      const patientText = message ? `${message}\n\n**Anexo(s):** ${names}` : `**Anexo(s):** ${names}`;
+      setFreeText('');
+      pushMessages(
+        createMessage('patient', patientText),
+        createMessage(
+          'bot',
+          'Recebi seu anexo. A Panaceia ainda não analisa arquivos diretamente, então registrei seu envio e encaminhei para a secretaria dar sequência.',
+          'support',
+        ),
+      );
+      void persistSecretaryHandoff(`Anexo(s) enviado(s) pelo paciente: ${names}${message ? ` — ${message}` : ''}`);
+      clearAttachments();
+      setAwaitingResolution(true);
+      return;
+    }
+
+    if (!message) return;
 
     const normalized = message.toLowerCase();
     setFreeText('');
@@ -236,6 +480,15 @@ export default function PatientChatbot({
     }
   };
 
+  // Enter envia, Shift+Enter quebra linha — padrão ChatGPT/Claude.
+  // Apenas dispara o submit existente, sem mudar a lógica de envio.
+  const handleComposeKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      formRef.current?.requestSubmit();
+    }
+  };
+
   const handleResolved = () => {
     pushMessages(
       createMessage('patient', 'Sim, resolveu'),
@@ -250,6 +503,7 @@ export default function PatientChatbot({
       createMessage('bot', 'Certo. Vou te levar para a conversa com a secretaria.', 'support')
     );
     setAwaitingResolution(false);
+    void persistSecretaryHandoff('Olá, gostaria de falar com a secretaria.');
     window.setTimeout(() => {
       setOpen(false);
       onOpenSecretaryChat();
@@ -260,441 +514,1054 @@ export default function PatientChatbot({
     <>
       <button
         type="button"
-        className="patient-chatbot-fab"
-        style={{
-          position: 'fixed',
-          right: 22,
-          bottom: 22,
-          zIndex: 900,
-          width: 52,
-          height: 52,
-          border: 0,
-          borderRadius: 14,
-          background: 'var(--primary)',
-          color: '#fff',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 14px 30px rgba(0, 166, 63, 0.28)',
-        }}
+        className={`pcb-fab${open ? ' pcb-fab-open' : ''}`}
         onClick={() => setOpen(value => !value)}
         aria-label={open ? 'Fechar atendimento da Panaceia' : 'Abrir atendimento da Panaceia'}
       >
-        {open ? <X size={20} aria-hidden="true" /> : <MessageCircle size={21} aria-hidden="true" />}
+        {open ? (
+          <X size={22} aria-hidden="true" />
+        ) : (
+          <>
+            <span className="pcb-fab-avatar" aria-hidden="true">
+              <img src={PANACEIA_AVATAR_SRC} alt="" />
+            </span>
+            <span className="pcb-fab-presence" aria-hidden="true" />
+          </>
+        )}
       </button>
 
       {open && (
-        <section className="patient-chatbot-panel" aria-label="Atendimento virtual Panaceia">
-          <header className="patient-chatbot-header">
-            <span className="patient-chatbot-header-avatar" aria-hidden="true">
-              <img src={PANACEIA_AVATAR_SRC} alt="" />
-            </span>
-            <div>
-              <h2>Panaceia</h2>
-              <p><span aria-hidden="true" />Atendente virtual online</p>
+        <section className="pcb-panel" aria-label="Assistente de IA Panaceia" role="dialog">
+          <header className="pcb-header">
+            <div className="pcb-identity">
+              <span className="pcb-avatar" aria-hidden="true">
+                <img src={PANACEIA_AVATAR_SRC} alt="" />
+                <span className="pcb-presence" />
+              </span>
+              <div className="pcb-identity-text">
+                <h2>
+                  Panaceia
+                  <Sparkles size={15} aria-hidden="true" />
+                </h2>
+                <p>
+                  <span className="pcb-status-dot" aria-hidden="true" />
+                  Assistente IA · Online
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              className="pcb-header-close"
+              onClick={() => setOpen(false)}
+              aria-label="Fechar atendimento da Panaceia"
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
           </header>
 
-          <div className="patient-chatbot-body" aria-live="polite">
-            <div className="patient-chatbot-messages">
-              {messages.map(message => (
-                <div key={message.id} className={`patient-chatbot-row patient-chatbot-row-${message.sender}`}>
-                  {(message.sender === 'bot' || message.sender === 'system') && (
-                    <span className="patient-chatbot-bubble-avatar" aria-hidden="true">
-                      <img src={PANACEIA_AVATAR_SRC} alt="" />
-                    </span>
-                  )}
-                  <div className={`patient-chatbot-message patient-chatbot-message-${message.sender}`}>
-                    {renderRichText(message.text, message.id)}
+          <div className="pcb-body" aria-live="polite">
+            <div className="pcb-messages">
+              {messages.map((message, index) => {
+                const isPatientMsg = message.sender === 'patient';
+                const kindMeta = !isPatientMsg && message.kind ? KIND_META[message.kind] : undefined;
+                return (
+                  <div
+                    key={message.id}
+                    className={`pcb-row pcb-row-${isPatientMsg ? 'patient' : 'bot'}`}
+                    style={{ animationDelay: `${Math.min(index, 6) * 35}ms` }}
+                  >
+                    {!isPatientMsg && (
+                      <span className="pcb-msg-avatar" aria-hidden="true">
+                        <img src={PANACEIA_AVATAR_SRC} alt="" />
+                      </span>
+                    )}
+                    <div
+                      className={`pcb-bubble pcb-bubble-${isPatientMsg ? 'patient' : 'bot'}${
+                        kindMeta ? ` pcb-bubble-${kindMeta.tone}` : ''
+                      }`}
+                    >
+                      {kindMeta && (
+                        <span className={`pcb-bubble-tag pcb-bubble-tag-${kindMeta.tone}`}>
+                          <kindMeta.icon size={13} aria-hidden="true" />
+                          {kindMeta.label}
+                        </span>
+                      )}
+                      <div className="pcb-bubble-text">{renderRichText(message.text, message.id)}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+
               {aiLoading && (
-                <div className="patient-chatbot-row patient-chatbot-row-bot">
-                  <span className="patient-chatbot-bubble-avatar" aria-hidden="true">
+                <div className="pcb-row pcb-row-bot">
+                  <span className="pcb-msg-avatar" aria-hidden="true">
                     <img src={PANACEIA_AVATAR_SRC} alt="" />
                   </span>
-                  <div className="patient-chatbot-message patient-chatbot-message-bot patient-chatbot-typing" aria-label="Panaceia está digitando">
-                    <span /><span /><span />
+                  <div className="pcb-bubble pcb-bubble-bot pcb-typing" aria-label="Panaceia está pensando">
+                    <span className="pcb-typing-label">
+                      <Sparkles size={13} aria-hidden="true" />
+                      Panaceia está pensando
+                    </span>
+                    <span className="pcb-typing-dots"><span /><span /><span /></span>
                   </div>
                 </div>
               )}
+
+              {!awaitingResolution && !aiLoading && (
+                <div className="pcb-suggestions" aria-label="Sugestões rápidas">
+                  <span className="pcb-suggestions-title">
+                    <Sparkles size={14} aria-hidden="true" />
+                    Sugestões rápidas
+                  </span>
+                  <div className="pcb-suggestions-grid">
+                    {FEATURED_OPTION_IDS.map(id => {
+                      const option = CHATBOT_OPTIONS.find(item => item.id === id);
+                      if (!option) return null;
+                      const meta = OPTION_META[option.id];
+                      const Icon = meta?.icon ?? Sparkles;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className="pcb-suggestion"
+                          onClick={() => handleOption(option.id)}
+                        >
+                          <span className="pcb-suggestion-icon" aria-hidden="true">
+                            <Icon size={18} />
+                          </span>
+                          <span className="pcb-suggestion-body">
+                            <span className="pcb-suggestion-label">{option.label}</span>
+                            {meta?.hint && <span className="pcb-suggestion-hint">{meta.hint}</span>}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {awaitingResolution && !aiLoading && (
+                <div className="pcb-resolution" aria-label="Isso resolveu sua dúvida?">
+                  <span className="pcb-resolution-title">{CHATBOT_RESOLUTION_PROMPT}</span>
+                  <div className="pcb-resolution-actions">
+                    <button type="button" className="pcb-resolution-yes" onClick={handleResolved}>
+                      <CheckCircle2 size={15} aria-hidden="true" />
+                      Sim, resolveu
+                    </button>
+                    <button type="button" className="pcb-resolution-no" onClick={handleSecretary}>
+                      <Headset size={15} aria-hidden="true" />
+                      Falar com a secretaria
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
           </div>
 
-          <footer className="patient-chatbot-footer">
-            <form className="patient-chatbot-compose" onSubmit={handleFreeText}>
-              <label htmlFor="patient-chatbot-message">Mensagem para a Panaceia</label>
-              <div>
+          <footer className="pcb-footer">
+            <form ref={formRef} className="pcb-compose" onSubmit={handleFreeText}>
+              <label htmlFor="patient-chatbot-message" className="pcb-sr-only">
+                Mensagem para a Panaceia
+              </label>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                multiple
+                className="pcb-sr-only"
+                onChange={handleFilesSelected}
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+
+              {attachments.length > 0 && (
+                <div className="pcb-attachments" aria-label="Anexos selecionados">
+                  {attachments.map(att => (
+                    <div key={att.id} className="pcb-attachment">
+                      {att.isImage ? (
+                        <img src={att.url} alt="" className="pcb-attachment-thumb" />
+                      ) : (
+                        <span className="pcb-attachment-thumb pcb-attachment-thumb-file" aria-hidden="true">
+                          <FileText size={16} />
+                        </span>
+                      )}
+                      <span className="pcb-attachment-info">
+                        <span className="pcb-attachment-name">{att.name}</span>
+                        <span className="pcb-attachment-size">{formatFileSize(att.size)}</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="pcb-attachment-remove"
+                        onClick={() => removeAttachment(att.id)}
+                        aria-label={`Remover anexo ${att.name}`}
+                      >
+                        <X size={13} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {attachError && (
+                <p className="pcb-attach-error" role="alert">
+                  {attachError}
+                </p>
+              )}
+
+              <div className={`pcb-input-shell${isListening ? ' pcb-input-shell-recording' : ''}`}>
+                <button
+                  type="button"
+                  className="pcb-tool-btn"
+                  onClick={openFilePicker}
+                  disabled={aiLoading}
+                  title="Anexar arquivo"
+                  aria-label="Anexar arquivo"
+                >
+                  <Paperclip size={18} aria-hidden="true" />
+                </button>
                 <textarea
                   id="patient-chatbot-message"
                   value={freeText}
                   onChange={event => setFreeText(event.target.value.slice(0, 600))}
+                  onKeyDown={handleComposeKeyDown}
                   disabled={aiLoading}
                   maxLength={600}
-                  rows={2}
-                  placeholder="Digite sua dúvida..."
+                  rows={1}
+                  placeholder={isListening ? 'Ouvindo... pode falar' : 'Pergunte algo à Panaceia...'}
                 />
-                <button type="submit" disabled={aiLoading || !freeText.trim()} aria-label="Enviar mensagem para a Panaceia">
-                  {aiLoading ? <Loader2 size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+                {voiceSupported && (
+                  <button
+                    type="button"
+                    className={`pcb-tool-btn${isListening ? ' pcb-tool-btn-recording' : ''}`}
+                    onClick={toggleVoice}
+                    disabled={aiLoading}
+                    title={isListening ? 'Parar gravação' : 'Falar com a Panaceia'}
+                    aria-label={isListening ? 'Parar gravação de voz' : 'Ditar mensagem por voz'}
+                    aria-pressed={isListening}
+                  >
+                    <Mic size={18} aria-hidden="true" />
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="pcb-send-btn"
+                  disabled={aiLoading || (!freeText.trim() && attachments.length === 0)}
+                  aria-label="Enviar mensagem para a Panaceia"
+                >
+                  {aiLoading ? (
+                    <Loader2 className="pcb-spin" size={18} aria-hidden="true" />
+                  ) : (
+                    <ArrowUp size={18} aria-hidden="true" />
+                  )}
                 </button>
               </div>
+              <p className="pcb-disclaimer">
+                {isListening
+                  ? 'Gravando sua mensagem por voz...'
+                  : 'A Panaceia ajuda com assuntos do MediConnect. Em emergências, procure atendimento médico.'}
+              </p>
             </form>
-
-            {!awaitingResolution ? (
-              <div className="patient-chatbot-options" aria-label="Escolha uma opção de atendimento">
-                {CHATBOT_OPTIONS.map(option => (
-                  <button key={option.id} type="button" onClick={() => handleOption(option.id)}>
-                    <HelpCircle size={14} aria-hidden="true" />
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="patient-chatbot-resolution">
-                <span>{CHATBOT_RESOLUTION_PROMPT}</span>
-                <div>
-                  <button type="button" onClick={handleResolved}>
-                    Sim, resolveu
-                  </button>
-                  <button type="button" onClick={handleSecretary}>
-                    Falar com a secretaria
-                  </button>
-                </div>
-              </div>
-            )}
           </footer>
+        </section>
+      )}
 
-          <style>{`
-            .patient-chatbot-fab {
+      <style>{`
+            .pcb-fab {
               position: fixed;
               right: 22px;
               bottom: 22px;
               z-index: 900;
-              width: 52px;
-              height: 52px;
+              width: 60px;
+              height: 60px;
+              padding: 0;
               border: 0;
-              border-radius: 14px;
-              background: var(--primary);
+              border-radius: 18px;
+              background: linear-gradient(140deg, var(--primary), var(--darker));
               color: #fff;
               display: inline-flex;
               align-items: center;
               justify-content: center;
-              box-shadow: 0 14px 30px rgba(0, 166, 63, 0.28);
+              cursor: pointer;
+              box-shadow: 0 16px 34px rgba(0, 166, 63, 0.34);
+              transition: transform .2s ease, box-shadow .2s ease;
             }
 
-            .patient-chatbot-panel {
-              position: fixed;
-              right: 22px;
-              bottom: 86px;
-              z-index: 900;
-              width: min(390px, calc(100vw - 28px));
-              height: min(620px, calc(100dvh - 110px));
-              display: flex;
-              flex-direction: column;
-              overflow: hidden;
-              border: 1px solid rgba(15,118,75,0.14);
+            .pcb-fab:hover {
+              transform: translateY(-2px) scale(1.03);
+              box-shadow: 0 20px 40px rgba(0, 166, 63, 0.42);
+            }
+
+            .pcb-fab:active {
+              transform: scale(0.97);
+            }
+
+            .pcb-fab-open {
               border-radius: 16px;
-              background: #fff;
-              box-shadow: 0 22px 48px rgba(15, 23, 42, 0.18);
             }
 
-            .patient-chatbot-header {
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              padding: 14px 16px;
-              background: var(--primary);
-              color: #fff;
-            }
-
-            .patient-chatbot-header-avatar {
-              width: 42px;
-              height: 42px;
-              border-radius: 50%;
-              background: #fff;
-              border: 2px solid rgba(255,255,255,0.72);
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              flex-shrink: 0;
+            .pcb-fab-avatar {
+              width: 44px;
+              height: 44px;
+              border-radius: 14px;
               overflow: hidden;
+              border: 2px solid rgba(255,255,255,0.7);
+              display: inline-flex;
             }
 
-            .patient-chatbot-header-avatar img,
-            .patient-chatbot-bubble-avatar img {
+            .pcb-fab-avatar img {
               width: 100%;
               height: 100%;
               object-fit: cover;
             }
 
-            .patient-chatbot-header h2 {
-              margin: 0;
-              font-size: 15px;
-              font-weight: 800;
-              color: #fff;
+            .pcb-fab-presence {
+              position: absolute;
+              right: 8px;
+              top: 8px;
+              width: 13px;
+              height: 13px;
+              border-radius: 50%;
+              background: #4ade80;
+              border: 2px solid #fff;
+              box-shadow: 0 0 0 0 rgba(74,222,128,.6);
+              animation: pcb-pulse 2s infinite;
             }
 
-            .patient-chatbot-header p {
-              margin-top: 2px;
-              font-size: 12px;
-              color: rgba(255,255,255,0.78);
-              font-weight: 600;
+            .pcb-panel {
+              position: fixed;
+              right: 22px;
+              bottom: 92px;
+              z-index: 900;
+              width: min(420px, calc(100vw - 28px));
+              height: min(700px, calc(100dvh - 120px));
+              display: flex;
+              flex-direction: column;
+              overflow: hidden;
+              border: 1px solid rgba(15,118,75,0.14);
+              border-radius: 22px;
+              background: #fff;
+              box-shadow: 0 30px 70px rgba(15, 23, 42, 0.26);
+              transform-origin: bottom right;
+              animation: pcb-panel-in .26s cubic-bezier(.16,1,.3,1);
+            }
+
+            .pcb-header {
+              position: relative;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 12px;
+              padding: 16px 18px;
+              color: #fff;
+              background:
+                radial-gradient(120% 140% at 100% 0%, rgba(255,255,255,.18), transparent 55%),
+                linear-gradient(135deg, var(--primary), var(--darker));
+            }
+
+            .pcb-identity {
+              display: flex;
+              align-items: center;
+              gap: 13px;
+              min-width: 0;
+            }
+
+            .pcb-avatar {
+              position: relative;
+              width: 52px;
+              height: 52px;
+              border-radius: 16px;
+              background: #fff;
+              border: 2px solid rgba(255,255,255,0.85);
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+              overflow: hidden;
+              box-shadow: 0 6px 16px rgba(0,0,0,.18);
+            }
+
+            .pcb-avatar img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+            }
+
+            .pcb-presence {
+              position: absolute;
+              right: -2px;
+              bottom: -2px;
+              width: 15px;
+              height: 15px;
+              border-radius: 50%;
+              background: #4ade80;
+              border: 2.5px solid var(--darker);
+              box-shadow: 0 0 0 0 rgba(74,222,128,.6);
+              animation: pcb-pulse 2s infinite;
+            }
+
+            .pcb-identity-text {
+              min-width: 0;
+            }
+
+            .pcb-identity-text h2 {
+              margin: 0;
+              font-size: 18px;
+              font-weight: 800;
+              color: #fff;
+              letter-spacing: -.01em;
               display: flex;
               align-items: center;
               gap: 6px;
             }
 
-            .patient-chatbot-header p span {
+            .pcb-identity-text h2 svg {
+              color: #d9ffe7;
+            }
+
+            .pcb-identity-text p {
+              margin-top: 3px;
+              font-size: 12.5px;
+              color: rgba(255,255,255,0.82);
+              font-weight: 600;
+              display: flex;
+              align-items: center;
+              gap: 7px;
+            }
+
+            .pcb-status-dot {
               width: 8px;
               height: 8px;
               border-radius: 50%;
               background: #86efac;
-              box-shadow: 0 0 0 3px rgba(134,239,172,.2);
+              box-shadow: 0 0 0 3px rgba(134,239,172,.22);
+              animation: pcb-blink 2.4s infinite;
             }
 
-            .patient-chatbot-body {
+            .pcb-header-close {
+              flex-shrink: 0;
+              width: 36px;
+              height: 36px;
+              border: 0;
+              border-radius: 12px;
+              background: rgba(255,255,255,0.16);
+              color: #fff;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              transition: background .15s ease;
+            }
+
+            .pcb-header-close:hover {
+              background: rgba(255,255,255,0.28);
+            }
+
+            .pcb-body {
               flex: 1;
               min-height: 0;
-              padding: 14px;
+              padding: 18px 16px;
               overflow-y: auto;
-              scrollbar-width: none;
+              scroll-behavior: smooth;
+              scrollbar-width: thin;
+              scrollbar-color: rgba(0,166,63,.25) transparent;
               background:
-                linear-gradient(rgba(243, 248, 245, .92), rgba(243, 248, 245, .92)),
-                repeating-linear-gradient(135deg, rgba(0,166,63,.05) 0 1px, transparent 1px 12px);
+                radial-gradient(110% 60% at 50% 0%, rgba(0,166,63,.05), transparent 60%),
+                linear-gradient(180deg, #f7fbf9, #f3f8f5);
             }
 
-            .patient-chatbot-body::-webkit-scrollbar {
-              display: none;
+            .pcb-body::-webkit-scrollbar {
+              width: 7px;
             }
 
-            .patient-chatbot-messages {
+            .pcb-body::-webkit-scrollbar-thumb {
+              background: rgba(0,166,63,.22);
+              border-radius: 99px;
+            }
+
+            .pcb-messages {
               display: flex;
-              min-height: 100%;
               flex-direction: column;
-              justify-content: flex-end;
-              gap: 9px;
+              gap: 14px;
             }
 
-            .patient-chatbot-row {
+            .pcb-row {
               display: flex;
               align-items: flex-end;
-              gap: 7px;
+              gap: 9px;
+              animation: pcb-msg-in .32s cubic-bezier(.16,1,.3,1) both;
             }
 
-            .patient-chatbot-row-patient {
+            .pcb-row-patient {
               justify-content: flex-end;
             }
 
-            .patient-chatbot-row-bot,
-            .patient-chatbot-row-system {
+            .pcb-row-bot {
               justify-content: flex-start;
             }
 
-            .patient-chatbot-bubble-avatar {
-              width: 28px;
-              height: 28px;
-              border-radius: 50%;
-              border: 1px solid rgba(0,166,63,.16);
+            .pcb-msg-avatar {
+              width: 32px;
+              height: 32px;
+              border-radius: 10px;
+              border: 1px solid rgba(0,166,63,.18);
               background: #fff;
               overflow: hidden;
               flex: 0 0 auto;
+              box-shadow: var(--shadow-sm);
             }
 
-            .patient-chatbot-message {
-              max-width: 84%;
-              padding: 10px 12px;
-              border-radius: 14px;
-              font-size: 13px;
-              line-height: 1.45;
+            .pcb-msg-avatar img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+            }
+
+            .pcb-bubble {
+              max-width: 80%;
+              padding: 12px 14px;
+              border-radius: 18px;
+              font-size: 13.5px;
+              line-height: 1.5;
               overflow-wrap: anywhere;
-              box-shadow: 0 1px 2px rgba(15,23,42,.05);
+              box-shadow: 0 2px 8px rgba(15,23,42,.06);
             }
 
-            .patient-chatbot-message p + p {
-              margin-top: 7px;
+            .pcb-bubble-text p + p {
+              margin-top: 8px;
             }
 
-            .patient-chatbot-message strong {
+            .pcb-bubble-text strong {
               font-weight: 800;
             }
 
             .patient-chatbot-list {
-              margin: 6px 0 0;
+              margin: 8px 0 0;
               padding-left: 18px;
               display: grid;
-              gap: 4px;
+              gap: 5px;
             }
 
             .patient-chatbot-list li {
               list-style: disc;
             }
 
-            .patient-chatbot-typing {
-              display: inline-flex;
-              align-items: center;
-              gap: 4px;
-              padding: 12px 14px;
-            }
-
-            .patient-chatbot-typing span {
-              width: 7px;
-              height: 7px;
-              border-radius: 50%;
-              background: var(--gray-400, #94a3b8);
-              animation: patient-chatbot-bounce 1.2s infinite ease-in-out;
-            }
-
-            .patient-chatbot-typing span:nth-child(2) {
-              animation-delay: 0.2s;
-            }
-
-            .patient-chatbot-typing span:nth-child(3) {
-              animation-delay: 0.4s;
-            }
-
-            @keyframes patient-chatbot-bounce {
-              0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-              30% { transform: translateY(-4px); opacity: 1; }
-            }
-
-            .patient-chatbot-message-bot {
+            .pcb-bubble-bot {
               background: #fff;
               border: 1px solid var(--gray-100);
               color: var(--gray-800);
-              border-bottom-left-radius: 5px;
+              border-bottom-left-radius: 6px;
             }
 
-            .patient-chatbot-message-system {
-              max-width: 92%;
-              background: #e8f8ef;
-              border: 1px solid rgba(0,166,63,.14);
-              color: var(--dark);
-              text-align: center;
+            .pcb-bubble-patient {
+              background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+              color: #fff;
+              border-bottom-right-radius: 6px;
+              box-shadow: 0 4px 14px rgba(0,166,63,.28);
+            }
+
+            .pcb-bubble-tag {
+              display: inline-flex;
+              align-items: center;
+              gap: 5px;
+              margin-bottom: 7px;
+              padding: 3px 9px;
+              border-radius: 99px;
+              font-size: 11px;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: .02em;
+            }
+
+            .pcb-bubble-tag-safety {
+              background: var(--amber-100);
+              color: var(--amber-600);
+            }
+
+            .pcb-bubble-tag-support {
+              background: #e0f2fe;
+              color: #0369a1;
+            }
+
+            .pcb-bubble-tag-success {
+              background: var(--mint);
+              color: var(--darker);
+            }
+
+            .pcb-bubble-safety {
+              border-color: rgba(217,119,6,.3);
+              background: #fffbeb;
+            }
+
+            .pcb-bubble-support {
+              border-color: rgba(3,105,161,.22);
+              background: #f0f9ff;
+            }
+
+            .pcb-bubble-success {
+              border-color: rgba(0,166,63,.24);
+              background: #f0fdf4;
+            }
+
+            .pcb-typing {
+              display: inline-flex;
+              flex-direction: column;
+              gap: 7px;
+              padding: 12px 14px;
+            }
+
+            .pcb-typing-label {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
               font-size: 12px;
+              font-weight: 700;
+              color: var(--primary);
             }
 
-            .patient-chatbot-message-patient {
-              background: #dcfce7;
-              border: 1px solid rgba(0,166,63,.16);
-              color: var(--dark);
-              border-bottom-right-radius: 5px;
+            .pcb-typing-label svg {
+              animation: pcb-spin 1.6s linear infinite;
             }
 
-            .patient-chatbot-footer {
+            .pcb-typing-dots {
+              display: inline-flex;
+              gap: 5px;
+            }
+
+            .pcb-typing-dots span {
+              width: 7px;
+              height: 7px;
+              border-radius: 50%;
+              background: var(--primary);
+              opacity: .55;
+              animation: pcb-bounce 1.2s infinite ease-in-out;
+            }
+
+            .pcb-typing-dots span:nth-child(2) { animation-delay: .18s; }
+            .pcb-typing-dots span:nth-child(3) { animation-delay: .36s; }
+
+            .pcb-suggestions {
+              margin-top: 4px;
+              animation: pcb-msg-in .32s cubic-bezier(.16,1,.3,1) both;
+            }
+
+            .pcb-suggestions-title {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              margin: 6px 2px 10px;
+              font-size: 12px;
+              font-weight: 800;
+              color: var(--gray-600);
+              text-transform: uppercase;
+              letter-spacing: .03em;
+            }
+
+            .pcb-suggestions-title svg {
+              color: var(--primary);
+            }
+
+            .pcb-suggestions-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 9px;
+            }
+
+            .pcb-suggestion {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              padding: 11px 12px;
+              border: 1px solid var(--gray-100);
+              border-radius: 14px;
+              background: #fff;
+              text-align: left;
+              cursor: pointer;
+              box-shadow: var(--shadow-sm);
+              transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+            }
+
+            .pcb-suggestion:hover {
+              transform: translateY(-2px);
+              border-color: rgba(0,166,63,.4);
+              box-shadow: 0 10px 22px rgba(0,166,63,.14);
+            }
+
+            .pcb-suggestion-icon {
               flex-shrink: 0;
-              padding: 12px;
+              width: 36px;
+              height: 36px;
+              border-radius: 11px;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              background: linear-gradient(135deg, rgba(0,166,63,.14), rgba(0,166,63,.06));
+              color: var(--primary);
+            }
+
+            .pcb-suggestion-body {
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+              min-width: 0;
+            }
+
+            .pcb-suggestion-label {
+              font-size: 13px;
+              font-weight: 800;
+              color: var(--gray-800);
+              line-height: 1.2;
+            }
+
+            .pcb-suggestion-hint {
+              font-size: 11px;
+              font-weight: 500;
+              color: var(--gray-500);
+              line-height: 1.25;
+            }
+
+            .pcb-resolution {
+              margin-top: 4px;
+              padding: 14px;
+              border: 1px solid var(--gray-100);
+              border-radius: 16px;
+              background: #fff;
+              box-shadow: var(--shadow-sm);
+              animation: pcb-msg-in .32s cubic-bezier(.16,1,.3,1) both;
+            }
+
+            .pcb-resolution-title {
+              display: block;
+              margin-bottom: 11px;
+              color: var(--gray-700);
+              font-size: 13px;
+              font-weight: 800;
+            }
+
+            .pcb-resolution-actions {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 9px;
+            }
+
+            .pcb-resolution-actions button {
+              min-height: 44px;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 7px;
+              border-radius: 12px;
+              padding: 8px 10px;
+              font-size: 12.5px;
+              font-weight: 800;
+              cursor: pointer;
+              transition: transform .14s ease, filter .14s ease;
+            }
+
+            .pcb-resolution-actions button:hover {
+              transform: translateY(-1px);
+            }
+
+            .pcb-resolution-yes {
+              border: 0;
+              background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+              color: #fff;
+            }
+
+            .pcb-resolution-no {
+              border: 1px solid rgba(0,166,63,.28);
+              background: #fff;
+              color: var(--gray-700);
+            }
+
+            .pcb-footer {
+              flex-shrink: 0;
+              padding: 12px 14px 14px;
               border-top: 1px solid var(--gray-100);
               background: #fff;
             }
 
-            .patient-chatbot-compose {
+            .pcb-sr-only {
+              position: absolute;
+              width: 1px;
+              height: 1px;
+              padding: 0;
+              margin: -1px;
+              overflow: hidden;
+              clip: rect(0 0 0 0);
+              white-space: nowrap;
+              border: 0;
+            }
+
+            .pcb-compose {
               display: grid;
+              gap: 7px;
+            }
+
+            .pcb-input-shell {
+              display: flex;
+              align-items: flex-end;
               gap: 6px;
-              margin-bottom: 10px;
+              padding: 7px 8px;
+              border: 1.5px solid var(--gray-200);
+              border-radius: 20px;
+              background: var(--gray-50);
+              transition: border-color .15s ease, box-shadow .15s ease;
             }
 
-            .patient-chatbot-compose label {
-              font-size: 11px;
-              font-weight: 800;
-              color: var(--gray-600);
-              text-transform: uppercase;
-              letter-spacing: 0;
+            .pcb-input-shell:focus-within {
+              border-color: var(--primary);
+              box-shadow: var(--focus-ring);
+              background: #fff;
             }
 
-            .patient-chatbot-compose > div {
-              display: grid;
-              grid-template-columns: 1fr 42px;
-              gap: 8px;
-              align-items: stretch;
-            }
-
-            .patient-chatbot-compose textarea {
+            .pcb-input-shell textarea {
+              flex: 1;
               width: 100%;
-              min-height: 42px;
-              max-height: 92px;
-              resize: vertical;
-              border: 1px solid var(--gray-200);
-              border-radius: 10px;
-              padding: 9px 10px;
+              min-height: 28px;
+              max-height: 120px;
+              resize: none;
+              border: 0;
+              background: transparent;
+              padding: 6px 4px;
               color: var(--gray-800);
               font: inherit;
-              font-size: 13px;
-              line-height: 1.35;
+              font-size: 14px;
+              line-height: 1.4;
               outline: none;
             }
 
-            .patient-chatbot-compose button {
-              width: 42px;
-              min-height: 42px;
+            .pcb-input-shell textarea::placeholder {
+              color: var(--gray-400);
+            }
+
+            .pcb-tool-btn {
+              flex-shrink: 0;
+              width: 38px;
+              height: 38px;
               border: 0;
-              border-radius: 10px;
-              background: var(--primary);
+              border-radius: 12px;
+              background: transparent;
+              color: var(--gray-500);
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              transition: background .15s ease, color .15s ease;
+            }
+
+            .pcb-tool-btn:hover:not(:disabled) {
+              background: var(--gray-100);
+              color: var(--primary);
+            }
+
+            .pcb-tool-btn:disabled {
+              opacity: .55;
+              cursor: not-allowed;
+            }
+
+            .pcb-send-btn {
+              flex-shrink: 0;
+              width: 40px;
+              height: 40px;
+              border: 0;
+              border-radius: 13px;
+              background: linear-gradient(135deg, var(--primary), var(--primary-hover));
               color: #fff;
               display: inline-flex;
               align-items: center;
               justify-content: center;
+              cursor: pointer;
+              box-shadow: 0 6px 16px rgba(0,166,63,.3);
+              transition: transform .14s ease, box-shadow .14s ease, background .15s ease;
             }
 
-            .patient-chatbot-compose button:disabled {
+            .pcb-send-btn:hover:not(:disabled) {
+              transform: translateY(-1px);
+            }
+
+            .pcb-send-btn:disabled {
               background: var(--gray-300);
+              box-shadow: none;
               cursor: not-allowed;
             }
 
-            .patient-chatbot-options {
-              display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
+            .pcb-spin {
+              animation: pcb-spin 1s linear infinite;
+            }
+
+            .pcb-disclaimer {
+              margin: 0;
+              text-align: center;
+              font-size: 10.5px;
+              color: var(--gray-400);
+              line-height: 1.3;
+            }
+
+            .pcb-input-shell-recording {
+              border-color: var(--red-500);
+              background: var(--red-50);
+            }
+
+            .pcb-tool-btn-recording {
+              background: var(--red-100);
+              color: var(--red-600);
+              animation: pcb-rec 1.3s infinite;
+            }
+
+            .pcb-attachments {
+              display: flex;
+              flex-wrap: wrap;
               gap: 8px;
             }
 
-            .patient-chatbot-options button,
-            .patient-chatbot-resolution button {
-              min-height: 42px;
+            .pcb-attachment {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              max-width: 100%;
+              padding: 6px 8px 6px 6px;
+              border: 1px solid var(--gray-200);
+              border-radius: 12px;
+              background: var(--gray-50);
+              animation: pcb-msg-in .24s ease both;
+            }
+
+            .pcb-attachment-thumb {
+              width: 34px;
+              height: 34px;
+              border-radius: 9px;
+              object-fit: cover;
+              flex-shrink: 0;
+            }
+
+            .pcb-attachment-thumb-file {
               display: inline-flex;
               align-items: center;
               justify-content: center;
-              gap: 6px;
-              border: 1px solid rgba(0, 166, 63, 0.20);
-              border-radius: 10px;
-              padding: 8px 10px;
-              background: #fff;
-              color: var(--gray-700);
-              font-size: 12px;
-              font-weight: 800;
-              text-align: center;
+              background: rgba(0,166,63,.12);
+              color: var(--primary);
             }
 
-            .patient-chatbot-resolution > span {
-              display: block;
-              margin: 0 0 9px;
-              color: var(--gray-700);
-              font-size: 12px;
-              font-weight: 800;
+            .pcb-attachment-info {
+              display: flex;
+              flex-direction: column;
+              min-width: 0;
             }
 
-            .patient-chatbot-resolution div {
-              display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-              gap: 8px;
+            .pcb-attachment-name {
+              font-size: 12px;
+              font-weight: 700;
+              color: var(--gray-800);
+              max-width: 150px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .pcb-attachment-size {
+              font-size: 10.5px;
+              color: var(--gray-500);
+            }
+
+            .pcb-attachment-remove {
+              flex-shrink: 0;
+              width: 22px;
+              height: 22px;
+              border: 0;
+              border-radius: 7px;
+              background: var(--gray-200);
+              color: var(--gray-600);
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              transition: background .14s ease, color .14s ease;
+            }
+
+            .pcb-attachment-remove:hover {
+              background: var(--red-100);
+              color: var(--red-600);
+            }
+
+            .pcb-attach-error {
+              margin: 0;
+              font-size: 11.5px;
+              font-weight: 600;
+              color: var(--red-600);
+            }
+
+            @keyframes pcb-rec {
+              0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.45); }
+              50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+            }
+
+            @keyframes pcb-bounce {
+              0%, 60%, 100% { transform: translateY(0); opacity: .5; }
+              30% { transform: translateY(-5px); opacity: 1; }
+            }
+
+            @keyframes pcb-pulse {
+              0% { box-shadow: 0 0 0 0 rgba(74,222,128,.55); }
+              70% { box-shadow: 0 0 0 8px rgba(74,222,128,0); }
+              100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+            }
+
+            @keyframes pcb-blink {
+              0%, 100% { opacity: 1; }
+              50% { opacity: .45; }
+            }
+
+            @keyframes pcb-spin {
+              to { transform: rotate(360deg); }
+            }
+
+            @keyframes pcb-msg-in {
+              from { opacity: 0; transform: translateY(10px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+
+            @keyframes pcb-panel-in {
+              from { opacity: 0; transform: translateY(16px) scale(.97); }
+              to { opacity: 1; transform: translateY(0) scale(1); }
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+              .pcb-fab, .pcb-panel, .pcb-row, .pcb-suggestions, .pcb-resolution,
+              .pcb-fab-presence, .pcb-presence, .pcb-status-dot, .pcb-typing-label svg,
+              .pcb-typing-dots span, .pcb-spin, .pcb-tool-btn-recording, .pcb-attachment {
+                animation: none !important;
+              }
             }
 
             @media (max-width: 560px) {
-              .patient-chatbot-fab {
-                right: 14px;
-                bottom: 14px;
+              .pcb-fab {
+                right: 16px;
+                bottom: 16px;
               }
 
-              .patient-chatbot-panel {
-                right: 14px;
-                bottom: 76px;
-                width: calc(100vw - 28px);
-                height: calc(100dvh - 92px);
+              .pcb-panel {
+                right: 0;
+                left: 0;
+                bottom: 0;
+                width: 100vw;
+                height: 100dvh;
+                max-height: 100dvh;
+                border: 0;
+                border-radius: 0;
+              }
+
+              .pcb-suggestions-grid {
+                grid-template-columns: 1fr;
+              }
+
+              .pcb-bubble {
+                max-width: 86%;
               }
             }
           `}</style>
-        </section>
-      )}
     </>
   );
 }

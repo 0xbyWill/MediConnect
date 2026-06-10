@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  Plus, Search, Pencil, Trash2, X, Check, Eye, Printer,
+  Plus, Search, Pencil, Trash2, X, Check, Eye,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   AlignJustify, List, ListOrdered, Download, ZoomIn, ZoomOut,
   FileText, Image, ChevronDown, AlertCircle, Send,
@@ -20,6 +20,8 @@ import {
 } from '../modules/laudos/templates/laudoTemplates';
 import { reviewLaudoQuality, type LaudoQualityReview } from '../modules/laudos/quality/laudoQuality';
 import { toUserFacingErrorMessage } from '../shared/utils/errors';
+import { downloadHtmlAsPdf } from '../shared/utils/pdf';
+import type { ApiDoctor } from '../lib/api';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const today = dateToISO(new Date());
@@ -155,6 +157,7 @@ interface LaudoExtra {
 interface LaudosProps {
   laudos: (Laudo & LaudoExtra)[];
   pacientes: (Paciente & { convenio?: string; cidade?: string })[];
+  doctors?: ApiDoctor[];
   onAdd: (l: Omit<Laudo & LaudoExtra, 'id'>) => void | Promise<void>;
   onUpdate: (l: Laudo & LaudoExtra) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
@@ -201,10 +204,27 @@ const emptyLaudo = (): Omit<Laudo & LaudoExtra, 'id'> => ({
 });
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
-export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, readOnly = false }: LaudosProps) {
+export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdate, onDelete, readOnly = false }: LaudosProps) {
   const { user } = useAuth();
   const isPaciente = user?.role === 'paciente' || readOnly;
   const isMedico = !isPaciente && (user?.role === 'medico' || user?.role === 'gestao');
+
+  // Resolve o nome do médico responsável pelo laudo.
+  const medicoNome = (l: Laudo & LaudoExtra): string => {
+    // 1) Nome gravado no próprio laudo (preenchido ao criar/liberar).
+    if (l.medicoNome) return l.medicoNome;
+    const id = l.medicoId;
+    // 2) Tenta casar com a lista de médicos carregada.
+    if (id) {
+      const doc = doctors.find(d =>
+        d.id === id || d.user_id === id || d.auth_user_id === id || d.profile_id === id
+      );
+      if (doc?.full_name) return doc.full_name;
+    }
+    // 3) Quando o autor é o próprio usuário logado (médico/gestor), usa o nome dele.
+    if (id && user?.id === id && user?.full_name) return user.full_name;
+    return l.solicitante || 'Equipe médica';
+  };
 
   // ── Estados gerais ──
   const [view, setView]                     = useState<ViewMode>('lista');
@@ -224,6 +244,10 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const [voiceMessage, setVoiceMessage]     = useState('');
   const [showEditorPanel, setShowEditorPanel] = useState(true);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  // Controla para onde o botão "Voltar" do preview retorna (editor do médico ou lista)
+  const [previewOrigin, setPreviewOrigin] = useState<ViewMode>('editor');
+  // Indica que um PDF está sendo gerado (evita cliques duplos e dá feedback)
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // ── Estados do editor ──
   const [fonte, setFonte]         = useState('Helvetica');
@@ -459,6 +483,22 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     setShowTemplatePicker(false);
     editorInitialized.current = false;
     setView('editor');
+  };
+
+  // Abre o laudo em modo somente leitura (preview), sem passar pelo editor.
+  // Usado principalmente pelo paciente, que não pode editar.
+  const openView = (l: Laudo & LaudoExtra) => {
+    setEditingLaudo({ ...l });
+    setEditorContent(l.conteudoHtml || l.diagnostico || '');
+    setIsNew(false);
+    setErrors({});
+    setSaveError('');
+    setPreviewOrigin('lista');
+    setView('preview');
+  };
+
+  const closePreview = () => {
+    setView(previewOrigin === 'lista' ? 'lista' : 'editor');
   };
 
   const closeEditor = () => {
@@ -700,24 +740,38 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
   const handleGoPreview = () => {
     const html = getEditorHtml();
     setEditorContent(html);
+    setPreviewOrigin('editor');
     setView('preview');
   };
 
-  const exportLaudo = (l?: Laudo & LaudoExtra) => {
+  // Resolve o laudo alvo (passado, em edição ou atual) e seus dados de cabeçalho/assinatura.
+  const resolveLaudoForExport = (l?: Laudo & LaudoExtra) => {
     const target = l || (editingLaudo.id ? laudos.find(item => item.id === editingLaudo.id) : undefined);
-    const current = target || editingLaudo;
+    const current = target || (editingLaudo as Laudo & LaudoExtra);
     const pac = pacientes.find(p => p.id === current.pacienteId);
+    return { current, pac };
+  };
+
+  const laudoFileName = (current: Laudo & LaudoExtra, pac?: Paciente & { convenio?: string; cidade?: string }) => {
+    const exame = (current.exame || 'Laudo').toString();
+    const nome = pac?.nome || 'Paciente';
+    return `${exame} - ${nome} - ${current.data || today}.pdf`;
+  };
+
+  // Monta o documento HTML completo (A4) do laudo. autoPrint adiciona o script de impressão.
+  const buildLaudoHtmlDocument = (current: Laudo & LaudoExtra, pac: (Paciente & { convenio?: string; cidade?: string }) | undefined, options: { autoPrint?: boolean } = {}) => {
     const content = sanitizeHtml(current.conteudoHtml || current.diagnostico || editorContent || '');
     const controlCode = current.orderNumber || '202605/000';
     const validationToken = `MC-${(current.id || 'XXXXX').slice(0, 8).toUpperCase()}`;
-    const doctorName = user?.full_name || 'Dr. Médico Exemplo';
-    const doctorInfo = `${user?.crm || 'CRM 0000 - UF'}${user?.specialty ? ` - ${user.specialty}` : ' - Especialidade médica'}`;
+    // O paciente não é o autor do laudo: nesse caso a assinatura mostra texto neutro.
+    const doctorName = isPaciente ? 'Documento liberado pela equipe médica responsável.' : (user?.full_name || 'Dr. Médico Exemplo');
+    const doctorInfo = isPaciente ? '' : `${user?.crm || 'CRM 0000 - UF'}${user?.specialty ? ` - ${user.specialty}` : ' - Especialidade médica'}`;
     const patientBirth = pac?.dataNasc ? `${formatDateBR(pac.dataNasc)} (${calcIdade(pac.dataNasc)})` : '-';
-    const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1100');
-    if (!win) return;
-    win.document.write(`<!doctype html>
+    const autoPrintScript = options.autoPrint ? '<script>window.onload = () => { window.print(); };</script>' : '';
+    return `<!doctype html>
       <html>
         <head>
+          <meta charset="utf-8" />
           <title>${current.exame || 'Laudo'} - ${pac?.nome || 'Paciente'}</title>
           <style>
             @page { size: A4; margin: 0; }
@@ -776,14 +830,29 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             <section class="signature">
               <p>${pac?.cidade || 'Local'}, ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
               <div class="line">${doctorName}</div>
-              <div>${doctorInfo}</div>
+              ${doctorInfo ? `<div>${doctorInfo}</div>` : ''}
             </section>
             <footer>Para validar este documento acesse: app.exemplo.com.br/valideseulaudo e informe o token: ${validationToken}</footer>
           </section>
-          <script>window.onload = () => { window.print(); };</script>
+          ${autoPrintScript}
         </body>
-      </html>`);
-    win.document.close();
+      </html>`;
+  };
+
+  // Gera e baixa um arquivo PDF de verdade do laudo.
+  const downloadLaudoPdf = async (l?: Laudo & LaudoExtra) => {
+    if (generatingPdf) return;
+    const { current, pac } = resolveLaudoForExport(l);
+    setGeneratingPdf(true);
+    setSaveError('');
+    try {
+      const html = buildLaudoHtmlDocument(current, pac, { autoPrint: false });
+      await downloadHtmlAsPdf(html, laudoFileName(current, pac));
+    } catch (err) {
+      setSaveError(toUserFacingErrorMessage(err, 'Não foi possível gerar o PDF do laudo. Tente novamente.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
   };
 
   // ── Importar PDF (simulado) ──
@@ -891,9 +960,9 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
           <AlignLeft size={13} /> Limpar filtros
         </button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button onClick={() => exportLaudo(filtered[0])} disabled={!filtered[0]}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: 'none', borderRadius: 8, background: filtered[0] ? 'var(--primary)' : 'var(--gray-200)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: filtered[0] ? 'pointer' : 'not-allowed' }}>
-            <Download size={13} /> Exportar <ChevronDown size={12} />
+          <button onClick={() => { void downloadLaudoPdf(filtered[0]); }} disabled={!filtered[0] || generatingPdf}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 14px', border: 'none', borderRadius: 8, background: filtered[0] && !generatingPdf ? 'var(--primary)' : 'var(--gray-200)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: filtered[0] && !generatingPdf ? 'pointer' : 'not-allowed' }}>
+            <Download size={13} /> {generatingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
           </button>
         </div>
       </div>
@@ -908,7 +977,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
         <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-              {['Pedido', 'Data', 'Prazo', 'Paciente', 'Executante/Solicitante', 'Exame/Classificação', 'Ação'].map(h => (
+              {['Médico', 'Data', 'Prazo', 'Paciente', 'Exame/Classificação', 'Ação'].map(h => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -923,8 +992,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                   onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = ''; }}>
 
                   <td style={{ padding: '12px 16px' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark)' }}>{l.orderNumber || l.id.slice(0, 9)}</div>
-                    <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>{l.data.replace(/-/g, '').slice(2)}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark)' }}>{medicoNome(l)}</div>
+                    <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>{l.orderNumber || l.id.slice(0, 9)}</div>
                   </td>
 
                   <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>
@@ -953,18 +1022,15 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                   </td>
 
                   <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--gray-600)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {l.solicitante || user?.full_name || '—'}
-                  </td>
-
-                  <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--gray-600)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {l.tecnica || '—'}
                   </td>
 
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', gap: 3 }}>
+                      <TblBtn icon={Eye} color="var(--primary)" title="Visualizar laudo" onClick={() => openView(l)} />
                       {isMedico && <TblBtn icon={Pencil} color="var(--amber-600)" title="Editar" onClick={() => openEdit(l)} />}
                       {/* FIX: Removida a race condition — openEdit já define a view como editor; preview vai separado */}
-                      <TblBtn icon={Printer} color="#0369a1" title="Exportar/Imprimir" onClick={() => exportLaudo(l)} />
+                      <TblBtn icon={Download} color="var(--primary)" title="Baixar PDF" onClick={() => { void downloadLaudoPdf(l); }} />
                       {l.status === 'rascunho' && isMedico && (
                         <TblBtn icon={Send} color="var(--primary)" title="Liberar laudo" onClick={() => setConfirmLiberar(l.id)} />
                       )}
@@ -979,7 +1045,7 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)' }}>
+                <td colSpan={6} style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)' }}>
                   <FileText size={28} style={{ display: 'block', margin: '0 auto 8px' }} />
                   <div style={{ fontSize: 14, fontWeight: 600 }}>Nenhum laudo encontrado</div>
                   <div style={{ fontSize: 12, marginTop: 4 }}>Ajuste os filtros ou crie um novo laudo.</div>
@@ -1038,8 +1104,8 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 72, 35, 0.34)', display: 'flex', flexDirection: 'column', zIndex: 2000 }}>
         <div style={{ background: 'linear-gradient(135deg, #00A63F 0%, #009E57 100%)', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, boxShadow: '0 12px 28px rgba(0, 158, 87, 0.22)' }}>
-          <h2 style={{ color: '#fff', fontSize: 16, fontWeight: 700, margin: 0 }}>Pré-visualização de Laudo</h2>
-          <button onClick={() => setView('editor')} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+          <h2 style={{ color: '#fff', fontSize: 16, fontWeight: 700, margin: 0 }}>{isPaciente ? 'Visualização de Laudo' : 'Pré-visualização de Laudo'}</h2>
+          <button onClick={closePreview} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
             <X size={16} />
           </button>
         </div>
@@ -1089,8 +1155,14 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
                 )}
                 {!editingLaudo.ocultarAssinatura && (
                   <div style={{ borderTop: '1px solid #111', paddingTop: 8, display: 'inline-block', minWidth: 240 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{user?.full_name || 'Dr. Médico'}</div>
-                    {user?.crm && <div style={{ fontSize: 11, color: '#666' }}>{user.crm} · {user.specialty}</div>}
+                    {isPaciente ? (
+                      <div style={{ fontSize: 11, color: '#666' }}>Documento liberado pela equipe médica responsável.</div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 700 }}>{user?.full_name || 'Dr. Médico'}</div>
+                        {user?.crm && <div style={{ fontSize: 11, color: '#666' }}>{user.crm} · {user.specialty}</div>}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -1104,12 +1176,17 @@ export default function Laudos({ laudos, pacientes, onAdd, onUpdate, onDelete, r
             <button onClick={() => setZoom(z => Math.min(150, z + 10))} style={previewBtnStyle}><ZoomIn size={15} /></button>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
             <button onClick={() => setZoom(100)} style={previewBtnStyle}><Maximize2 size={14} /></button>
-            <button onClick={() => exportLaudo()} style={previewBtnStyle}><Download size={14} /></button>
           </div>
-          <button onClick={() => setView('editor')}
-            style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-            Voltar
-          </button>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button onClick={() => { void downloadLaudoPdf(); }} disabled={generatingPdf}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#fff', border: 'none', borderRadius: 8, color: '#009E57', fontSize: 13, fontWeight: 700, cursor: generatingPdf ? 'not-allowed' : 'pointer', opacity: generatingPdf ? 0.7 : 1 }}>
+              <Download size={14} /> {generatingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
+            </button>
+            <button onClick={closePreview}
+              style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              Voltar
+            </button>
+          </div>
         </div>
       </div>
     );

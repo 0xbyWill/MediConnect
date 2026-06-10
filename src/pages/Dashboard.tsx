@@ -367,7 +367,9 @@ export default function Dashboard({
   ].filter((id): id is string => Boolean(id)))), [pacientes, user?.id, user?.patient_id]);
   const pendingAdvanceOffers = advanceOffers.filter(offer =>
     patientIds.includes(offer.candidatePatientId) &&
-    ['pending', 'sent'].includes(offer.status)
+    ['pending', 'sent'].includes(offer.status) &&
+    offer.slotDate !== undefined &&
+    offer.slotDate >= todayStr
   );
   const primaryAdvanceOffer = pendingAdvanceOffers[0];
   const primaryAdvanceAppointment = primaryAdvanceOffer

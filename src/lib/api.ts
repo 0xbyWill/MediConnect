@@ -891,6 +891,12 @@ export const appointmentsApi = {
       body: JSON.stringify(data),
     }).then(response => Array.isArray(response) ? expectOne(response, 'antecipacao aceita') : response),
 
+  confirmForCurrentPatient: (appointmentId: string) =>
+    request<ApiAppointment | ApiAppointment[]>('/rest/v1/rpc/confirm_my_appointment', {
+      method: 'POST',
+      body: JSON.stringify({ p_appointment_id: appointmentId }),
+    }).then(response => Array.isArray(response) ? expectOne(response, 'consulta confirmada') : response),
+
   update: (id: string, data: Partial<ApiAppointment>) =>
     request<ApiAppointment[]>(`/rest/v1/appointments?id=eq.${id}`, {
       method: 'PATCH',
@@ -1053,12 +1059,12 @@ export const smsApi = {
       body: JSON.stringify(toSmsFunctionPayload(data)),
     }),
 
-  logs: (limit = 100) => {
+  logs: (limit = 1000) => {
     const q = new URLSearchParams({
       select: '*',
       order: 'created_at.desc',
-      limit: String(limit),
     });
+    if (limit) q.set('limit', String(limit));
     return request<ApiSmsLog[]>(`/rest/v1/sms_logs?${q.toString()}`);
   },
 };
@@ -1081,4 +1087,49 @@ export const supportApi = {
       method: 'POST',
       body: JSON.stringify(cleanPayload({ ...data })),
     }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'solicitacao de suporte')),
+};
+
+// ─── Mensagens internas (paciente ↔ secretaria) ──────────────────────────────
+export type PatientMessageAuthor = 'paciente' | 'secretaria';
+
+export interface ApiPatientMessage {
+  id: string;
+  patient_id: string;
+  author: PatientMessageAuthor;
+  body: string;
+  read: boolean;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface CreatePatientMessagePayload {
+  patient_id: string;
+  author: PatientMessageAuthor;
+  body: string;
+}
+
+export const messagesApi = {
+  list: (params: { patient_id?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams({ select: '*', order: 'created_at.asc' });
+    if (params.patient_id) q.set('patient_id', `eq.${params.patient_id}`);
+    if (params.limit) q.set('limit', String(params.limit));
+    return request<ApiPatientMessage[]>(`/rest/v1/patient_messages?${q.toString()}`);
+  },
+
+  create: (data: CreatePatientMessagePayload) =>
+    request<ApiPatientMessage[]>('/rest/v1/patient_messages', {
+      method: 'POST',
+      body: JSON.stringify(cleanPayload({ ...data })),
+    }, { Prefer: 'return=representation' }).then(rows => expectOne(rows, 'mensagem enviada')),
+
+  markRead: (ids: string[]) => {
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (uniqueIds.length === 0) return Promise.resolve([] as ApiPatientMessage[]);
+    const q = new URLSearchParams();
+    q.set('id', `in.(${uniqueIds.join(',')})`);
+    return request<ApiPatientMessage[]>(`/rest/v1/patient_messages?${q.toString()}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ read: true }),
+    }, { Prefer: 'return=representation' });
+  },
 };

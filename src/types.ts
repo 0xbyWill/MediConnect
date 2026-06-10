@@ -469,6 +469,7 @@ export interface Laudo {
   id: string;
   pacienteId: string;
   medicoId?: string;
+  medicoNome?: string;
   cid: string;
   data: string;
   diagnostico: string;
@@ -632,10 +633,12 @@ export function apiReportToLaudo(r: ApiReport): Laudo {
   const mediconnectStatus = typeof r.content_json?.mediconnect_status === 'string'
     ? r.content_json.mediconnect_status.toLowerCase().trim()
     : '';
+  const medicoNome = typeof r.content_json?.medico_nome === 'string' ? r.content_json.medico_nome : undefined;
   return {
     id:                r.id,
     pacienteId:        r.patient_id,
     medicoId:          r.created_by,
+    medicoNome,
     cid:               r.cid_code ?? '',
     data:              r.created_at ? r.created_at.split('T')[0] : '',
     diagnostico:       r.diagnosis ?? '',
@@ -656,12 +659,19 @@ export function apiReportToLaudo(r: ApiReport): Laudo {
 
 export function laudoToApiReport(
   l: Omit<Laudo, 'id'>,
-  createdBy: string
+  createdBy: string,
+  meta?: { nome?: string; crm?: string; especialidade?: string }
 ): Omit<ApiReport, 'id' | 'order_number' | 'created_at' | 'updated_at'> {
   const contentJson: Record<string, unknown> = {
     mediconnect_status: l.status,
   };
   if (l.templateId) contentJson.templateId = l.templateId;
+  // Persiste o nome do médico responsável para que o paciente consiga vê-lo
+  // sem depender da lista de médicos disponível no seu perfil.
+  const medicoNome = meta?.nome || l.medicoNome;
+  if (medicoNome) contentJson.medico_nome = medicoNome;
+  if (meta?.crm) contentJson.medico_crm = meta.crm;
+  if (meta?.especialidade) contentJson.medico_especialidade = meta.especialidade;
 
   return {
     patient_id:     l.pacienteId,

@@ -24,6 +24,7 @@ import { normalizePhoneBRForSms } from './shared/utils/validation';
 import { buildAdvanceOfferMessage, buildQueueCandidates, sortQueueCandidates } from './shared/utils/advanceQueue';
 
 import Login         from './pages/Login';
+import LandingPage   from './pages/LandingPage';
 import CadastroPaciente from './pages/CadastroPaciente';
 import Sidebar       from './components/Sidebar';
 import Topbar        from './components/Topbar';
@@ -123,7 +124,7 @@ export default function App() {
   const [openPacienteModal,  setOpenPacienteModal]  = useState(false);
   const [agendaPatientId,    setAgendaPatientId]    = useState<string | null>(null);
   const [page, setPage]                             = useState<PageType>('dashboard');
-  const [authView, setAuthView]                     = useState<'login' | 'cadastro-paciente'>('login');
+  const [authView, setAuthView]                     = useState<'landing' | 'login' | 'cadastro-paciente'>('landing');
   const createdPatientsRef = useRef<ApiPatient[]>([]);
   const previousUserIdRef = useRef<string | null>(null);
 
@@ -139,7 +140,7 @@ export default function App() {
     setApiError(null);
 
     if (!nextUserId) {
-      setAuthView('login');
+      setAuthView('landing');
     }
   }, [user?.id]);
 
@@ -468,6 +469,29 @@ export default function App() {
     await refresh();
   }, [agendamentos, refresh, user]);
 
+  const confirmAgendamento = useCallback(async (id: string) => {
+    if (!user) return;
+    const current = agendamentos.find(item => item.id === id);
+    if (current && isElapsedAgendamento(current)) {
+      throw new Error('Consultas com horário já passado ficam como atendidas e não podem ser confirmadas.');
+    }
+    if (user.role === 'paciente') {
+      await appointmentsApi.confirmForCurrentPatient(id);
+    } else {
+      if (!current) return;
+      const medicoId = current.medicoId || (user.role === 'medico' ? user.doctor_id : undefined);
+      if (!medicoId) {
+        setApiError('Selecione um médico para confirmar o agendamento.');
+        return;
+      }
+      await appointmentsApi.update(
+        id,
+        agendamentoToApiAppointment({ ...current, medicoId, status: 'confirmado' }, user.id)
+      );
+    }
+    await refresh();
+  }, [agendamentos, refresh, user]);
+
   const sendAdvanceOfferForCancelledAppointment = useCallback(async (cancelled: Agendamento) => {
     if (!cancelled.medicoId) return;
     const doctor = doctors.find(item => item.id === cancelled.medicoId);
@@ -574,17 +598,21 @@ export default function App() {
   }, [agendamentos, refresh, sendAdvanceOfferForCancelledAppointment]);
 
   // ─── CRUD Laudos ──────────────────────────────────────────────────────────
+  const medicoMeta = useCallback(() => (
+    user ? { nome: user.full_name, crm: user.crm, especialidade: user.specialty } : undefined
+  ), [user]);
+
   const addLaudo = useCallback(async (l: Omit<Laudo, 'id'>) => {
     if (!user) return;
-    await reportsApi.create(laudoToApiReport(l, user.id));
+    await reportsApi.create(laudoToApiReport(l, user.id, medicoMeta()));
     await refresh();
-  }, [refresh, user]);
+  }, [medicoMeta, refresh, user]);
 
   const updateLaudo = useCallback(async (l: Laudo) => {
     if (!user) return;
-    await reportsApi.update(l.id, laudoToApiReport(l, user.id));
+    await reportsApi.update(l.id, laudoToApiReport(l, user.id, medicoMeta()));
     await refresh();
-  }, [refresh, user]);
+  }, [medicoMeta, refresh, user]);
 
   const deleteLaudo = useCallback(async (id: string) => {
     await reportsApi.delete(id);
@@ -620,6 +648,9 @@ export default function App() {
   }
 
   if (!user) {
+    if (authView === 'landing') {
+      return <LandingPage onEnter={() => setAuthView('login')} />;
+    }
     return authView === 'cadastro-paciente' ? (
       <CadastroPaciente
         onBackToLogin={() => setAuthView('login')}
@@ -736,7 +767,7 @@ export default function App() {
           {currentPage === 'agenda' && allowedPages.includes('agenda') && (
             <Agenda
               agendamentos={agendamentos} pacientes={pacientes} doctors={doctors}
-              onAdd={addAgendamento} onUpdate={updateAgendamento}
+              onAdd={addAgendamento} onUpdate={updateAgendamento} onConfirm={confirmAgendamento}
               onDelete={deleteAgendamento} initialOpen={openAgendaModal} initialPatientId={agendaPatientId}
             />
           )}
@@ -752,7 +783,7 @@ export default function App() {
             <Registro pacientes={pacientes} agendamentos={agendamentos} laudos={laudos} doctors={doctors} />
           )}
           {currentPage === 'laudos' && allowedPages.includes('laudos') && (
-            <Laudos laudos={laudos} pacientes={pacientes}
+            <Laudos laudos={laudos} pacientes={pacientes} doctors={doctors}
               onAdd={addLaudo} onUpdate={updateLaudo} onDelete={deleteLaudo} readOnly={user.role === 'paciente'}/>
           )}
           {currentPage === 'comunicacao' && allowedPages.includes('comunicacao') && (
