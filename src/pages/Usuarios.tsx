@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { HTMLAttributes } from 'react';
 import { UserCog, Plus, Pencil, Trash2, X, Shield, Search, RefreshCw } from 'lucide-react';
 import { doctorsApi, usersApi } from '../lib/api';
-import type { ApiDoctor, ApiManagedUser, ApiRole, CreateDoctorPayload, CreateUserResponse, CreateUserWithPasswordPayload } from '../lib/api';
+import type { ApiDoctor, ApiManagedUser, ApiRole, CreateUserResponse, CreateUserWithPasswordPayload } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { UserRole } from '../types';
 import { digitsOnly, formatCpf, isValidCpf } from '../shared/utils/cpf';
@@ -368,6 +368,28 @@ export default function Usuarios() {
       if (!d.crm?.trim()) return 'Informe o CRM.';
       if (!d.crmUf?.trim()) return 'Informe a UF do CRM.';
     }
+
+    const cpfDigits = digitsOnly(d.cpf);
+    if (cpfDigits) {
+      const cpfDup = usuarios.find(u =>
+        digitsOnly(u.cpf || '') === cpfDigits && u.id !== modal.data.id && u.deleteId !== modal.data.id
+      );
+      if (cpfDup) return 'Já existe um usuário cadastrado com este CPF.';
+    }
+
+    if (d.role === 'medico') {
+      const crmDigits = digitsOnly(d.crm || '');
+      const uf = d.crmUf?.trim().toUpperCase() ?? '';
+      if (crmDigits && uf) {
+        const crmDup = usuarios.find(u =>
+          u.role === 'medico'
+          && digitsOnly(u.crm || '') === crmDigits
+          && (u.crmUf?.trim().toUpperCase() ?? '') === uf
+          && u.id !== modal.data.id && u.deleteId !== modal.data.id
+        );
+        if (crmDup) return 'Já existe um médico cadastrado com este CRM/UF.';
+      }
+    }
     return null;
   };
 
@@ -418,33 +440,36 @@ export default function Usuarios() {
       }
 
       if (data.role === 'medico') {
-        const payload: CreateDoctorPayload = {
+        // A criação de médico passa por create-user-with-password (role=medico):
+        // esse endpoint cria a credencial com email_confirm=true e senha, permitindo
+        // login imediato. O endpoint create-doctor não recebe senha e por isso o
+        // médico cadastrado não conseguia autenticar.
+        const payload: CreateUserWithPasswordPayload = {
           email: normalizeEmail(data.email),
           password: data.senha?.trim() ?? '',
           full_name: data.nome.trim(),
           phone: digitsOnly(data.telefone),
+          phone_mobile: digitsOnly(data.telefone),
           role: 'medico',
           roles: ['medico'],
           cpf: digitsOnly(data.cpf),
           crm: data.crm?.trim() ?? '',
           crm_uf: data.crmUf?.trim().toUpperCase() ?? '',
           ...(normalizedSpecialty(data.especialidade) ? { specialty: normalizedSpecialty(data.especialidade) } : {}),
-          phone_mobile: digitsOnly(data.telefone),
         };
 
-        const response = await doctorsApi.create(payload);
-        const doctor = 'full_name' in response ? response as ApiDoctor : null;
+        const response = await usersApi.createWithPassword(payload);
         const novo: UsuarioItem = {
           id: responseId(response),
-          nome: doctor?.full_name ?? payload.full_name,
-          email: doctor?.email ?? payload.email,
+          nome: response.user?.full_name ?? payload.full_name,
+          email: response.user?.email ?? payload.email,
           role: 'medico',
           status: 'ativo',
-          cpf: doctor?.cpf ?? payload.cpf,
-          telefone: doctor?.phone_mobile ?? payload.phone_mobile,
-          crm: doctor?.crm ?? payload.crm,
-          crmUf: doctor?.crm_uf ?? payload.crm_uf,
-          especialidade: doctor?.specialty ?? payload.specialty,
+          cpf: payload.cpf,
+          telefone: payload.phone,
+          crm: payload.crm,
+          crmUf: payload.crm_uf,
+          especialidade: payload.specialty,
         };
 
         const restoredKeys = usuarioIdentityKeys(novo);
@@ -658,7 +683,7 @@ export default function Usuarios() {
           </colgroup>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--gray-100)' }}>
-              {['Usuário', 'E-mail', 'Perfil', 'CPF/CRM', 'Telefone', 'Status', 'Ações'].map(h => (
+              {['Usuário', 'E-mail', 'Perfil', 'CRM/UF', 'Telefone', 'Status', 'Ações'].map(h => (
                 <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
               ))}
             </tr>

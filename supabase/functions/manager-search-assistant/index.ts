@@ -195,8 +195,8 @@ async function callGemini(prompt: string, context: Record<string, unknown>, acti
 }
 
 Deno.serve(async req => {
-  if (req.method === 'OPTIONS') return jsonResponse({});
-  if (req.method !== 'POST') return jsonResponse({ message: 'Metodo nao permitido.' }, 405);
+  if (req.method === 'OPTIONS') return jsonResponse({}, 200, req);
+  if (req.method !== 'POST') return jsonResponse({ message: 'Metodo nao permitido.' }, 405, req);
 
   try {
     const supabase = createSupabase(req);
@@ -219,10 +219,10 @@ Deno.serve(async req => {
       answer,
       warnings: [],
       source: inferSource(action),
-    });
+    }, 200, req);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro interno no assistente gerencial.';
     const status = message.includes('Permissao') || message.includes('autenticado') ? 403 : 400;
-    return jsonResponse({ message }, status);
+    return jsonResponse({ message }, status, req);
   }
 });

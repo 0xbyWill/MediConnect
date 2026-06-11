@@ -405,13 +405,9 @@ export default function PatientChatbot({
     setAwaitingResolution(false);
     pushMessages(createMessage('patient', message));
 
-    if (isCurrentDateTimeQuestion(message)) {
-      pushMessages(createMessage('bot', currentDateTimeAnswer(), 'answer'));
-      setAwaitingResolution(true);
-      return;
-    }
-
     // Emergência e bloqueio clínico têm prioridade máxima (segurança).
+    // Precisa vir ANTES de qualquer outra intenção (ex.: data/hora), pois
+    // frases como "dor no peito agora" não podem ser tratadas como "que horas são".
     if (CHATBOT_EMERGENCY_KEYWORDS.some(keyword => normalized.includes(keyword))) {
       pushMessages(createMessage('bot', CHATBOT_EMERGENCY_MESSAGE, 'safety'));
       setAwaitingResolution(true);
@@ -420,6 +416,12 @@ export default function PatientChatbot({
 
     if (CHATBOT_MEDICAL_KEYWORDS.some(keyword => normalized.includes(keyword))) {
       pushMessages(createMessage('bot', CHATBOT_MEDICAL_BLOCK_MESSAGE, 'safety'));
+      setAwaitingResolution(true);
+      return;
+    }
+
+    if (isCurrentDateTimeQuestion(message)) {
+      pushMessages(createMessage('bot', currentDateTimeAnswer(), 'answer'));
       setAwaitingResolution(true);
       return;
     }

@@ -1,5 +1,22 @@
 const MAX_TEXT = 8000;
-const CORS_ALLOWED_ORIGIN = Deno.env.get('CORS_ALLOWED_ORIGIN') ?? 'http://localhost:5173';
+// Lista de origens permitidas (separadas por vírgula). Em produção, defina
+// CORS_ALLOWED_ORIGIN com o domínio do app (ex.: https://app.vercel.app).
+// Use "*" para refletir qualquer origem (seguro aqui pois as funções exigem
+// Bearer token e não usam cookies). Quando não configurado, refletimos a
+// origem da requisição para evitar que o front caia no fallback inseguro.
+const CORS_ALLOWED_ORIGINS = (Deno.env.get('CORS_ALLOWED_ORIGIN') ?? '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+function resolveCorsOrigin(req?: Request): string {
+  const requestOrigin = req?.headers.get('origin') ?? '';
+  if (CORS_ALLOWED_ORIGINS.length === 0) return requestOrigin || '*';
+  if (CORS_ALLOWED_ORIGINS.includes('*')) return requestOrigin || '*';
+  if (requestOrigin && CORS_ALLOWED_ORIGINS.includes(requestOrigin)) return requestOrigin;
+  return CORS_ALLOWED_ORIGINS[0];
+}
+
 const SECRET_PATTERNS = [
   /\b[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{24,}\b/g,
   /\b(sk|pk|rk|xoxb|ghp|github_pat)_[A-Za-z0-9_=-]{16,}\b/gi,
@@ -7,14 +24,15 @@ const SECRET_PATTERNS = [
   /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,
 ];
 
-export function jsonResponse(body: unknown, status = 200) {
+export function jsonResponse(body: unknown, status = 200, req?: Request) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'access-control-allow-origin': CORS_ALLOWED_ORIGIN,
+      'access-control-allow-origin': resolveCorsOrigin(req),
       'access-control-allow-headers': 'authorization, x-client-info, apikey, content-type',
       'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
+      'vary': 'Origin',
     },
   });
 }

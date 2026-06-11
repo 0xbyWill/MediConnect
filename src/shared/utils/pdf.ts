@@ -2,14 +2,17 @@
 const A4_WIDTH_PX = 794;
 
 function sanitizeFilename(name: string) {
+  // Remove a extensão .pdf ANTES de sanitizar; caso contrário o ponto é
+  // descartado pelo filtro e o resultado vira algo como "nome2026pdf.pdf".
   const base = name
+    .replace(/\.pdf$/i, '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9-_ ]/g, '')
     .trim()
     .replace(/\s+/g, '_');
   const safe = base || 'documento';
-  return safe.toLowerCase().endsWith('.pdf') ? safe : `${safe}.pdf`;
+  return `${safe.toLowerCase()}.pdf`;
 }
 
 async function waitForImages(doc: Document) {
