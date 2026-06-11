@@ -101,7 +101,7 @@ async function logSms(
 }
 
 Deno.serve(async req => {
-  if (req.method === 'OPTIONS') return jsonResponse({});
+  if (req.method === 'OPTIONS') return jsonResponse({}, 200, req);
   if (req.method !== 'POST') return jsonResponse({ success: false, message: 'Metodo nao permitido.' }, 405);
 
   const supabase = createSupabase(req);

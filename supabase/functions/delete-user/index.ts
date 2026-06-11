@@ -317,7 +317,7 @@ async function hardDeleteUser(adminClient: SupabaseAdmin, userId: string, email:
 }
 
 Deno.serve(async req => {
-  if (req.method === 'OPTIONS') return jsonResponse({});
+  if (req.method === 'OPTIONS') return jsonResponse({}, 200, req);
   if (req.method !== 'POST') return jsonResponse({ error: 'Metodo nao permitido' }, 405);
 
   const userClient = createUserClient(req);

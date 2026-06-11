@@ -199,7 +199,7 @@ async function finalizeNotification(
 }
 
 Deno.serve(async req => {
-  if (req.method === 'OPTIONS') return jsonResponse({});
+  if (req.method === 'OPTIONS') return jsonResponse({}, 200, req);
   if (req.method !== 'POST') return jsonResponse({ success: false, message: 'Metodo nao permitido.' }, 405);
 
   try {

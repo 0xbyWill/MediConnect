@@ -13,7 +13,7 @@ function createSupabase(req: Request) {
 }
 
 Deno.serve(async req => {
-  if (req.method === 'OPTIONS') return jsonResponse({});
+  if (req.method === 'OPTIONS') return jsonResponse({}, 200, req);
 
   const supabase = createSupabase(req);
   const repo = new AiRepository(supabase);

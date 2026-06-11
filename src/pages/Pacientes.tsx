@@ -743,8 +743,9 @@ export default function Pacientes({
   };
 
   // -- Salvar --
-  const savePatient = async (ignoreDuplicate = false) => {
+  const savePatient = async () => {
     if (saving) return;
+    setDuplicateWarn(false);
     const e = validate(modal.data);
     if (Object.keys(e).length) {
       setErrors(e);
@@ -752,11 +753,18 @@ export default function Pacientes({
       if (e.nome || e.cpf || e.dataNasc || e.email || e.telefone || e.nomeResponsável || e.cpfResponsável) setActiveTab('dados');
       return;
     }
-    // Verifica duplicidade por CPF
+    // CPF é único: bloqueia de verdade (sem opção de "confirmar mesmo assim").
     const cpfLimpo = digitsOnly(modal.data.cpf);
-    if (cpfLimpo && modal.mode === 'add' && !ignoreDuplicate) {
-      const dup = pacientes.find(p => digitsOnly(p.cpf) === cpfLimpo);
-      if (dup) { setDuplicateWarn(true); return; }
+    if (cpfLimpo) {
+      const dup = pacientes.find(p =>
+        digitsOnly(p.cpf) === cpfLimpo && (modal.mode === 'add' || p.id !== modal.data.id)
+      );
+      if (dup) {
+        setDuplicateWarn(true);
+        setErrors(prev => ({ ...prev, cpf: 'Já existe um paciente com este CPF.' }));
+        setActiveTab('dados');
+        return;
+      }
     }
     setSaving(true);
     setSubmitError('');
@@ -1223,15 +1231,11 @@ export default function Pacientes({
               )}
               <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
 
-              {/* Aviso de duplicidade */}
+              {/* Aviso de duplicidade — CPF é único, cadastro é bloqueado */}
               {duplicateWarn && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--amber-100)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
-                  <AlertCircle size={14} color="#d97706" />
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#d97706' }}>Já existe um paciente com este CPF cadastrado. Confirme para continuar mesmo assim.</span>
-                  <button onClick={() => { setDuplicateWarn(false); void savePatient(true); }} disabled={saving}
-                    style={{ marginLeft: 'auto', padding: '4px 10px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-                    Confirmar mesmo assim
-                  </button>
+                <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--red-50)', border: '1px solid var(--red-100)', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
+                  <AlertCircle size={14} color="var(--red-500)" />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--red-600)' }}>Já existe um paciente cadastrado com este CPF. Verifique os dados antes de continuar.</span>
                 </div>
               )}
               {submitError && (
