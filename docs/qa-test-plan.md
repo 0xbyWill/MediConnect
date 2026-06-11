@@ -4,135 +4,179 @@ Use este roteiro para testar qualquer ambiente do MediConnect do mesmo jeito, co
 
 ## Identificação
 
-| Campo | Valor |
-|---|---|
-| Ambiente/URL |  |
-| Data do teste |  |
-| Responsável |  |
-| Navegador/dispositivo |  |
-| Login Médico |  |
-| Login Secretária |  |
-| Login Gestor |  |
-| Login Paciente |  |
+Ambiente (URL): https://medi-connect-virid.vercel.app/
+Médico:     email francisco.squad04@gmail.com  senha Teste@123
+Secretária: email secretaria.squad04@gmail.com  senha Teste@123
+Gestor:     email hugo@popcode.com.br  senha hdoria
+Paciente:   email patrickestrela@popcode.com  senha Teste@123
+Data base usada nos agendamentos: 12/06/2026 
 
-## Bloco 0 — Primeira Impressão e Acentuação
+## Bloco 0 — Primeira impressão e acentuação
 
-| Status | Passo | O que observar | Resultado esperado | Observações |
-|---|---|---|---|---|
-|  | Abrir a URL sem estar logado | Landing/login | Tela carrega corretamente |  |
-|  | Conferir acentuação em telas visíveis | Títulos, sidebar, botões, cards | Tudo em pt-BR correto, sem mojibake ou palavras sem acento |  |
-|  | Fazer refresh em URL interna após login, ex.: `/agenda` | Comportamento do deploy | Recarrega normal, sem 404 do Vercel |  |
+1. Abra a URL sem estar logado. Observe a landing/login.
+2. Confira acentuação em telas visíveis: títulos, sidebar, botões, cards.
+   - Esperado: tudo em pt-BR correto (Gestão, Saúde, Comunicação, Relatórios, Configurações, Não tem uma conta). Sem palavras sem acento.
+3. Tente dar refresh numa URL interna depois de logar (ex: /agenda) e veja se cai em 404 do Vercel.
+   - Esperado: a página recarrega normal, sem 404. Se der 404, falta catch-all rewrite no vercel.json.
 
-## Bloco 1 — Login e RBAC por Perfil
+## Bloco 1 — Login e RBAC por perfil
 
-| Status | Perfil | Passo | Resultado esperado | Observações |
-|---|---|---|---|---|
-|  | Médico | Entrar e mapear sidebar/dashboard | Nome, cargo e KPIs batem; não vê módulo de Usuários |  |
-|  | Secretária | Entrar e mapear sidebar/dashboard | Vê apenas módulos operacionais do perfil |  |
-|  | Gestor | Entrar e mapear sidebar/dashboard | Vê módulos administrativos permitidos |  |
-|  | Paciente | Entrar e mapear sidebar/dashboard | Cargo exibido como “Paciente”; vê portal próprio |  |
-|  | Todos | Fazer logout e entrar com outro usuário | Toast de sessão encerrada, formulário limpo, sem dados do usuário anterior |  |
+Faça login em cada perfil, um de cada vez, e mapeie a sidebar e o dashboard.
 
-## Bloco 2 — CRUD de Paciente com Validação
+1. Médico: anote a sidebar e os KPIs. Veja se o nome e o cargo no topo batem.
+2. Secretária: idem.
+3. Gestor: idem.
+4. Paciente: idem. Confirme que o cargo exibido é "Paciente" (e não outro papel).
+   - Esperado: cada perfil vê só o que é dele. Médico não vê módulo de Usuários/Gestão. Paciente vê um portal próprio (minhas consultas, meus laudos), não a interface da secretária.
+5. Logout em cada um: clique em sair, vá pro login e entre com outro usuário.
+   - Esperado: toast de "sessão encerrada", form limpo, sem vazar dados do usuário anterior.
 
-Executar como Secretária ou Gestor.
+## Bloco 2 — CRUD de paciente com validação (perfil Secretária ou Gestor)
 
-| Status | Passo | Resultado esperado | Observações |
-|---|---|---|---|
-|  | Abrir Pacientes e clicar em Novo Paciente | Formulário abre corretamente |  |
-|  | Salvar com tudo vazio | Bloqueia e marca nome, CPF, data de nascimento, e-mail e celular |  |
-|  | Preencher CPF inválido `123.456.789-00` e e-mail sem `@` | Exibe “CPF inválido” e “informe um e-mail válido” |  |
-|  | Digitar CPF e telefone só com números | Máscara aplicada durante digitação |  |
-|  | Cadastrar CPF já existente | Exibe aviso de duplicidade; anotar se bloqueia de verdade ou permite duplicado |  |
-|  | Cadastro mínimo com obrigatórios válidos | Cria e aparece na lista |  |
-|  | Cadastro completo em todas as abas | Salva e detalhe mostra os dados |  |
-|  | Editar campo de paciente existente | Form abre preenchido, salva, máscaras continuam corretas |  |
-|  | Verificar excluir/inativar | Anotar comportamento real |  |
-|  | Conferir escopo de campos | Anotar se existem: nome social, RG, raça, naturalidade, nacionalidade, profissão, foto, menor de idade |  |
+1. Vá em Pacientes e clique em Novo Paciente.
+2. Salve com tudo vazio.
+   - Esperado: o form bloqueia e marca os campos obrigatórios (nome, CPF, data de nascimento, email, celular).
+3. Preencha CPF com número inválido (ex: 123.456.789-00) e email sem @.
+   - Esperado: "CPF inválido" (valida dígito verificador) e "informe um e-mail válido".
+4. Digite no CPF e no telefone só números.
+   - Esperado: máscara aplicada na hora (000.000.000-00 e (00) 00000-0000).
+5. Tente cadastrar um CPF que já existe.
+   - Esperado: aviso de CPF já cadastrado. Veja se trava de verdade ou se deixa criar duplicado. Se deixar, é bug.
+6. Cadastro mínimo: preencha só os obrigatórios com dados válidos e salve.
+   - Esperado: cria o paciente e ele aparece na lista.
+7. Cadastro completo: abra outro Novo Paciente e preencha todos os campos e abas (endereço, informações médicas, convênio, observações).
+   - Esperado: salva tudo e o detalhe do paciente mostra os dados.
+8. Abra o paciente criado, clique em editar, mude um campo e salve.
+   - Esperado: o form abre preenchido, salva a alteração. Confira se as máscaras seguem aplicadas no editar.
+9. Verifique se existe ação de excluir/inativar e o que ela faz.
 
-## Bloco 3 — CRUD de Médico com Validação
+Anote: quais campos do escopo existem (nome social, RG, raça, naturalidade, nacionalidade, profissão, foto, menor de idade) e quais faltam.
 
-Executar como Gestor.
+## Bloco 3 — CRUD de médico com validação (perfil Gestor)
 
-| Status | Passo | Resultado esperado | Observações |
-|---|---|---|---|
-|  | Abrir Usuários/Médicos e clicar em Novo | Formulário abre corretamente |  |
-|  | Salvar vazio | Bloqueia e indica campos ausentes |  |
-|  | Selecionar perfil Médico | Aparecem CRM, UF do CRM e especialidade |  |
-|  | Testar CPF inválido, e-mail já existente, senha curta e especialidade vazia | Cada erro é apontado perto do campo |  |
-|  | Cadastrar médico válido | Aparece na lista com CRM e especialidade visíveis |  |
-|  | Tentar CRM duplicado na mesma UF | Bloqueia; CRM é único por UF |  |
-|  | Editar e excluir médico criado | Ações funcionam ou exibem erro claro |  |
+1. Vá no módulo de Usuários (ou Médicos) e clique em Novo.
+2. Salve vazio.
+   - Esperado: bloqueia e indica o que falta.
+3. Selecione o perfil Médico e veja se aparecem campos específicos (CRM, UF do CRM, especialidade).
+   - Esperado: um sistema médico precisa de CRM e especialidade.
+4. Teste validação de CPF inválido, email já existente, senha curta e especialidade vazia.
+   - Esperado: cada erro é apontado.
+5. Cadastre um médico válido completo e confirme na lista.
+   - Esperado: aparece na lista com CRM e especialidade visíveis (se a coluna existir).
+6. Tente cadastrar dois médicos com o mesmo CRM na mesma UF.
+   - Esperado: bloqueia (CRM é único por UF). Se deixar duplicar, é bug.
+7. Edite e tente excluir o médico criado.
 
-## Bloco 4 — Disponibilidade do Médico
+## Bloco 4 — Disponibilidade do médico
 
-| Status | Passo | Resultado esperado | Observações |
-|---|---|---|---|
-|  | Logar como médico e abrir Agenda/Minha disponibilidade | Área de disponibilidade acessível |  |
-|  | Cadastrar faixa com dia da semana, tipo, início, término e duração do slot | Faixa salva ativa |  |
-|  | Abrir na agenda um dia correspondente | Horários livres gerados conforme faixa |  |
-|  | Anotar médico, dia e horários gerados | Dados disponíveis para blocos 5 e 6 |  |
+1. Logue como médico e vá na Agenda (ou Minha disponibilidade).
+2. Cadastre uma faixa: escolha um dia da semana, tipo (presencial/online), início, término e duração do slot. Deixe ativa.
+   - Esperado: salva e lista a faixa.
+3. Volte pra agenda e abra um dia que caia nesse dia da semana.
+   - Esperado: os horários livres aparecem gerados conforme a faixa e a duração.
+4. Anote o médico, o dia e os horários gerados (vai usar nos blocos 5 e 6).
 
-## Bloco 5 — Agendamento no Horário Disponível
+## Bloco 5 — Agendamento no horário disponível (Secretária e Paciente)
 
-### Parte A — Secretária
+Parte A, como Secretária:
 
-| Status | Passo | Resultado esperado | Observações |
-|---|---|---|---|
-|  | Novo Agendamento: buscar paciente, escolher médico, data e horário livre | Consulta criada |  |
-|  | Logar como médico | Consulta aparece para ele |  |
+1. Novo Agendamento. Busque um paciente, escolha o médico do bloco 4, a data certa e um horário livre. Salve.
+   - Esperado: cria a consulta. Ela aparece na agenda e some/marca como ocupado o slot.
+2. Logue como o médico e confira se a consulta aparece pra ele.
 
-### Parte B — Paciente
+Parte B, como Paciente:
 
-| Status | Passo | Resultado esperado | Observações |
-|---|---|---|---|
-|  | Logar como paciente e tentar Novo Agendamento | Agenda para si mesmo; enxerga só a própria agenda |  |
-|  | Escolher médico, data e horário livre | Consulta criada e aparece em “minhas consultas” |  |
-|  | Comparar lista de médicos com a da secretária | Médico com disponibilidade aparece para ambos |  |
+3. Logue como paciente e tente Novo Agendamento.
+   - Esperado: o paciente agenda pra si mesmo (sem precisar escolher qual paciente é). Confira se ele só enxerga a própria agenda.
+4. Escolha o médico, a data e um horário livre. Salve.
+   - Esperado: cria a consulta e ela aparece em "minhas consultas".
+5. Confira se a lista de médicos que o paciente vê é a mesma que a secretária vê.
+   - Esperado: mesma lista. Se um médico com disponibilidade aparece pra um e não pro outro, é bug de escopo.
 
-## Bloco 6 — Casos de Erro de Agendamento
+## Bloco 6 — Casos de erro de agendamento
 
-| Status | Passo | Resultado esperado | Observações |
-|---|---|---|---|
-|  | Marcar segunda consulta no mesmo médico, data e horário | Bloqueia conflito com mensagem clara |  |
-|  | Marcar fora da disponibilidade | Horário não aparece ou bloqueia no submit |  |
-|  | Ver slot ocupado na visão do dia | Horário preenchido não mostra botão Agendar |  |
+1. Conflito: tente marcar uma segunda consulta no mesmo médico, mesma data e mesmo horário já ocupado.
+   - Esperado: bloqueia com mensagem clara ("médico já possui consulta neste horário"). Se deixar marcar duas no mesmo slot, é bug.
+2. Fora da disponibilidade: tente marcar num dia/horário em que o médico não tem faixa ativa.
+   - Esperado: o sistema não oferece o horário (dropdown vazio ou "sem disponibilidade"), ou bloqueia no submit. Se deixar marcar fora da disponibilidade, é bug.
+3. Slot ocupado na visão do dia: veja se um horário já preenchido ainda mostra botão de Agendar.
+   - Esperado: idealmente o slot ocupado não oferece Agendar, ou avisa antes.
 
-## Bloco 7 — Signup Público de Paciente
+## Bloco 7 — Signup público de paciente
 
-| Status | Passo | Resultado esperado | Observações |
-|---|---|---|---|
-|  | No login, clicar em Criar Conta | Fluxo cria somente conta de paciente |  |
-|  | Preencher e enviar | Mensagem de sucesso; se exigir e-mail, anotar dependência de inbox |  |
+1. No login, clique em Criar Conta.
+   - Esperado: cria só conta de paciente (não médico/secretária), com magic link ou senha.
+2. Preencha e envie.
+   - Esperado: mensagem de sucesso e (se magic link) instrução pra confirmar por email. Se exigir email, anote que o fluxo completo precisa de inbox.
 
-## Bloco 8 — Mensagens de Erro e Copy
+## Bloco 8 — Mensagens de erro e copy
 
-Durante todos os blocos, anote ocorrências de:
+Durante todos os blocos, vá anotando:
 
-| Status | Item | Observações |
-|---|---|---|
-|  | Mensagens técnicas vazando para usuário, como erro 500 cru, constraint, JSON ou nomes do Supabase |  |
-|  | Erros de validação que não limpam ao corrigir campo |  |
-|  | Placeholders ou labels errados |  |
-|  | Dados de teste poluindo listas |  |
+- Mensagens técnicas vazando pro usuário (erros 500 crus, nomes de constraint, "pela API", JSON do Supabase).
+- Erros de validação que não limpam quando você corrige o campo.
+- Placeholders ou labels errados.
+- Dados de teste poluindo as listas (nomes tipo "teste", "asdasd", CPF/telefone crus, emails no campo nome).
 
-## Checklist Final
+## Bloco 9 — Laudo médico (criação, edição, PDF, assinatura)
 
-| Item | Resultado | Observações |
-|---|---|---|
-| Acentuação correta |  |  |
-| Refresh sem 404 |  |  |
-| RBAC por perfil coerente |  |  |
-| Logout limpa sessão |  |  |
-| Validação no CRUD de paciente |  |  |
-| CPF único de verdade |  |  |
-| CRUD de médico com CRM/UF/especialidade |  |  |
-| CRM único por UF |  |  |
-| Disponibilidade gera horários |  |  |
-| Secretária agenda no horário livre |  |  |
-| Paciente agenda no horário livre |  |  |
-| Conflito de horário bloqueado |  |  |
-| Fora da disponibilidade bloqueado |  |  |
-| Signup de paciente |  |  |
-| Sem erro técnico cru na tela |  |  |
-| Sem dado de teste poluindo |  |  |
+1. Logue como médico, vá em Laudos (ou Relatórios médicos) e clique em Novo Laudo.
+2. Anote o que o editor oferece: editor de texto rico (negrito, itálico, lista, imagem), campos clínicos (paciente, CID-10, data do exame, solicitante, técnica), modelos prontos, frases salvas, importar PDF, digitação por voz.
+3. Selecione um paciente do banco, escolha um tipo de laudo (Laudo Médico, Atestado Médico, Solicitação de Exames, Declaração de Comparecimento, Encaminhamento), preencha CID e conclusão e salve como Rascunho.
+   - Esperado: o rascunho aparece na lista de laudos com status Rascunho.
+4. Reabra o rascunho, edite um campo e clique em Pré-visualizar.
+   - Esperado: prévia formatada com cabeçalho, paciente, CID, corpo, data e linha de assinatura.
+5. Clique em Liberar Laudo (ou Concluir/Assinar).
+   - Esperado: status muda pra Liberado/Concluído e o PDF fica disponível pra baixar.
+6. Gere o PDF.
+   - Esperado: arquivo bem diagramado, sem caixas vazias, com a assinatura do médico (digital ou imagem) ou aviso claro de que a assinatura digital ainda não existe nesta versão.
+7. Logue como paciente e confirme que o laudo aparece em Meus Laudos.
+8. Logue como secretária e gestor.
+   - Esperado: o laudo aparece na listagem global com filtros funcionando (paciente, status, tipo, data, médico solicitante).
+9. Tente excluir ou anular um laudo já liberado.
+   - Esperado: o sistema bloqueia ou exige justificativa, porque laudo liberado é registro clínico.
+
+Bugs a procurar: CID malformado (vírgula em vez de ponto, ou sem letra como exige o CID-10), solicitante mostrando UUID em vez de nome, campos obrigatórios sem validação, PDF cortado ou sem cabeçalho, ausência de assinatura digital.
+
+## Bloco 10 — Funcionalidades com IA
+
+O escopo do MediConnect cita IA preditiva e assistente. Vale identificar o que existe de verdade e o que é placeholder.
+
+1. Mapeie todas as pistas de IA no sistema, rodando em todos os perfis: chatbot ou widget no canto da tela, item de sidebar tipo Assistente IA, banner de "alerta preditivo" no dashboard, botão de IA dentro do editor de laudo, transcrição ou digitação por voz, sumarização de prontuário ou consulta, geração de imagem ou vídeo.
+2. Pra cada funcionalidade encontrada, anote: onde fica (rota e perfil), o que faz, se responde de verdade quando você interage ou se é texto fixo, qual modelo ou serviço usa (olhe no Network do DevTools quando interagir; cabeçalhos ou URL podem revelar OpenAI, Anthropic, Vertex, modelo próprio).
+3. Teste cada uma:
+   - Chatbot: faça uma pergunta clínica simples ("quais sintomas de hipertensão?"). Veja se responde com conteúdo plausível, se mantém contexto entre mensagens e se avisa que não é orientação médica.
+   - Geração de laudo por IA: dentro do editor de laudo, procure botão "Gerar com IA", "Sugerir conclusão" ou similar. Confira se o texto gerado faz sentido pro tipo de laudo escolhido.
+   - Digitação por voz: clique no microfone, fale uma frase em português, confirme se transcreve no idioma certo e se manda o texto pro campo certo.
+   - Alerta preditivo de no-show: veja se o texto no dashboard cita pacientes reais com risco calculado ou se é texto fixo igual pra todo mundo.
+   - Sumarização: dentro do prontuário ou da consulta, procure botão de resumir.
+   - Geração de vídeo ou imagem: pouco comum nesse escopo, mas anote se existir.
+4. Capture um trecho de saída de cada IA testada pra anexar no relatório.
+5. Se a IA chama endpoint próprio, anote no Network do DevTools qual URL é chamada e qual o status retornado. Erros como "Failed to fetch", 401 ou 500 são bugs a reportar.
+
+Esperado mínimo: pelo menos uma funcionalidade de IA implementada de verdade (não só placeholder), com mensagem honesta quando estiver em modo demo, e com a integração visível (modelo, serviço ou aviso claro).
+
+## Checklist final por squad
+
+| Item | Resultado |
+|------|-----------|
+| Acentuação correta | |
+| Refresh sem 404 | |
+| RBAC por perfil coerente (médico, secretária, gestor, paciente) | |
+| Logout limpa sessão | |
+| Validação no CRUD de paciente (obrigatórios, CPF, email, máscaras) | |
+| CPF único de verdade | |
+| CRUD de médico com CRM/UF/especialidade | |
+| CRM único por UF | |
+| Disponibilidade do médico gera horários | |
+| Secretária agenda no horário livre | |
+| Paciente agenda no horário livre | |
+| Conflito de horário bloqueado | |
+| Fora da disponibilidade bloqueado | |
+| Signup de paciente | |
+| Laudo: rascunho → liberado → PDF | |
+| Laudo aparece pro paciente e na listagem global | |
+| IA: funcionalidades mapeadas | |
+| IA: pelo menos uma respondendo de verdade | |
+| Sem erro técnico cru na tela | |
+| Sem dado de teste poluindo | |
