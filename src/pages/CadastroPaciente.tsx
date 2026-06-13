@@ -53,7 +53,12 @@ function todayISO() {
 
 function validate(form: FormState): FieldErrors {
   const errors: FieldErrors = {};
-  if (!form.full_name.trim()) errors.full_name = 'Informe seu nome completo.';
+  const trimmedName = form.full_name.trim();
+  if (!trimmedName) {
+    errors.full_name = 'Informe seu nome completo.';
+  } else if (trimmedName.split(/\s+/).filter(part => part.length > 0).length < 2) {
+    errors.full_name = 'Escreva o Nome Completo (nome e sobrenome).';
+  }
   if (!isValidEmail(form.email)) errors.email = 'E-mail inválido.';
   if (!isValidCpf(form.cpf)) errors.cpf = 'Informe um CPF válido.';
   if (!isValidPhoneBR(form.phone_mobile)) errors.phone_mobile = 'Informe um telefone válido.';
