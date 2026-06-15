@@ -530,9 +530,11 @@ export default function Dashboard({
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
-        {model.kpis.map(item => <KPI key={item.label} {...item} />)}
-      </div>
+      {role !== 'paciente' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+          {model.kpis.map(item => <KPI key={item.label} {...item} />)}
+        </div>
+      )}
 
       {role === 'paciente' && primaryAdvanceOffer && (
         <Panel style={{ marginBottom: 24, borderColor: 'rgba(0,166,63,0.22)', background: '#f8fffb' }}>
