@@ -802,7 +802,9 @@ export default function App() {
           )}
           {currentPage === 'ia' && allowedPages.includes('ia') && <AssistenteIA/>}
           {currentPage === 'biblioteca-farmacologica' && allowedPages.includes('biblioteca-farmacologica') && <BibliotecaFarmacologica/>}
-          {currentPage === 'configuracoes' && allowedPages.includes('configuracoes') && <Configuracoes/>}
+          {currentPage === 'configuracoes' && allowedPages.includes('configuracoes') && (
+            <Configuracoes pacientes={pacientes} onUpdatePaciente={updatePaciente}/>
+          )}
           </Suspense>
             </>
           )}
