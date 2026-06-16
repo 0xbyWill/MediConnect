@@ -23,16 +23,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { askPatientAssistant } from '../lib/patientAssistant';
 import type { PatientAssistantContext } from '../lib/patientAssistantTools';
 import {
-  CHATBOT_EMERGENCY_MESSAGE,
+  CHATBOT_AI_UNAVAILABLE_MESSAGE,
   CHATBOT_INITIAL_MESSAGE,
-  CHATBOT_MEDICAL_BLOCK_MESSAGE,
   CHATBOT_OPTIONS,
   CHATBOT_RESOLUTION_PROMPT,
 } from '../shared/constants/chatbot';
 import {
-  isClinicalAdviceRequest,
-  isHealthEducationQuestion,
-  isHealthOrSystemQuestion,
+  isPersonalHealthConcern,
   requiresEmergencyRedirect,
 } from '../shared/utils/healthAssistant';
 
@@ -408,26 +405,13 @@ export default function PatientChatbot({
     setAwaitingResolution(false);
     pushMessages(createMessage('patient', message));
 
-    // Emergência e bloqueio clínico têm prioridade máxima (segurança).
-    if (requiresEmergencyRedirect(message)) {
-      pushMessages(createMessage('bot', CHATBOT_EMERGENCY_MESSAGE, 'safety'));
-      setAwaitingResolution(true);
-      return;
-    }
-
-    if (isClinicalAdviceRequest(message)) {
-      pushMessages(createMessage('bot', CHATBOT_MEDICAL_BLOCK_MESSAGE, 'safety'));
-      setAwaitingResolution(true);
-      return;
-    }
-
+    // Data/hora e navegação explícita continuam com respostas diretas.
     if (isCurrentDateTimeQuestion(message)) {
       pushMessages(createMessage('bot', currentDateTimeAnswer(), 'answer'));
       setAwaitingResolution(true);
       return;
     }
 
-    // Navegação apenas quando há pedido explícito (ex.: "abrir agenda").
     const navigationIntent = getExplicitNavigationIntent(message);
     if (navigationIntent) {
       pushMessages(createMessage('bot', navigationIntent.message, 'answer'));
@@ -439,18 +423,16 @@ export default function PatientChatbot({
       return;
     }
 
-    // Ações que exigem a secretaria (agendar, remarcar, cancelar, alterar dados).
     if (needsSecretary(message)) {
       pushMessages(createMessage('bot', 'Esse pedido precisa da secretaria para confirmar dados e registrar a solicitação. Posso abrir a conversa direta para você continuar por lá.', 'support'));
       setAwaitingResolution(true);
       return;
     }
 
-    if (!isSystemRelatedQuestion(message) && !isHealthEducationQuestion(message) && !isHealthOrSystemQuestion(message)) {
-      pushMessages(createMessage('bot', 'Posso ajudar com assuntos do MediConnect, educação em saúde geral, suas consultas, laudos liberados, dados de cadastro, login e contato com a secretaria.', 'safety'));
-      setAwaitingResolution(true);
-      return;
-    }
+    const healthConcern = {
+      urgent: requiresEmergencyRedirect(message),
+      personal: isPersonalHealthConcern(message),
+    };
 
     setAiLoading(true);
     try {
@@ -466,14 +448,15 @@ export default function PatientChatbot({
         context,
         message,
         history: messages.slice(-8).map(item => ({ sender: item.sender, text: item.text })),
+        healthConcern,
       });
-      pushMessages(createMessage('bot', response.answer, 'answer'));
+      pushMessages(createMessage('bot', response.answer, healthConcern.urgent ? 'safety' : 'answer'));
       setAwaitingResolution(true);
     } catch {
       pushMessages(
         createMessage(
           'bot',
-          'Não consegui responder agora. A secretaria pode te ajudar pelo atendimento direto.',
+          CHATBOT_AI_UNAVAILABLE_MESSAGE,
           'support'
         )
       );
@@ -764,7 +747,7 @@ export default function PatientChatbot({
               <p className="pcb-disclaimer">
                 {isListening
                   ? 'Gravando sua mensagem por voz...'
-                  : 'A Panaceia ajuda com o MediConnect e educação em saúde geral. Não substitui consulta médica. Em emergências, procure atendimento ou ligue 192.'}
+                  : 'A Panaceia ajuda com o MediConnect, educação em saúde e orientações sobre sintomas. Não substitui consulta médica. Em emergências, procure atendimento ou ligue 192.'}
               </p>
             </form>
           </footer>
@@ -1689,46 +1672,4 @@ function currentDateTimeAnswer() {
     timeZone: 'America/Sao_Paulo',
   }).format(now);
   return `Hoje é ${date}. Agora são ${time}, no horário de São Paulo.`;
-}
-
-function isSystemRelatedQuestion(message: string) {
-  const normalized = message.toLowerCase();
-  return [
-    'mediconnect',
-    'panaceia',
-    'sistema',
-    'consulta',
-    'consultas',
-    'agendamento',
-    'agendar',
-    'agenda',
-    'remarcar',
-    'cancelar',
-    'laudo',
-    'laudos',
-    'resultado',
-    'exame',
-    'registro',
-    'cadastro',
-    'dados',
-    'email',
-    'e-mail',
-    'telefone',
-    'senha',
-    'login',
-    'acesso',
-    'entrar',
-    'secretaria',
-    'mensagem',
-    'mensagens',
-    'suporte',
-    'perfil',
-    'minha conta',
-    'meu perfil',
-    'paciente',
-    'médico',
-    'medico',
-    'clínica',
-    'clinica',
-  ].some(term => normalized.includes(term));
 }

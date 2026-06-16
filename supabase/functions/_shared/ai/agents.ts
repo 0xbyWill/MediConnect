@@ -66,7 +66,7 @@ export class SupportAgent {
       { role: 'system', content: prompt },
       { role: 'user', content: cleanQuestion },
     ], {
-      answer: 'Nao encontrei essa informacao na base de conhecimento. Fale com o suporte humano para receber ajuda.',
+      answer: 'Nao encontrei essa informacao agora. Recomendo procurar um clinico geral ou falar com a secretaria para agendar uma consulta.',
       needsHumanSupport: true,
     });
 

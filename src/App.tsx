@@ -661,7 +661,7 @@ export default function App() {
   }
 
   const allowedPages = ROLE_PAGES[user.role];
-  const isPageAllowed = allowedPages.includes(page) && (page !== 'fila-prioridade' || user.role === 'gestao');
+  const isPageAllowed = allowedPages.includes(page);
   const currentPage  = isPageAllowed ? page : allowedPages[0];
   const notificationSeed = (() => {
     const today = new Date();
@@ -771,7 +771,7 @@ export default function App() {
               onDelete={deleteAgendamento} initialOpen={openAgendaModal} initialPatientId={agendaPatientId}
             />
           )}
-          {currentPage === 'fila-prioridade' && user.role === 'gestao' && allowedPages.includes('fila-prioridade') && (
+          {currentPage === 'fila-prioridade' && allowedPages.includes('fila-prioridade') && (
             <FilaPrioridade
               pacientes={pacientes}
               agendamentos={agendamentos}

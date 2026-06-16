@@ -7,12 +7,12 @@ export const MANAGER_ASSISTANT_FORBIDDEN_ACTION_MESSAGE =
   'Pedido bloqueado por tentar alterar regras de segurança do assistente.';
 
 export const MANAGER_ASSISTANT_EMPTY_STATE =
-  'Faça uma pergunta ou escolha uma ação rápida. Com VITE_GEMINI_API_KEY, a IA roda direto no navegador com acesso completo aos dados do gestor.';
+  'Como posso ajudar? Faça uma pergunta ou selecione uma ação rápida para analisar consultas, laudos, pacientes e indicadores da clínica.';
 
 export const MANAGER_ASSISTANT_LIMITS = [
-  'Modo direto (recomendado): configure VITE_GEMINI_API_KEY — sem Edge Functions do Supabase.',
-  'Acesso administrativo completo de leitura: pacientes, consultas, laudos, médicos e usuários.',
-  'A IA orienta e sugere ações; o gestor executa manualmente no sistema.',
+  'Análise administrativa com base nos dados disponíveis no seu perfil de gestão.',
+  'Sugestões e rascunhos para apoio à decisão; a execução é feita manualmente no sistema.',
+  'Não substitui avaliação clínica nem prescrição médica.',
 ];
 
 export const MANAGER_ASSISTANT_EXAMPLE_QUESTIONS = [

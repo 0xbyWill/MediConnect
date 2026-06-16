@@ -6,6 +6,7 @@ import type { ApiDoctor } from '../lib/api';
 import { smsApi } from '../lib/api';
 import { queueAiApi } from '../lib/aiApi';
 import { useAuth } from '../contexts/AuthContext';
+import { ROLE_PAGES } from '../shared/constants/roles';
 import { dateToISO, timeToHHMM } from '../shared/utils/date';
 import { normalizePhoneBRForSms } from '../shared/utils/validation';
 import { toUserFacingErrorMessage } from '../shared/utils/errors';
@@ -156,11 +157,12 @@ export default function FilaPrioridade({ pacientes, agendamentos, doctors, onUpd
     setSelectedSlotId(filteredSlots[0].id);
   }, [filteredSlots, selectedSlotId]);
 
-  if (user?.role !== 'gestao') {
+  const canAccessQueue = user?.role && ROLE_PAGES[user.role].includes('fila-prioridade');
+  if (!canAccessQueue) {
     return (
       <div style={{ padding: 32 }}>
         <div role="alert" style={{ border: '1px solid var(--red-100)', background: 'var(--red-50)', color: 'var(--red-600)', borderRadius: 12, padding: 14, fontWeight: 700 }}>
-          A fila de prioridade é restrita ao perfil Gestão.
+          Você não tem permissão para acessar a fila de prioridade.
         </div>
       </div>
     );
