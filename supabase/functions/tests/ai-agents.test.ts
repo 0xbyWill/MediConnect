@@ -52,13 +52,14 @@ Deno.test('SupportAgent responde com FAQ quando ha contexto', async () => {
   assertEquals(result.answer, 'Resposta baseada em FAQ.', 'answer');
 });
 
-Deno.test('SupportAgent usa fallback quando nao ha contexto', async () => {
+Deno.test('SupportAgent usa conhecimento em saude quando nao ha FAQ', async () => {
   const agent = new SupportAgent(createMockRepo(), mockProvider);
 
-  const result = await agent.answer('user-1', 'Pergunta desconhecida');
+  const result = await agent.answer('user-1', 'O que significa hemograma?');
 
-  assertEquals(result.sourceType, 'fallback', 'sourceType');
-  assertEquals(result.needsHumanSupport, true, 'needsHumanSupport');
+  assertEquals(result.sourceType, 'health_knowledge', 'sourceType');
+  assertEquals(result.needsHumanSupport, false, 'needsHumanSupport');
+  assertEquals(result.answer, 'Resposta baseada em FAQ.', 'answer');
 });
 
 Deno.test('DescriptionAgent salva output como rascunho', async () => {

@@ -18,9 +18,9 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { appointmentsApi, doctorsApi, patientsApi, reportsApi } from '../lib/api';
+import { appointmentsApi, doctorsApi, patientsApi, reportsApi, usersApi } from '../lib/api';
 import type { ApiAppointment, ApiDoctor, ApiPatient, ApiReport } from '../lib/api';
-import { managerSearchAssistantApi } from '../lib/aiApi';
+import { isDirectAiMode, managerSearchAssistantApi } from '../lib/aiApi';
 import type {
   AiChartSpec,
   AiGeneratedFile,
@@ -63,6 +63,7 @@ type ReadOnlyData = {
   patients: ApiPatient[];
   doctors: ApiDoctor[];
   reports: ApiReport[];
+  users: Awaited<ReturnType<typeof usersApi.list>>;
 };
 
 type AiToneSetting = 'objetivo' | 'acolhedor' | 'tecnico';
@@ -106,6 +107,7 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
 
   const activePrompt = prompt.trim();
   const currentMessage = messages[messages.length - 1];
+  const directAiMode = isDirectAiMode();
   const periodLabel = useMemo(() => formatAssistantPeriod(startDate, endDate), [startDate, endDate]);
   const speechSupported = typeof window !== 'undefined' && supportsSpeechRecognition();
 
@@ -171,7 +173,7 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
     setPendingPrompt(submittedPrompt);
     setLoading(true);
     try {
-      const data = await loadReadOnlyData(source);
+      const data = await loadReadOnlyData();
       const built = buildAssistantContext(action, data, { startDate, endDate }, source);
       const wantsCharts = shouldIncludeCharts(submittedPrompt);
       const wantsFiles = shouldIncludeFiles(submittedPrompt);
@@ -202,7 +204,6 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
           response: {
             ...response,
             dataSummary: response.dataSummary ?? built.dataSummary,
-            warnings: [...built.warnings, ...(response.warnings ?? [])],
             source: response.source ?? built.source,
           },
           structured,
@@ -351,7 +352,10 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
           <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <div>
               <h2 style={{ ...sectionTitleStyle, marginBottom: 2 }}>Conversa gerencial</h2>
-              <p style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>Período: {periodLabel} · Somente leitura</p>
+              <p style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>
+                Período: {periodLabel}
+                {directAiMode ? ' · Modo direto (Gemini no navegador, sem Supabase Functions)' : ' · Configure VITE_GEMINI_API_KEY para modo direto'}
+              </p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setSettingsOpen(true)} aria-label="Configurar comportamento da IA" title="Configurar comportamento da IA" style={iconSmallButtonStyle}>
@@ -524,20 +528,16 @@ function AiBehaviorSettingsModal({
   );
 }
 
-async function loadReadOnlyData(source: ManagerSearchAssistantSource) {
-  const needsAppointments = source === 'mixed' || source === 'appointments' || source === 'doctors' || source === 'financial';
-  const needsPatients = source === 'mixed' || source === 'patients' || source === 'appointments' || source === 'financial';
-  const needsDoctors = source === 'mixed' || source === 'doctors' || source === 'appointments';
-  const needsReports = source === 'mixed' || source === 'reports' || source === 'financial';
-
-  const [appointments, patients, doctors, reports] = await Promise.all([
-    needsAppointments ? appointmentsApi.list({}) : Promise.resolve([] as ApiAppointment[]),
-    needsPatients ? patientsApi.list({ limit: 500 }) : Promise.resolve([] as ApiPatient[]),
-    needsDoctors ? doctorsApi.list({ active: true }) : Promise.resolve([] as ApiDoctor[]),
-    needsReports ? reportsApi.list({}) : Promise.resolve([] as ApiReport[]),
+async function loadReadOnlyData() {
+  const [appointments, patients, doctors, reports, users] = await Promise.all([
+    appointmentsApi.list({}),
+    patientsApi.list({ limit: 2000 }),
+    doctorsApi.list({ active: true }),
+    reportsApi.list({}),
+    usersApi.list().catch(() => []),
   ]);
 
-  return { appointments, patients, doctors, reports };
+  return { appointments, patients, doctors, reports, users };
 }
 
 function buildLocalCharts(data: ReadOnlyData, source: ManagerSearchAssistantSource): AiChartSpec[] {
@@ -663,8 +663,7 @@ function StructuredResponseView({ message }: { message: AssistantMessage }) {
     structured.insights?.length ||
     structured.risks?.length ||
     structured.recommendations?.length ||
-    structured.observations?.length ||
-    message.response.warnings?.length
+    structured.observations?.length
   );
   const showSummaryCard = shouldIncludeSummary(message.prompt) || hasLists;
 
@@ -683,7 +682,6 @@ function StructuredResponseView({ message }: { message: AssistantMessage }) {
       <ListBlock title="Riscos" items={structured.risks} tone="warning" />
       <ListBlock title="Recomendações" items={structured.recommendations} />
       <ListBlock title="Observações" items={structured.observations} />
-      {message.response.warnings?.length ? <ListBlock title="Avisos" items={message.response.warnings} tone="warning" /> : null}
     </article>
   );
 }

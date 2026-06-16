@@ -20,8 +20,8 @@ export class AiProviderService {
     ? Deno.env.get('GEMINI_MODEL') ?? Deno.env.get('AI_MODEL') ?? 'gemini-1.5-flash'
     : Deno.env.get('AI_MODEL') ?? 'gpt-4o-mini';
   private embeddingModel = Deno.env.get('AI_EMBEDDING_MODEL') ?? 'text-embedding-3-small';
-  private temperature = Number(Deno.env.get('AI_TEMPERATURE') ?? '0.2');
-  private maxTokens = Number(Deno.env.get('AI_MAX_TOKENS') ?? '700');
+  private temperature = Number(Deno.env.get('AI_TEMPERATURE') ?? '0.35');
+  private maxTokens = Number(Deno.env.get('AI_MAX_TOKENS') ?? '900');
 
   async generateText(messages: AiProviderMessage[]) {
     if (!this.apiKey) {

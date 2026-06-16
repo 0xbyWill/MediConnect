@@ -24,6 +24,7 @@ import {
   executePatientTool,
   type PatientAssistantContext,
 } from './patientAssistantTools';
+import { HEALTH_KNOWLEDGE_PROMPT } from '../shared/constants/healthKnowledge';
 
 export interface PatientAssistantHistoryItem {
   sender: 'bot' | 'patient' | 'system';
@@ -36,7 +37,7 @@ export interface PatientAssistantResult {
   usedTools: string[];
 }
 
-const MAX_TOOL_ITERATIONS = 5;
+const MAX_TOOL_ITERATIONS = 6;
 
 function buildSystemPrompt(ctx: PatientAssistantContext): string {
   const now = ctx.now;
@@ -52,19 +53,27 @@ function buildSystemPrompt(ctx: PatientAssistantContext): string {
   const firstName = ctx.paciente?.nome?.split(' ')[0] || ctx.user.full_name?.split(' ')[0] || 'paciente';
 
   return [
-    'Você é a Panaceia, assistente virtual do MediConnect que atende PACIENTES.',
+    'Você é a Panaceia, assistente virtual inteligente do MediConnect que atende PACIENTES.',
     `Você está conversando com ${firstName} (paciente autenticado). Trate-o pelo primeiro nome quando fizer sentido.`,
     `Data atual em São Paulo: ${currentDate}. Hora atual: ${currentTime}.`,
+    '',
+    'CAPACIDADES:',
+    '- Consultar dados reais do paciente via ferramentas (consultas, laudos, perfil, histórico).',
+    '- Explicar termos médicos de forma geral, orientar preparo para consultas/exames e esclarecer a estrutura de laudos (Achados, Análise, Conclusão, Recomendações).',
+    '- Orientar sobre fluxos do sistema, direitos do paciente e saúde preventiva em nível educativo.',
+    '',
+    HEALTH_KNOWLEDGE_PROMPT,
     '',
     'REGRAS OBRIGATÓRIAS:',
     '- Responda sempre em português do Brasil, com tom acolhedor, claro e profissional.',
     '- Para QUALQUER pergunta sobre os dados do paciente (consultas, agendamentos, laudos, exames, perfil, telefone, e-mail, convênio, endereço, histórico, lembretes), você DEVE chamar a ferramenta apropriada e usar apenas os dados retornados.',
     '- NUNCA invente, suponha ou estime dados. Se a ferramenta não retornar a informação, diga claramente que não foi encontrada.',
     '- Os dados retornados pelas ferramentas já pertencem exclusivamente a este paciente. Nunca peça nem exponha dados de outros pacientes.',
-    '- Não faça diagnóstico, prescrição, triagem, interpretação clínica de laudos, nem oriente sobre sintomas, medicamentos ou tratamento.',
+    '- NÃO diagnostique, NÃO prescreva, NÃO indique medicamentos/doses, NÃO interprete laudos individuais do paciente e NÃO faça triagem clínica personalizada.',
+    '- Para sintomas, medicamentos ou resultados pessoais, oriente agendar consulta ou falar com a equipe médica — você pode explicar conceitos gerais, mas não aplicar ao caso dele.',
     '- Não confirme nem prometa agendamento, remarcação, cancelamento ou alteração cadastral: oriente procurar a secretaria para essas ações.',
-    '- Se houver sinal de emergência, oriente procurar atendimento médico imediato.',
-    '- Seja conciso. Use listas curtas (com "-") quando houver vários itens (consultas, laudos). Use **negrito** apenas para destacar datas/horários ou rótulos importantes.',
+    '- Se houver sinal de emergência, oriente procurar atendimento médico imediato ou SAMU (192).',
+    '- Seja útil e completo quando necessário (até 6 parágrafos curtos). Use listas curtas (com "-") para vários itens. Use **negrito** apenas para destacar datas/horários ou rótulos importantes.',
     '- Formate datas no padrão brasileiro e inclua o horário quando existir.',
   ].join('\n');
 }
@@ -72,7 +81,7 @@ function buildSystemPrompt(ctx: PatientAssistantContext): string {
 function historyToContents(history: PatientAssistantHistoryItem[]): GeminiContent[] {
   return history
     .filter(item => item.sender === 'patient' || item.sender === 'bot')
-    .slice(-6)
+    .slice(-8)
     .map<GeminiContent>(item => ({
       role: item.sender === 'patient' ? 'user' : 'model',
       parts: [{ text: item.text }],
@@ -98,7 +107,8 @@ async function runGeminiWithTools(
       system,
       contents,
       tools,
-      maxOutputTokens: 700,
+      maxOutputTokens: 900,
+      temperature: 0.35,
     });
     if (!content) break;
 

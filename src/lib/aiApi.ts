@@ -1,9 +1,10 @@
 import { request } from './httpClient';
 import type { ManagerSearchAssistantRequest, ManagerSearchAssistantResponse, QueueCandidate } from '../types';
+import { HEALTH_KNOWLEDGE_PROMPT } from '../shared/constants/healthKnowledge';
 
 export type AiTone = 'professional' | 'friendly' | 'simple';
 export type AiMessageType = 'welcome' | 'warning' | 'support_initial' | 'payment_reminder' | 'custom';
-export type AiSourceType = 'faq' | 'knowledge_base' | 'correction' | 'fallback';
+export type AiSourceType = 'faq' | 'knowledge_base' | 'correction' | 'health_knowledge' | 'fallback';
 export type AiScope = 'general' | 'support' | 'description' | 'user_message' | 'admin';
 
 export interface AiGeneratedTextResponse {
@@ -107,6 +108,9 @@ const GEMINI_MODEL_FALLBACKS = [
   'gemini-2.0-flash-lite',
 ] as const;
 
+/** Limite de contexto JSON no modo direto (navegador → Gemini, sem Edge Function). */
+export const DIRECT_AI_CONTEXT_CHAR_LIMIT = 80_000;
+
 function qs(params: Record<string, string | undefined>) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -119,7 +123,34 @@ function canUseGeminiFallback() {
   return Boolean(GEMINI_FALLBACK_KEY);
 }
 
-async function askDevGemini(system: string, userText: string, maxOutputTokens = 700): Promise<string> {
+/** Modo direto: IA roda no navegador via Gemini, sem depender de Edge Functions do Supabase. */
+export function isDirectAiMode(): boolean {
+  return canUseGeminiFallback();
+}
+
+export function buildManagerAssistantSystemPrompt(behaviorInstructions?: string): string {
+  return [
+    'Você é o Assistente IA Gerencial do MediConnect para perfis de gestão.',
+    'Responda sempre em português do Brasil, de forma objetiva, clara e profissional.',
+    'Você recebe um snapshot completo dos dados que o gestor já pode ver no sistema (pacientes, consultas, laudos, médicos, usuários).',
+    'Analise, cruze, filtre, resuma, compare, detalhe registros e responda perguntas complexas usando somente esse contexto.',
+    'Pode descrever laudos, diagnósticos, conclusões, contatos, endereços, indicadores e pendências administrativas.',
+    'Pode sugerir planos de ação, prioridades, rascunhos de comunicados e próximos passos — o gestor executa manualmente no sistema.',
+    'Não afirme que alterou, cancelou, agendou ou enviou algo; você apenas orienta com base nos dados.',
+    'Não invente registros ausentes do contexto. Se faltar dado, diga explicitamente.',
+    'Use JSON estruturado apenas quando o gestor pedir relatório, indicadores, gráficos ou arquivos.',
+    behaviorInstructions?.trim() ? `Preferências do gestor:\n${behaviorInstructions.trim()}` : '',
+    '',
+    HEALTH_KNOWLEDGE_PROMPT,
+  ].filter(Boolean).join('\n');
+}
+
+async function askDevGemini(
+  system: string,
+  userText: string,
+  maxOutputTokens = 1200,
+  temperature = 0.4,
+): Promise<string> {
   if (!canUseGeminiFallback()) {
     throw new AIError('Assistente indisponível neste ambiente.');
   }
@@ -138,7 +169,7 @@ async function askDevGemini(system: string, userText: string, maxOutputTokens = 
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: 'user', parts: [{ text: userText }] }],
         generationConfig: {
-          temperature: 0.2,
+          temperature,
           maxOutputTokens,
         },
       }),
@@ -198,7 +229,65 @@ export interface GeminiToolDeclaration {
 }
 
 export function isGeminiBrowserDirectAvailable(): boolean {
-  return canUseGeminiFallback();
+  return isDirectAiMode();
+}
+
+async function askManagerAssistantDirect(data: ManagerSearchAssistantRequest): Promise<ManagerSearchAssistantResponse> {
+  const currentDate = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'full',
+    timeZone: 'America/Sao_Paulo',
+  }).format(new Date());
+  const system = buildManagerAssistantSystemPrompt(data.behaviorInstructions);
+  const userText = [
+    `Data atual em São Paulo: ${currentDate}`,
+    `Ação solicitada: ${data.action}`,
+    `Pergunta do gestor: ${data.prompt}`,
+    'Período:',
+    JSON.stringify(data.period ?? {}),
+    'Contexto administrativo completo em JSON:',
+    JSON.stringify(data.context ?? {}).slice(0, DIRECT_AI_CONTEXT_CHAR_LIMIT),
+  ].join('\n\n');
+
+  return {
+    answer: await askDevGemini(system, userText, 2048, 0.4),
+    source: sourceForAction(data.action),
+  };
+}
+
+async function askPatientSupportDirect(data: PatientChatbotAiRequest): Promise<PatientChatbotAiResponse> {
+  const now = new Date();
+  const currentDate = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'full',
+    timeZone: 'America/Sao_Paulo',
+  }).format(now);
+  const currentTime = new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  }).format(now);
+  const history = (data.history ?? [])
+    .slice(-10)
+    .map(item => `${item.sender}: ${item.text}`)
+    .join('\n');
+  const system = [
+    'Você é a Panaceia, assistente virtual inteligente do MediConnect para pacientes.',
+    'Responda sempre em português do Brasil, com tom acolhedor, claro e profissional.',
+    'Ajude com navegação do sistema, consultas, laudos, cadastro, secretaria e educação em saúde geral.',
+    'Não confirme agendamentos, remarcações ou alterações cadastrais — oriente a secretaria.',
+    'Não faça diagnóstico, prescrição nem interpretação clínica personalizada.',
+    'Se houver urgência, oriente atendimento médico imediato ou SAMU (192).',
+    '',
+    HEALTH_KNOWLEDGE_PROMPT,
+  ].join('\n');
+  const userText = [
+    `Paciente: ${data.patientName ?? 'paciente'}`,
+    `Data atual em São Paulo: ${currentDate}`,
+    `Hora atual em São Paulo: ${currentTime}`,
+    history ? `Histórico recente:\n${history}` : '',
+    `Mensagem do paciente:\n${data.message}`,
+  ].filter(Boolean).join('\n\n');
+
+  return { answer: await askDevGemini(system, userText, 1200, 0.35) };
 }
 
 /**
@@ -362,6 +451,14 @@ export const adminAiApi = {
 
 export const patientChatbotAiApi = {
   ask: async (data: PatientChatbotAiRequest): Promise<PatientChatbotAiResponse> => {
+    if (isDirectAiMode()) {
+      try {
+        return await askPatientSupportDirect(data);
+      } catch (directErr) {
+        if (!canUseGeminiFallback()) throw directErr;
+      }
+    }
+
     try {
       const answer = await aiApi.support({
         userId: data.userId,
@@ -372,82 +469,34 @@ export const patientChatbotAiApi = {
       };
     } catch (err) {
       if (!canUseGeminiFallback()) throw err;
-
-      const now = new Date();
-      const currentDate = new Intl.DateTimeFormat('pt-BR', {
-        dateStyle: 'full',
-        timeZone: 'America/Sao_Paulo',
-      }).format(now);
-      const currentTime = new Intl.DateTimeFormat('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'America/Sao_Paulo',
-      }).format(now);
-      const history = (data.history ?? [])
-        .slice(-8)
-        .map(item => `${item.sender}: ${item.text}`)
-        .join('\n');
-      const system = [
-        'Você é a Panaceia, atendente virtual do MediConnect para pacientes.',
-        'Responda sempre em português do Brasil, com tom acolhedor, objetivo e administrativo.',
-        'Ajude apenas com navegação do sistema, consultas, laudos liberados, cadastro, acesso/login e contato com a secretaria.',
-        'Não execute, prometa ou confirme agendamento, remarcação, cancelamento, envio de mensagem ou alteração cadastral.',
-        'Não faça diagnóstico, prescrição, triagem, interpretação de laudos, orientação sobre sintomas, medicamentos ou tratamento.',
-        'Se houver urgência ou emergência, oriente procurar atendimento médico imediato.',
-        'Responda em no máximo 4 frases curtas.',
-      ].join('\n');
-      const userText = [
-        `Paciente: ${data.patientName ?? 'paciente'}`,
-        `Data atual em São Paulo: ${currentDate}`,
-        `Hora atual em São Paulo: ${currentTime}`,
-        history ? `Histórico recente:\n${history}` : '',
-        `Mensagem do paciente:\n${data.message}`,
-      ].filter(Boolean).join('\n\n');
-
-      return { answer: await askDevGemini(system, userText, 450) };
+      return askPatientSupportDirect(data);
     }
   },
 };
 
 export const managerSearchAssistantApi = {
   ask: async (data: ManagerSearchAssistantRequest): Promise<ManagerSearchAssistantResponse> => {
+    if (isDirectAiMode()) {
+      try {
+        return await askManagerAssistantDirect(data);
+      } catch {
+        // Tenta Edge Function apenas se o modo direto falhar.
+      }
+    }
+
     try {
       return await request<ManagerSearchAssistantResponse>('/functions/v1/manager-search-assistant', {
         method: 'POST',
         body: JSON.stringify(data),
       });
     } catch (err) {
-      if (!canUseGeminiFallback()) throw err;
-
-      const currentDate = new Intl.DateTimeFormat('pt-BR', {
-        dateStyle: 'full',
-        timeZone: 'America/Sao_Paulo',
-      }).format(new Date());
-      const system = [
-        'Você é o Assistente de Busca Gerencial do MediConnect.',
-        'Responda sempre em português do Brasil, de forma objetiva, clara e profissional.',
-        'Use somente os dados no contexto recebido. Se faltar informação, diga que não há informação suficiente.',
-        'Não execute, prometa ou confirme criação, edição, exclusão, cancelamento, envio de mensagem ou ação financeira.',
-        'Não faça diagnóstico, prescrição, orientação médica ou interpretação clínica de laudos.',
-        'Para mensagens, gere apenas rascunhos para revisão humana.',
-        'Responda somente ao que foi perguntado. Use JSON apenas quando o gestor pedir saída estruturada, resumo, relatório, indicadores, gráficos ou arquivos.',
-      ].join('\n');
-      const userText = [
-        `Data atual em São Paulo: ${currentDate}`,
-        `Ação solicitada: ${data.action}`,
-        data.behaviorInstructions ? `Preferências de comportamento:\n${data.behaviorInstructions}` : '',
-        `Pergunta do gestor: ${data.prompt}`,
-        'Período:',
-        JSON.stringify(data.period ?? {}),
-        'Contexto administrativo sanitizado em JSON:',
-        JSON.stringify(data.context ?? {}).slice(0, 14000),
-      ].filter(Boolean).join('\n\n');
-
-      return {
-        answer: await askDevGemini(system, userText, 900),
-        warnings: ['Resposta gerada diretamente pelo modelo de IA (modo direto, sem a função do servidor).'],
-        source: sourceForAction(data.action),
-      };
+      if (!canUseGeminiFallback()) {
+        throw new AIError(
+          'Configure VITE_GEMINI_API_KEY no .env para usar o assistente sem Edge Functions do Supabase.',
+          err,
+        );
+      }
+      return askManagerAssistantDirect(data);
     }
   },
 };

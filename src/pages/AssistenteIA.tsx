@@ -19,7 +19,7 @@ export default function AssistenteIA() {
         <header style={{ marginBottom: 14 }}>
           <h1 style={{ fontSize: 28, fontWeight: 900, color: '#071327', margin: 0, lineHeight: 1.15 }}>Assistente IA Gerencial</h1>
           <p style={{ fontSize: 13, color: '#334155', marginTop: 5, maxWidth: 760 }}>
-            Analise dados administrativos do MediConnect em modo somente leitura.
+            Com <code>VITE_GEMINI_API_KEY</code>, a IA roda direto no navegador — sem Edge Functions — com acesso completo aos dados de gestão.
           </p>
         </header>
 

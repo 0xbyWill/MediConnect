@@ -23,14 +23,18 @@ import { useAuth } from '../contexts/AuthContext';
 import { askPatientAssistant } from '../lib/patientAssistant';
 import type { PatientAssistantContext } from '../lib/patientAssistantTools';
 import {
-  CHATBOT_EMERGENCY_KEYWORDS,
   CHATBOT_EMERGENCY_MESSAGE,
   CHATBOT_INITIAL_MESSAGE,
   CHATBOT_MEDICAL_BLOCK_MESSAGE,
-  CHATBOT_MEDICAL_KEYWORDS,
   CHATBOT_OPTIONS,
   CHATBOT_RESOLUTION_PROMPT,
 } from '../shared/constants/chatbot';
+import {
+  isClinicalAdviceRequest,
+  isHealthEducationQuestion,
+  isHealthOrSystemQuestion,
+  requiresEmergencyRedirect,
+} from '../shared/utils/healthAssistant';
 
 const PANACEIA_AVATAR_SRC = '/WhatsApp Image 2026-05-07 at 19.38.48.jpeg';
 
@@ -400,21 +404,18 @@ export default function PatientChatbot({
 
     if (!message) return;
 
-    const normalized = message.toLowerCase();
     setFreeText('');
     setAwaitingResolution(false);
     pushMessages(createMessage('patient', message));
 
     // Emergência e bloqueio clínico têm prioridade máxima (segurança).
-    // Precisa vir ANTES de qualquer outra intenção (ex.: data/hora), pois
-    // frases como "dor no peito agora" não podem ser tratadas como "que horas são".
-    if (CHATBOT_EMERGENCY_KEYWORDS.some(keyword => normalized.includes(keyword))) {
+    if (requiresEmergencyRedirect(message)) {
       pushMessages(createMessage('bot', CHATBOT_EMERGENCY_MESSAGE, 'safety'));
       setAwaitingResolution(true);
       return;
     }
 
-    if (CHATBOT_MEDICAL_KEYWORDS.some(keyword => normalized.includes(keyword))) {
+    if (isClinicalAdviceRequest(message)) {
       pushMessages(createMessage('bot', CHATBOT_MEDICAL_BLOCK_MESSAGE, 'safety'));
       setAwaitingResolution(true);
       return;
@@ -445,8 +446,8 @@ export default function PatientChatbot({
       return;
     }
 
-    if (!isSystemRelatedQuestion(message)) {
-      pushMessages(createMessage('bot', 'Posso ajudar apenas com assuntos do MediConnect: suas consultas, laudos liberados, dados de cadastro, lembretes, login, mensagens e contato com a secretaria.', 'safety'));
+    if (!isSystemRelatedQuestion(message) && !isHealthEducationQuestion(message) && !isHealthOrSystemQuestion(message)) {
+      pushMessages(createMessage('bot', 'Posso ajudar com assuntos do MediConnect, educação em saúde geral, suas consultas, laudos liberados, dados de cadastro, login e contato com a secretaria.', 'safety'));
       setAwaitingResolution(true);
       return;
     }
@@ -763,7 +764,7 @@ export default function PatientChatbot({
               <p className="pcb-disclaimer">
                 {isListening
                   ? 'Gravando sua mensagem por voz...'
-                  : 'A Panaceia ajuda com assuntos do MediConnect. Em emergências, procure atendimento médico.'}
+                  : 'A Panaceia ajuda com o MediConnect e educação em saúde geral. Não substitui consulta médica. Em emergências, procure atendimento ou ligue 192.'}
               </p>
             </form>
           </footer>

@@ -1,10 +1,11 @@
+import { HEALTH_KNOWLEDGE_PROMPT } from './healthKnowledge.ts';
 import { agentPrompts, buildPrompt } from './prompts.ts';
 import { AiProviderService } from './provider.ts';
 import { AiRepository } from './repository.ts';
 import type { SupabaseClientLike } from './repository.ts';
 import { sanitizeText, validateSafeInstruction } from './security.ts';
 
-type SourceType = 'faq' | 'knowledge_base' | 'correction' | 'fallback';
+type SourceType = 'faq' | 'knowledge_base' | 'correction' | 'health_knowledge' | 'fallback';
 export type AiAgentProvider = Pick<AiProviderService, 'generateText' | 'generateJson' | 'generateEmbedding'>;
 export type AiAgentRepository = Pick<
   AiRepository,
@@ -39,12 +40,12 @@ export class SupportAgent {
     const embedding = await this.provider.generateEmbedding(cleanQuestion);
     const [instructions, faqs, knowledge, corrections] = await Promise.all([
       this.repo.getActiveInstructions('support'),
-      this.repo.searchFaqs(cleanQuestion, 5, embedding),
-      this.repo.searchKnowledge(cleanQuestion, 5, embedding),
+      this.repo.searchFaqs(cleanQuestion, 8, embedding),
+      this.repo.searchKnowledge(cleanQuestion, 8, embedding),
       this.repo.getCorrections(),
     ]);
 
-    let sourceType: SourceType = 'fallback';
+    let sourceType: SourceType = 'health_knowledge';
     if (faqs.length) sourceType = 'faq';
     else if (knowledge.length) sourceType = 'knowledge_base';
     else if (corrections.length) sourceType = 'correction';
@@ -52,15 +53,9 @@ export class SupportAgent {
     const conversation = await this.repo.createConversation(userId, 'support');
     await this.repo.createMessage(conversation.id, 'user', cleanQuestion);
 
-    if (sourceType === 'fallback') {
-      const answer = 'Nao encontrei essa informacao na base de conhecimento. Fale com o suporte humano para receber ajuda.';
-      const aiMessage = await this.repo.createMessage(conversation.id, 'ai', answer, { sourceType, needsHumanSupport: true });
-      await this.repo.saveOutput(userId, 'support_answer', { question: cleanQuestion }, answer);
-      return { answer, sourceType, needsHumanSupport: true, messageId: aiMessage.id };
-    }
-
     const prompt = buildPrompt([
       agentPrompts.support,
+      `Conhecimento base em saude:\n${HEALTH_KNOWLEDGE_PROMPT}`,
       contextBlock('Instrucoes administrativas', instructions),
       contextBlock('FAQs', faqs),
       contextBlock('Base de conhecimento', knowledge),
