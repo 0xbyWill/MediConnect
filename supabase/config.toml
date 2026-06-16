@@ -9,6 +9,9 @@ verify_jwt = true
 [functions.manager-search-assistant]
 verify_jwt = true
 
+[functions.medication-library]
+verify_jwt = true
+
 [functions.send-sms]
 verify_jwt = true
 

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Calendar, FileText, Settings, MessageSquare, BarChart2, UserCog, Activity, LogOut, Headset, Bot, ClipboardList, ListChecks } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, FileText, Settings, MessageSquare, BarChart2, UserCog, Activity, LogOut, Headset, Bot, ClipboardList, ListChecks, PillBottle } from 'lucide-react';
 import type { PageType } from '../types';
 import { ROLE_PAGES } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,6 +15,7 @@ const ALL_NAV: { id: PageType; label: string; icon: React.ElementType; group: 'p
   { id: 'fila-prioridade', label: 'Fila Prioridade',  icon: ListChecks,      group: 'clinico' },
   { id: 'registro',      label: 'Registro',          icon: ClipboardList,   group: 'clinico' },
   { id: 'laudos',        label: 'Laudos',            icon: FileText,        group: 'clinico' },
+  { id: 'biblioteca-farmacologica', label: 'Biblioteca Farmacológica', icon: PillBottle, group: 'clinico' },
   { id: 'comunicacao',   label: 'Comunicação',       icon: Headset,         group: 'clinico' },
   { id: 'mensagens',     label: 'Mensagens',         icon: MessageSquare,   group: 'clinico' },
   { id: 'relatorios',    label: 'Relatórios',        icon: BarChart2,       group: 'clinico' },

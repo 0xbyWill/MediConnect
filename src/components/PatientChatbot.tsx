@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, ComponentType, FormEvent, KeyboardEvent, ReactNode } from 'react';
+import type { ChangeEvent, ComponentType, FormEvent, KeyboardEvent } from 'react';
 import {
   AlertTriangle,
   ArrowUp,
@@ -17,6 +17,7 @@ import {
   UserCog,
   X,
 } from 'lucide-react';
+import AiRichText from './AiRichText';
 import type { Agendamento, ChatbotMessage, Laudo, Paciente, PageType } from '../types';
 import { messagesApi, type ApiDoctor } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -137,53 +138,6 @@ function createMessage(sender: ChatbotMessage['sender'], text: string, kind?: Ch
     kind,
     createdAt: nowISO(),
   };
-}
-
-// Renderizador leve de markdown (negrito + listas) — sem dependências externas
-// e sem dangerouslySetInnerHTML, para manter a segurança.
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
-    const bold = part.match(/^\*\*([^*]+)\*\*$/);
-    if (bold) return <strong key={`${keyPrefix}-b-${index}`}>{bold[1]}</strong>;
-    return <span key={`${keyPrefix}-t-${index}`}>{part}</span>;
-  });
-}
-
-function renderRichText(text: string, idPrefix: string): ReactNode {
-  const lines = text.split('\n');
-  const blocks: ReactNode[] = [];
-  let listItems: string[] = [];
-
-  const flushList = () => {
-    if (listItems.length === 0) return;
-    const items = [...listItems];
-    blocks.push(
-      <ul key={`${idPrefix}-ul-${blocks.length}`} className="patient-chatbot-list">
-        {items.map((item, index) => (
-          <li key={`${idPrefix}-li-${blocks.length}-${index}`}>{renderInline(item, `${idPrefix}-li-${blocks.length}-${index}`)}</li>
-        ))}
-      </ul>,
-    );
-    listItems = [];
-  };
-
-  lines.forEach((rawLine, index) => {
-    const line = rawLine.trimEnd();
-    const bulletMatch = line.match(/^\s*[-*•]\s+(.*)$/);
-    if (bulletMatch) {
-      listItems.push(bulletMatch[1]);
-      return;
-    }
-    flushList();
-    if (line.trim()) {
-      blocks.push(
-        <p key={`${idPrefix}-p-${index}`}>{renderInline(line, `${idPrefix}-p-${index}`)}</p>,
-      );
-    }
-  });
-  flushList();
-
-  return blocks.length ? blocks : <p>{text}</p>;
 }
 
 export default function PatientChatbot({
@@ -572,7 +526,7 @@ export default function PatientChatbot({
                           {kindMeta.label}
                         </span>
                       )}
-                      <div className="pcb-bubble-text">{renderRichText(message.text, message.id)}</div>
+                      <div className="pcb-bubble-text"><AiRichText text={message.text} idPrefix={message.id} /></div>
                     </div>
                   </div>
                 );

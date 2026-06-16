@@ -4,4 +4,24 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      '/api/anvisa': {
+        target: 'https://consultas.anvisa.gov.br',
+        changeOrigin: true,
+        secure: true,
+        rewrite: path => path.replace(/^\/api\/anvisa/, ''),
+      },
+    },
+  },
+  preview: {
+    proxy: {
+      '/api/anvisa': {
+        target: 'https://consultas.anvisa.gov.br',
+        changeOrigin: true,
+        secure: true,
+        rewrite: path => path.replace(/^\/api\/anvisa/, ''),
+      },
+    },
+  },
 })

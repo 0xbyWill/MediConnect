@@ -62,5 +62,13 @@ export const CHATBOT_RESPONSE_QUALITY_RULES = [
   'Se não souber, oriente o melhor próximo passo: especialista, consulta, exame ou secretaria.',
 ].join(' ');
 
+/** Formato de texto para respostas exibidas na interface (sem Markdown cru). */
+export const AI_PROFESSIONAL_TEXT_RULES = [
+  'Escreva em português do Brasil, tom profissional, objetivo e claro.',
+  'Não use sintaxe Markdown (**, ##, ###, listas com *).',
+  'Use parágrafos curtos; para enumerar, uma linha por item iniciando com hífen (- item).',
+  'Destaque termos importantes com linguagem natural, sem asteriscos ou símbolos de formatação.',
+].join(' ');
+
 export const CHATBOT_HEALTH_EDUCATION_HINT =
   'Posso explicar termos médicos de forma geral, orientar sobre preparo para consultas e exames, e ajudar a entender como funciona o cuidado — mas não substituo uma consulta médica. Para decisões sobre o seu caso, fale com seu médico ou agende uma consulta.';
