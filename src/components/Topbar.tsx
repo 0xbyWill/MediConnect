@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   ListChecks,
   MessageSquare,
+  PillBottle,
   Settings,
   Trash2,
   UserCog,
@@ -46,6 +47,7 @@ const pageLabels: Record<PageType, string> = {
   usuarios: 'Usuários',
   metricas: 'Métricas',
   ia: 'Assistente IA',
+  'biblioteca-farmacologica': 'Biblioteca Farmacológica',
   configuracoes: 'Configurações',
 };
 
@@ -62,6 +64,7 @@ const pageIcons: Record<PageType, React.ElementType> = {
   usuarios: UserCog,
   metricas: Activity,
   ia: Bot,
+  'biblioteca-farmacologica': PillBottle,
   configuracoes: Settings,
 };
 

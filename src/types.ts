@@ -153,6 +153,92 @@ export interface AiStructuredResponse {
   rawText?: string;
 }
 
+// ─── Biblioteca Farmacológica ─────────────────────────────────────────────────
+export type MedicationInteractionSeverity = 'grave' | 'moderada' | 'leve';
+
+export type MedicationDosagePopulation = 'adultos' | 'pediatrico' | 'idosos' | 'gestantes';
+
+export interface MedicationDosage {
+  population: MedicationDosagePopulation;
+  usualDose: string;
+  frequency: string;
+  maxDose: string;
+  notes?: string;
+}
+
+export interface MedicationContraindication {
+  absolute: string[];
+  relative: string[];
+  warnings: string[];
+}
+
+export interface MedicationInteraction {
+  id: string;
+  medicationAId: string;
+  medicationBId: string;
+  medicationAName: string;
+  medicationBName: string;
+  severity: MedicationInteractionSeverity;
+  description: string;
+  clinicalManagement?: string;
+}
+
+export interface MedicationSearchResult {
+  id: string;
+  name: string;
+  activeIngredient: string;
+  commercialNames?: string[];
+  therapeuticClass?: string;
+  category?: string;
+  source?: MedicationDataProvider['id'];
+  externalId?: string;
+}
+
+export interface Medication {
+  id: string;
+  name: string;
+  activeIngredient: string;
+  commercialNames: string[];
+  therapeuticClass: string;
+  category: string;
+  presentations: string[];
+  manufacturers?: string[];
+  summary: string;
+  dosages: MedicationDosage[];
+  contraindications: MedicationContraindication;
+  interactions: MedicationInteraction[];
+  source?: 'local' | 'anvisa' | 'openfda' | 'bulário' | 'whitebook';
+  externalId?: string;
+  bulaPatientUrl?: string;
+  bulaProfessionalUrl?: string;
+}
+
+export interface MedicationSearchHistoryItem {
+  id: string;
+  name: string;
+  activeIngredient: string;
+  searchedAt: string;
+}
+
+export interface MedicationPharmacologyAiRequest {
+  medicationName: string;
+  activeIngredient: string;
+  question: string;
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+}
+
+export interface MedicationPharmacologyAiResponse {
+  answer: string;
+}
+
+/** Contrato para futuros provedores externos (ANVISA, OpenFDA, Bulário, Whitebook). */
+export interface MedicationDataProvider {
+  id: 'anvisa' | 'openfda' | 'bulário' | 'whitebook' | 'local';
+  search(query: string): Promise<MedicationSearchResult[]>;
+  getById(id: string): Promise<Medication | null>;
+  checkInteractions?(medicationIds: string[]): Promise<MedicationInteraction[]>;
+}
+
 export type PatientPriorityLevel = 'P1' | 'P2' | 'P3' | 'P4' | 'P5';
 
 export type PatientMobilityInput =

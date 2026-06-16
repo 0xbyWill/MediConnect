@@ -43,6 +43,7 @@ const Relatorios = lazy(() => import('./pages/Relatorios'));
 const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Metricas = lazy(() => import('./pages/Metricas'));
 const AssistenteIA = lazy(() => import('./pages/AssistenteIA'));
+const BibliotecaFarmacologica = lazy(() => import('./pages/BibliotecaFarmacologica'));
 
 const onlyActiveAppointments = (appointments: ApiAppointment[]) =>
   appointments.filter(appointment => appointment.status !== 'cancelled');
@@ -800,6 +801,7 @@ export default function App() {
             <Metricas pacientes={pacientes} agendamentos={agendamentos} laudos={laudos}/>
           )}
           {currentPage === 'ia' && allowedPages.includes('ia') && <AssistenteIA/>}
+          {currentPage === 'biblioteca-farmacologica' && allowedPages.includes('biblioteca-farmacologica') && <BibliotecaFarmacologica/>}
           {currentPage === 'configuracoes' && allowedPages.includes('configuracoes') && <Configuracoes/>}
           </Suspense>
             </>

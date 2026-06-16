@@ -24,7 +24,7 @@ import {
   executePatientTool,
   type PatientAssistantContext,
 } from './patientAssistantTools';
-import { HEALTH_KNOWLEDGE_PROMPT, CHATBOT_RESPONSE_QUALITY_RULES } from '../shared/constants/healthKnowledge';
+import { HEALTH_KNOWLEDGE_PROMPT, CHATBOT_RESPONSE_QUALITY_RULES, AI_PROFESSIONAL_TEXT_RULES } from '../shared/constants/healthKnowledge';
 
 export interface PatientAssistantHistoryItem {
   sender: 'bot' | 'patient' | 'system';
@@ -73,6 +73,7 @@ function buildSystemPrompt(ctx: PatientAssistantContext, healthConcern?: Patient
     '',
     'REGRAS OBRIGATÓRIAS:',
     `- ${CHATBOT_RESPONSE_QUALITY_RULES}`,
+    `- ${AI_PROFESSIONAL_TEXT_RULES}`,
     '- Responda SEMPRE à mensagem do paciente. Nunca recuse por achar que está fora do escopo — tente ajudar de forma útil.',
     '- PROIBIDO: respostas genéricas, listas de capacidades ("posso ajudar com...") ou encerrar sem orientação concreta.',
     '- Responda sempre em português do Brasil, com tom acolhedor, claro e profissional.',

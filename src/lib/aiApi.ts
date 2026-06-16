@@ -1,6 +1,6 @@
 import { request } from './httpClient';
-import type { ManagerSearchAssistantRequest, ManagerSearchAssistantResponse, QueueCandidate } from '../types';
-import { HEALTH_KNOWLEDGE_PROMPT, CHATBOT_RESPONSE_QUALITY_RULES } from '../shared/constants/healthKnowledge';
+import type { ManagerSearchAssistantRequest, ManagerSearchAssistantResponse, QueueCandidate, MedicationPharmacologyAiRequest, MedicationPharmacologyAiResponse } from '../types';
+import { HEALTH_KNOWLEDGE_PROMPT, CHATBOT_RESPONSE_QUALITY_RULES, AI_PROFESSIONAL_TEXT_RULES } from '../shared/constants/healthKnowledge';
 
 export type AiTone = 'professional' | 'friendly' | 'simple';
 export type AiMessageType = 'welcome' | 'warning' | 'support_initial' | 'payment_reminder' | 'custom';
@@ -136,6 +136,7 @@ export function buildManagerAssistantSystemPrompt(behaviorInstructions?: string)
   return [
     'Você é o Assistente IA Gerencial do MediConnect para perfis de gestão.',
     'Responda sempre em português do Brasil, de forma objetiva, clara e profissional.',
+    AI_PROFESSIONAL_TEXT_RULES,
     'Você recebe um snapshot completo dos dados que o gestor já pode ver no sistema (pacientes, consultas, laudos, médicos, usuários).',
     'Analise, cruze, filtre, resuma, compare, detalhe registros e responda perguntas complexas usando somente esse contexto.',
     'Pode descrever laudos, diagnósticos, conclusões, contatos, endereços, indicadores e pendências administrativas.',
@@ -276,6 +277,7 @@ async function askPatientSupportDirect(data: PatientChatbotAiRequest): Promise<P
   const system = [
     'Você é a Panaceia, assistente virtual inteligente do MediConnect para pacientes.',
     CHATBOT_RESPONSE_QUALITY_RULES,
+    AI_PROFESSIONAL_TEXT_RULES,
     'Responda SEMPRE à mensagem do paciente. Nunca recuse por achar que está fora do escopo — tente ajudar de forma útil.',
     'PROIBIDO: respostas genéricas, listas de capacidades ("posso ajudar com...") ou encerrar sem orientação concreta.',
     'Responda sempre em português do Brasil, com tom acolhedor, claro e profissional.',
@@ -511,6 +513,47 @@ export const managerSearchAssistantApi = {
       }
       return askManagerAssistantDirect(data);
     }
+  },
+};
+
+async function askMedicationPharmacologyDirect(data: MedicationPharmacologyAiRequest): Promise<MedicationPharmacologyAiResponse> {
+  const history = (data.history ?? [])
+    .slice(-8)
+    .map(item => `${item.role === 'user' ? 'Médico' : 'Assistente'}: ${item.text}`)
+    .join('\n');
+  const system = [
+    'Você é um assistente farmacológico informativo do MediConnect para médicos.',
+    'Responda sempre em português do Brasil, de forma objetiva, clara e baseada em evidências gerais.',
+    AI_PROFESSIONAL_TEXT_RULES,
+    'PROIBIDO: prescrever, recomendar tratamento, indicar dose individualizada ou substituir julgamento clínico.',
+    'Permitido: explicar mecanismos, cuidados em populações especiais, observações farmacológicas e alertas educativos.',
+    'Se a pergunta solicitar prescrição, recuse educadamente e ofereça informação farmacológica geral.',
+    'Reforce que a decisão clínica cabe ao médico assistente.',
+  ].join('\n');
+  const userText = [
+    `Medicamento: ${data.medicationName}`,
+    `Princípio ativo: ${data.activeIngredient}`,
+    history ? `Histórico recente:\n${history}` : '',
+    `Pergunta do médico:\n${data.question}`,
+  ].filter(Boolean).join('\n\n');
+
+  return { answer: await askDevGemini(system, userText, 1400, 0.3) };
+}
+
+export const medicationPharmacologyAiApi = {
+  ask: async (data: MedicationPharmacologyAiRequest): Promise<MedicationPharmacologyAiResponse> => {
+    if (isDirectAiMode()) {
+      try {
+        return await askMedicationPharmacologyDirect(data);
+      } catch (directErr) {
+        if (!canUseGeminiFallback()) throw directErr;
+      }
+    }
+
+    if (!canUseGeminiFallback()) {
+      throw new AIError('Assistente farmacológico indisponível neste ambiente.');
+    }
+    return askMedicationPharmacologyDirect(data);
   },
 };
 

@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, ElementType, FormEvent, ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, ElementType, FormEvent } from 'react';
+import AiRichText, { renderAiInlineMarkdown } from '../components/AiRichText';
 import {
   BarChart3,
   Bot,
@@ -646,16 +647,6 @@ function AssistantLoadingBubble() {
   );
 }
 
-// Renderiza markdown inline simples (apenas **negrito**) para que os
-// marcadores não vazem como texto cru nas respostas da IA.
-function renderInlineMarkdown(text: string): ReactNode {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
-    const bold = /^\*\*([^*]+)\*\*$/.exec(part);
-    if (bold) return <strong key={index}>{bold[1]}</strong>;
-    return <Fragment key={index}>{part}</Fragment>;
-  });
-}
-
 function StructuredResponseView({ message }: { message: AssistantMessage }) {
   const { structured } = message;
   const hasLists = Boolean(
@@ -668,14 +659,14 @@ function StructuredResponseView({ message }: { message: AssistantMessage }) {
   const showSummaryCard = shouldIncludeSummary(message.prompt) || hasLists;
 
   if (!showSummaryCard) {
-    return <p style={{ ...bodyTextStyle, margin: 0, whiteSpace: 'pre-wrap' }}>{renderInlineMarkdown(structured.summary)}</p>;
+    return <AiRichText text={structured.summary} idPrefix={`summary-${message.id}`} style={bodyTextStyle} />;
   }
 
   return (
     <article style={{ display: 'grid', gap: 12 }}>
       <div style={{ border: '1px solid var(--gray-100)', borderRadius: 10, padding: 14, background: 'var(--gray-50)' }}>
         <div style={blockTitleStyle}>Resumo</div>
-        <p style={bodyTextStyle}>{renderInlineMarkdown(structured.summary)}</p>
+        <AiRichText text={structured.summary} idPrefix={`summary-${message.id}`} style={bodyTextStyle} />
       </div>
       <ListBlock title="Indicadores" items={structured.indicators} />
       <ListBlock title="Tendências" items={structured.insights} />
@@ -704,7 +695,7 @@ function ListBlock({ title, items, tone }: { title: string; items?: string[]; to
     <div style={{ border: `1px solid ${tone === 'warning' ? 'var(--amber-100)' : 'var(--gray-100)'}`, borderRadius: 10, padding: 14, background: tone === 'warning' ? '#fffbeb' : '#fff' }}>
       <div style={blockTitleStyle}>{title}</div>
       <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
-        {items.map(item => <li key={item} style={bodyTextStyle}>{renderInlineMarkdown(item)}</li>)}
+        {items.map(item => <li key={item} style={bodyTextStyle}>{renderAiInlineMarkdown(item, item)}</li>)}
       </ul>
     </div>
   );
