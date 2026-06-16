@@ -249,22 +249,11 @@ function formatRelativeDateLabel(date: string) {
   return `${weekday} · ${dayMonth}`;
 }
 
-function statusToLabel(status: Agendamento['status']) {
-  const map: Record<Agendamento['status'], string> = {
-    pendente: 'Pendente',
-    confirmado: 'Confirmada',
-    cancelado: 'Cancelada',
-    realizado: 'Realizada',
-  };
-  return map[status];
-}
-
 function PatientSchedulingExperience({
   agendamentos,
   pacientes,
   doctors,
   onAdd,
-  onConfirm,
   userName,
   userId,
   userPatientId,
@@ -273,7 +262,6 @@ function PatientSchedulingExperience({
   pacientes: Paciente[];
   doctors: ApiDoctor[];
   onAdd: (a: Omit<Agendamento, 'id'>) => Promise<void>;
-  onConfirm?: (id: string) => Promise<void>;
   userName: string;
   userId: string;
   userPatientId?: string;
@@ -298,7 +286,6 @@ function PatientSchedulingExperience({
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savingAppointment, setSavingAppointment] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -317,11 +304,20 @@ function PatientSchedulingExperience({
     setSpecialtiesLoading(true);
     setError('');
 
-    void doctorsApi
-      .listForScheduling()
-      .then(rows => {
+    void Promise.all([
+      doctorsApi.listForScheduling(),
+      availabilityApi.list({ active: true }),
+    ])
+      .then(([rows, availabilities]) => {
         if (cancelled) return;
-        const activeRows = rows.filter(doctor => doctor.active !== false);
+        const doctorsWithAvailability = new Set(
+          availabilities
+            .filter(item => item.active !== false)
+            .map(item => item.doctor_id)
+        );
+        const activeRows = rows.filter(
+          doctor => doctor.active !== false && doctorsWithAvailability.has(doctor.id)
+        );
         const counter = new Map<string, { label: string; count: number }>();
         for (const doctor of activeRows) {
           const specialty = doctor.specialty?.trim() || 'Clínica geral';
@@ -521,7 +517,6 @@ function PatientSchedulingExperience({
         specialty: doctor?.specialty ? formatSpecialty(doctor.specialty) : 'Especialidade não informada',
         doctorName: doctor?.full_name || 'Médico não informado',
         dateLabel: formatDateAndTimeBR(appt.data, normalizeTime(appt.hora)),
-        statusLabel: statusToLabel(appt.status),
       };
     });
 
@@ -554,21 +549,6 @@ function PatientSchedulingExperience({
       setSavingAppointment(false);
     }
   }, [handleSelectSpecialty, onAdd, ownPatientId, selectedDate, selectedDoctorId, selectedSlot, selectedSpecialty]);
-
-  const handleConfirmMyAppointment = useCallback(async (appointmentId: string) => {
-    if (!onConfirm || confirmingId) return;
-    setConfirmingId(appointmentId);
-    setError('');
-    setSuccessMessage('');
-    try {
-      await onConfirm(appointmentId);
-      setSuccessMessage('Consulta confirmada com sucesso.');
-    } catch (err) {
-      setError(toUserFacingErrorMessage(err, 'Erro ao confirmar consulta. Tente novamente.'));
-    } finally {
-      setConfirmingId(null);
-    }
-  }, [confirmingId, onConfirm]);
 
   const selectedDateLabel = selectedDate ? formatDateBR(selectedDate) : '';
   const selectedDoctorName = selectedDoctor?.doctorName ?? 'Médico';
@@ -716,11 +696,7 @@ function PatientSchedulingExperience({
         )}
 
         <div id="patient-my-appointments">
-          <MyAppointments
-            appointments={myUpcomingAppointments}
-            onConfirm={onConfirm ? handleConfirmMyAppointment : undefined}
-            confirmingId={confirmingId}
-          />
+          <MyAppointments appointments={myUpcomingAppointments} />
         </div>
       </div>
 
@@ -1437,7 +1413,6 @@ export default function Agenda({ agendamentos, pacientes, doctors = [], onAdd, o
         pacientes={pacientes}
         doctors={doctors}
         onAdd={onAdd}
-        onConfirm={onConfirm}
         userName={user?.full_name || 'Paciente'}
         userId={user?.id || ''}
         userPatientId={user?.patient_id}
