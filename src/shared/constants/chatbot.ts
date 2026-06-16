@@ -1,12 +1,12 @@
 import type { ChatbotIntent, ChatbotOption } from '../../types';
 
 export const CHATBOT_INITIAL_MESSAGE =
-  'Olá! Eu sou a Panaceia, sua assistente do MediConnect. Posso consultar seus dados reais e responder, por exemplo: "Tenho consultas marcadas?", "Tenho algum laudo liberado?" ou "Qual meu telefone cadastrado?". Como posso ajudar?';
+  'Olá! Eu sou a Panaceia, sua assistente do MediConnect. Posso consultar seus dados reais, explicar termos médicos de forma geral, orientar sobre preparo de exames e ajudar com consultas, laudos e cadastro. Por exemplo: "Tenho consultas marcadas?", "O que significa hemograma?" ou "Como me preparo para exame de sangue?". Como posso ajudar?';
 
 export const CHATBOT_RESOLUTION_PROMPT = 'Isso resolveu sua dúvida?';
 
 export const CHATBOT_MEDICAL_BLOCK_MESSAGE =
-  'Não posso orientar sobre diagnóstico, sintomas, medicações ou tratamento. Para esse tipo de dúvida, entre em contato com a equipe médica ou agende uma consulta.';
+  'Não posso orientar sobre diagnóstico, sintomas pessoais, medicações ou tratamento do seu caso. Para isso, entre em contato com a equipe médica ou agende uma consulta. Posso ajudar com informações gerais sobre saúde, preparo de exames e uso do sistema.';
 
 export const CHATBOT_EMERGENCY_MESSAGE =
   'Se for uma emergência, procure atendimento médico imediato ou ligue para o serviço de emergência da sua região.';
@@ -61,27 +61,6 @@ export const CHATBOT_RESPONSES: Record<ChatbotIntent, string> = CHATBOT_OPTIONS.
   (acc, option) => ({ ...acc, [option.id]: option.response }),
   {} as Record<ChatbotIntent, string>
 );
-
-export const CHATBOT_MEDICAL_KEYWORDS = [
-  'diagnóstico',
-  'diagnostico',
-  'sintoma',
-  'sintomas',
-  'medicação',
-  'medicacao',
-  'remédio',
-  'remedio',
-  'tratamento',
-  'dose',
-  'dor',
-  'febre',
-  'exame alterado',
-  'resultado do exame',
-  'interpretar',
-  'laudo significa',
-  'prescrição',
-  'prescricao',
-];
 
 export const CHATBOT_EMERGENCY_KEYWORDS = [
   'emergência',
