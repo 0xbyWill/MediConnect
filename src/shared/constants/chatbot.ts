@@ -1,12 +1,15 @@
 import type { ChatbotIntent, ChatbotOption } from '../../types';
 
 export const CHATBOT_INITIAL_MESSAGE =
-  'Olá! Eu sou a Panaceia, sua assistente do MediConnect. Posso consultar seus dados reais, explicar termos médicos de forma geral, orientar sobre preparo de exames e ajudar com consultas, laudos e cadastro. Por exemplo: "Tenho consultas marcadas?", "O que significa hemograma?" ou "Como me preparo para exame de sangue?". Como posso ajudar?';
+  'Olá! Eu sou a Panaceia, sua assistente do MediConnect. Posso consultar seus dados reais, explicar termos médicos, orientar sobre sintomas (indicando especialista e consulta), preparo de exames e ajudar com consultas, laudos e cadastro. Por exemplo: "Tenho dor no peito, o que faço?", "O que significa hemograma?" ou "Tenho consultas marcadas?". Como posso ajudar?';
 
 export const CHATBOT_RESOLUTION_PROMPT = 'Isso resolveu sua dúvida?';
 
 export const CHATBOT_MEDICAL_BLOCK_MESSAGE =
   'Não posso orientar sobre diagnóstico, sintomas pessoais, medicações ou tratamento do seu caso. Para isso, entre em contato com a equipe médica ou agende uma consulta. Posso ajudar com informações gerais sobre saúde, preparo de exames e uso do sistema.';
+
+export const CHATBOT_AI_UNAVAILABLE_MESSAGE =
+  'Tive uma instabilidade ao processar sua mensagem. Se sua dúvida envolve saúde ou sintomas, recomendo procurar um **clínico geral** ou falar com a **secretaria** pelo atendimento direto para agendar uma consulta.';
 
 export const CHATBOT_EMERGENCY_MESSAGE =
   'Se for uma emergência, procure atendimento médico imediato ou ligue para o serviço de emergência da sua região.';
@@ -71,6 +74,9 @@ export const CHATBOT_EMERGENCY_KEYWORDS = [
   'desmaio',
   'falta de ar',
   'dor no peito',
+  'dor de peito',
+  'dor toracica',
+  'dor torácica',
   'sangramento',
   'acidente',
 ];

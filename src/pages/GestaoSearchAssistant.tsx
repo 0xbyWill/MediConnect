@@ -354,7 +354,7 @@ export default function GestaoSearchAssistant({ embedded = false }: { embedded?:
               <h2 style={{ ...sectionTitleStyle, marginBottom: 2 }}>Conversa gerencial</h2>
               <p style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 700 }}>
                 Período: {periodLabel}
-                {directAiMode ? ' · Modo direto (Gemini no navegador, sem Supabase Functions)' : ' · Configure VITE_GEMINI_API_KEY para modo direto'}
+                {directAiMode ? ' · Assistente ativo' : ' · Assistente indisponível'}
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

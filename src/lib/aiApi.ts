@@ -1,6 +1,6 @@
 import { request } from './httpClient';
 import type { ManagerSearchAssistantRequest, ManagerSearchAssistantResponse, QueueCandidate } from '../types';
-import { HEALTH_KNOWLEDGE_PROMPT } from '../shared/constants/healthKnowledge';
+import { HEALTH_KNOWLEDGE_PROMPT, CHATBOT_RESPONSE_QUALITY_RULES } from '../shared/constants/healthKnowledge';
 
 export type AiTone = 'professional' | 'friendly' | 'simple';
 export type AiMessageType = 'welcome' | 'warning' | 'support_initial' | 'payment_reminder' | 'custom';
@@ -83,6 +83,10 @@ export interface PatientChatbotAiRequest {
   message: string;
   patientName?: string;
   history?: Array<{ sender: 'bot' | 'patient' | 'system'; text: string }>;
+  healthConcern?: {
+    urgent?: boolean;
+    personal?: boolean;
+  };
 }
 
 export interface PatientChatbotAiResponse {
@@ -271,14 +275,23 @@ async function askPatientSupportDirect(data: PatientChatbotAiRequest): Promise<P
     .join('\n');
   const system = [
     'Você é a Panaceia, assistente virtual inteligente do MediConnect para pacientes.',
+    CHATBOT_RESPONSE_QUALITY_RULES,
+    'Responda SEMPRE à mensagem do paciente. Nunca recuse por achar que está fora do escopo — tente ajudar de forma útil.',
+    'PROIBIDO: respostas genéricas, listas de capacidades ("posso ajudar com...") ou encerrar sem orientação concreta.',
     'Responda sempre em português do Brasil, com tom acolhedor, claro e profissional.',
+    'Cite a queixa ou pergunta do paciente. Estrutura: acolhimento → informação específica → próximo passo (especialista, consulta, exame ou secretaria).',
+    'Se não souber ou não puder responder completamente, oriente o melhor caminho: profissional indicado, tipo de consulta/exame, urgência (PS/SAMU vs eletiva) e secretaria para agendar.',
     'Ajude com navegação do sistema, consultas, laudos, cadastro, secretaria e educação em saúde geral.',
+    'Quando perguntarem sobre doenças, condições ou conceitos médicos em nível geral (ex.: "o que é bronquite"), explique de forma educativa e acessível, reforçando que não substitui consulta médica.',
+    'Quando o paciente relatar sintomas pessoais (ex.: "tenho dor no peito"), NÃO recuse ajuda. Acolha, explique o contexto geral, indique especialista (ex.: cardiologista), sugira consulta e exames que o médico pode pedir — sem diagnosticar nem prescrever.',
+    data.healthConcern?.urgent
+      ? 'URGÊNCIA POSSÍVEL nesta mensagem: se os sintomas forem intensos ou súbitos, oriente pronto-socorro ou SAMU (192) antes das demais recomendações.'
+      : '',
     'Não confirme agendamentos, remarcações ou alterações cadastrais — oriente a secretaria.',
     'Não faça diagnóstico, prescrição nem interpretação clínica personalizada.',
-    'Se houver urgência, oriente atendimento médico imediato ou SAMU (192).',
     '',
     HEALTH_KNOWLEDGE_PROMPT,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   const userText = [
     `Paciente: ${data.patientName ?? 'paciente'}`,
     `Data atual em São Paulo: ${currentDate}`,
@@ -465,7 +478,7 @@ export const patientChatbotAiApi = {
         question: data.message,
       });
       return {
-        answer: answer.answer || 'Não consegui responder agora. A secretaria pode te ajudar pelo atendimento direto.',
+        answer: answer.answer || 'Não encontrei essa informação agora. Recomendo procurar um clínico geral ou falar com a secretaria pelo atendimento direto para agendar uma consulta.',
       };
     } catch (err) {
       if (!canUseGeminiFallback()) throw err;
@@ -492,7 +505,7 @@ export const managerSearchAssistantApi = {
     } catch (err) {
       if (!canUseGeminiFallback()) {
         throw new AIError(
-          'Configure VITE_GEMINI_API_KEY no .env para usar o assistente sem Edge Functions do Supabase.',
+          'Assistente indisponível neste ambiente. Solicite ao administrador a configuração do serviço de IA.',
           err,
         );
       }

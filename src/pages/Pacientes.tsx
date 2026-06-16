@@ -177,15 +177,6 @@ const NPS_PRIORITY_LABEL: Record<number, string> = {
   5: 'prioridade máxima',
 };
 
-const priorityCellStyle: React.CSSProperties = {
-  padding: '9px 10px',
-  borderTop: '1px solid var(--gray-50)',
-  fontSize: 12,
-  color: 'var(--gray-700)',
-  verticalAlign: 'top',
-  overflowWrap: 'anywhere',
-};
-
 // --- Tipos auxiliares ---------------------------------------------------------
 interface PacienteExtended extends Paciente {
   rg?: string;
@@ -449,7 +440,7 @@ function calculatePatientPriority(d: PacienteExtended) {
     total,
     level,
     priority: `NPS ${level} = ${NPS_PRIORITY_LABEL[level]}`,
-    canAttend: !cannotAttendReason && missing.length === 0,
+    canAttend: !cannotAttendReason,
     cannotAttendReason,
     missing,
     professionalAlert: hasCriticalAlert
@@ -572,7 +563,7 @@ function SectionHeader({ label, icon: Icon }: { label: string; icon?: React.Elem
   );
 }
 
-function PriorityBadge({ level, incomplete }: { level: number; incomplete: boolean }) {
+function PriorityBadge({ level }: { level: number }) {
   const colors: Record<number, { bg: string; color: string }> = {
     1: { bg: 'var(--gray-100)', color: 'var(--gray-600)' },
     2: { bg: '#ecfdf5', color: '#047857' },
@@ -582,7 +573,7 @@ function PriorityBadge({ level, incomplete }: { level: number; incomplete: boole
   };
   const tone = colors[level] ?? colors[1];
   return (
-    <span title={incomplete ? 'Classificação incompleta' : NPS_PRIORITY_LABEL[level]} style={{
+    <span title={NPS_PRIORITY_LABEL[level]} style={{
       display: 'inline-flex',
       alignItems: 'center',
       gap: 6,
@@ -595,7 +586,7 @@ function PriorityBadge({ level, incomplete }: { level: number; incomplete: boole
       whiteSpace: 'nowrap',
     }}>
       <Gauge size={13} />
-      NPS {level}{incomplete ? ' incompleto' : ''}
+      NPS {level}
     </span>
   );
 }
@@ -1101,7 +1092,7 @@ export default function Pacientes({
 
                     {/* Prioridade */}
                     <td style={{ padding: '18px 24px', fontSize: 14, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>
-                      <PriorityBadge level={priority.level} incomplete={priority.missing.length > 0} />
+                      <PriorityBadge level={priority.level} />
                     </td>
 
                     {/* Último atendimento */}
@@ -1428,7 +1419,7 @@ export default function Pacientes({
                   <div style={responsiveGrid(180)}>
                     <div style={{ padding: 14, borderRadius: 8, background: '#fff', border: '1px solid var(--gray-100)' }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase' }}>Nível calculado</div>
-                      <div style={{ marginTop: 8 }}><PriorityBadge level={priority.level} incomplete={priority.missing.length > 0} /></div>
+                      <div style={{ marginTop: 8 }}><PriorityBadge level={priority.level} /></div>
                     </div>
                     <div style={{ padding: 14, borderRadius: 8, background: '#fff', border: '1px solid var(--gray-100)' }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase' }}>Pontuação calculada</div>
@@ -1438,39 +1429,6 @@ export default function Pacientes({
                       <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-500)', textTransform: 'uppercase' }}>Pode ocupar vaga?</div>
                       <div style={{ fontSize: 14, fontWeight: 800, color: priority.canAttend ? 'var(--primary)' : 'var(--red-600)', marginTop: 8 }}>{priority.canAttend ? 'Sim' : 'Não'}</div>
                     </div>
-                  </div>
-
-                  <div style={{ padding: 12, borderRadius: 8, border: '1px solid var(--gray-100)', background: priority.canAttend ? 'var(--mint)' : 'var(--red-50)', fontSize: 12, color: priority.canAttend ? 'var(--dark)' : 'var(--red-600)', lineHeight: 1.6 }}>
-                    <strong>Justificativa curta:</strong> {priority.shortJustification}<br />
-                    {!priority.canAttend && <><strong>Motivo:</strong> {priority.cannotAttendReason || 'Dados essenciais ausentes.'}<br /></>}
-                    {priority.missing.length > 0 && <><strong>Dados faltantes:</strong> {priority.missing.join(', ')}<br /></>}
-                    {priority.professionalAlert && <><strong>Alerta:</strong> {priority.professionalAlert}</>}
-                  </div>
-
-                  <div style={{ overflow: 'auto', border: '1px solid var(--gray-100)', borderRadius: 8 }}>
-                    <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', background: '#fff' }}>
-                      <thead>
-                        <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                          {['posição_na_fila', 'paciente_id', 'idade', 'nps_nivel', 'pontuação_total', 'prioridade', 'pode_ocupar_vaga', 'motivo_se_não_puder', 'dados_faltantes', 'alerta_para_profissional'].map(header => (
-                            <th key={header} style={{ padding: '9px 10px', textAlign: 'left', fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{header}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td style={priorityCellStyle}>—</td>
-                          <td style={priorityCellStyle}>{d.id || 'novo'}</td>
-                          <td style={priorityCellStyle}>{priority.age ?? '—'}</td>
-                          <td style={priorityCellStyle}>NPS {priority.level}</td>
-                          <td style={priorityCellStyle}>{priority.total}</td>
-                          <td style={priorityCellStyle}>{priority.priority}</td>
-                          <td style={priorityCellStyle}>{priority.canAttend ? 'sim' : 'não'}</td>
-                          <td style={priorityCellStyle}>{priority.cannotAttendReason || '—'}</td>
-                          <td style={priorityCellStyle}>{priority.missing.join(', ') || '—'}</td>
-                          <td style={priorityCellStyle}>{priority.professionalAlert || '—'}</td>
-                        </tr>
-                      </tbody>
-                    </table>
                   </div>
                 </div>
               )}

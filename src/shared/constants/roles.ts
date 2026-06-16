@@ -18,6 +18,6 @@ export type PageType =
 export const ROLE_PAGES: Record<UserRole, PageType[]> = {
   medico: ['dashboard', 'pacientes', 'laudos', 'agenda', 'relatorios'],
   gestao: ['dashboard', 'pacientes', 'laudos', 'agenda', 'fila-prioridade', 'comunicacao', 'mensagens', 'relatorios', 'usuarios', 'metricas', 'ia', 'configuracoes'],
-  secretaria: ['dashboard', 'agenda', 'pacientes', 'comunicacao', 'mensagens'],
+  secretaria: ['dashboard', 'agenda', 'pacientes', 'fila-prioridade', 'comunicacao', 'mensagens'],
   paciente: ['dashboard', 'registro', 'agenda', 'laudos', 'mensagens'],
 };
