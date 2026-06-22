@@ -119,7 +119,7 @@ export default function Registro({ pacientes, agendamentos, laudos, doctors = []
       {patientIds.length === 0 ? (
         <EmptyState title="Registro indisponível" text="Não foi possível vincular sua conta a um paciente. Verifique seu cadastro com a unidade de saúde." />
       ) : registros.length === 0 ? (
-        <EmptyState title="Nenhum registro encontrado" text="Quando houver atendimentos anteriores ou laudos liberados, eles aparecerao aqui." />
+        <EmptyState title="Nenhum registro encontrado" text="Quando houver atendimentos anteriores ou laudos liberados, eles aparecerão aqui." />
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
           {registros.map(item => {

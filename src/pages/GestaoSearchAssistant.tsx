@@ -461,10 +461,10 @@ function AiBehaviorSettingsModal({
             <span style={assistantAvatarStyle}><Wrench size={15} /></span>
             <div>
               <h2 id="ai-behavior-title" style={{ ...sectionTitleStyle, marginBottom: 2 }}>Comportamento da IA</h2>
-              <p style={{ fontSize: 12, color: 'var(--gray-500)', margin: 0 }}>As preferencias ficam salvas neste navegador.</p>
+              <p style={{ fontSize: 12, color: 'var(--gray-500)', margin: 0 }}>As preferências ficam salvas neste navegador.</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fechar configuracoes" style={iconSmallButtonStyle}>
+          <button type="button" onClick={onClose} aria-label="Fechar configurações" style={iconSmallButtonStyle}>
             <X size={17} />
           </button>
         </header>
@@ -475,15 +475,15 @@ function AiBehaviorSettingsModal({
             <select id="ai-tone-setting" value={settings.tone} onChange={event => setField('tone', event.target.value as AiToneSetting)} style={inputStyle}>
               <option value="objetivo">Objetivo e direto</option>
               <option value="acolhedor">Acolhedor</option>
-              <option value="tecnico">Tecnico</option>
+              <option value="tecnico">Técnico</option>
             </select>
           </div>
 
           <div>
-            <label htmlFor="ai-length-setting" style={labelStyle}>Tamanho padrao</label>
+            <label htmlFor="ai-length-setting" style={labelStyle}>Tamanho padrão</label>
             <select id="ai-length-setting" value={settings.responseLength} onChange={event => setField('responseLength', event.target.value as AiLengthSetting)} style={inputStyle}>
               <option value="curta">Curta</option>
-              <option value="media">Media</option>
+              <option value="media">Média</option>
               <option value="detalhada">Detalhada</option>
             </select>
           </div>
@@ -496,20 +496,20 @@ function AiBehaviorSettingsModal({
               onChange={event => setField('allowProactiveInsights', event.target.checked)}
             />
             <span>
-              <strong style={{ display: 'block', color: 'var(--gray-800)', fontSize: 13 }}>Permitir sugestoes extras quando fizer sentido</strong>
-              <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>Mantem graficos e arquivos somente quando forem pedidos.</span>
+              <strong style={{ display: 'block', color: 'var(--gray-800)', fontSize: 13 }}>Permitir sugestões extras quando fizer sentido</strong>
+              <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>Mantém gráficos e arquivos somente quando forem pedidos.</span>
             </span>
           </label>
 
           <div>
-            <label htmlFor="ai-custom-instructions" style={labelStyle}>Instrucao personalizada</label>
+            <label htmlFor="ai-custom-instructions" style={labelStyle}>Instrução personalizada</label>
             <textarea
               id="ai-custom-instructions"
               value={settings.customInstructions}
               onChange={event => setField('customInstructions', event.target.value.slice(0, 900))}
               maxLength={900}
               rows={5}
-              placeholder="Ex.: responder sempre em bullets curtos; evitar termos tecnicos; priorizar acoes administrativas..."
+              placeholder="Ex.: responder sempre em bullets curtos; evitar termos técnicos; priorizar ações administrativas..."
               style={{ ...inputStyle, resize: 'vertical', minHeight: 110, fontFamily: 'Montserrat, sans-serif', lineHeight: 1.5 }}
             />
             <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>{settings.customInstructions.length}/900</p>
@@ -518,7 +518,7 @@ function AiBehaviorSettingsModal({
 
         <footer style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
           <button type="button" onClick={onReset} style={secondaryButtonStyle}>
-            <RotateCcw size={15} /> Restaurar padrao
+            <RotateCcw size={15} /> Restaurar padrão
           </button>
           <button type="button" onClick={onClose} style={primaryButtonStyle}>
             Salvar
@@ -870,20 +870,20 @@ function buildBehaviorInstructions(settings: AiBehaviorSettings) {
   const tone: Record<AiToneSetting, string> = {
     objetivo: 'Tom objetivo, direto e administrativo.',
     acolhedor: 'Tom acolhedor, claro e profissional.',
-    tecnico: 'Tom tecnico, preciso e profissional.',
+    tecnico: 'Tom técnico, preciso e profissional.',
   };
   const responseLength: Record<AiLengthSetting, string> = {
-    curta: 'Respostas curtas por padrao, com no maximo 4 frases ou bullets, salvo pedido contrario.',
-    media: 'Respostas medias por padrao, com contexto suficiente e sem alongar desnecessariamente.',
+    curta: 'Respostas curtas por padrão, com no máximo 4 frases ou bullets, salvo pedido contrário.',
+    media: 'Respostas médias por padrão, com contexto suficiente e sem alongar desnecessariamente.',
     detalhada: 'Respostas detalhadas quando a pergunta exigir, mantendo objetividade.',
   };
   return [
     tone[settings.tone],
     responseLength[settings.responseLength],
     settings.allowProactiveInsights
-      ? 'Pode incluir sugestoes, alertas ou proximos passos quando forem claramente uteis, mas nao inclua graficos ou arquivos sem pedido explicito.'
-      : 'Nao inclua sugestoes, recomendacoes, alertas ou proximos passos extras sem pedido explicito.',
-    settings.customInstructions.trim() ? `Instrucao adicional do gestor: ${settings.customInstructions.trim()}` : '',
+      ? 'Pode incluir sugestões, alertas ou próximos passos quando forem claramente úteis, mas não inclua gráficos ou arquivos sem pedido explícito.'
+      : 'Não inclua sugestões, recomendações, alertas ou próximos passos extras sem pedido explícito.',
+    settings.customInstructions.trim() ? `Instrução adicional do gestor: ${settings.customInstructions.trim()}` : '',
   ].filter(Boolean).join('\n');
 }
 

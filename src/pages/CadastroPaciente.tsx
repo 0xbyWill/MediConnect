@@ -64,7 +64,7 @@ function validate(form: FormState): FieldErrors {
   if (!isValidPhoneBR(form.phone_mobile)) errors.phone_mobile = 'Informe um telefone válido.';
   if (!form.password.trim()) errors.password = 'Informe uma senha.';
   if (form.password && form.password.length < 6) errors.password = 'A senha deve ter pelo menos 6 caracteres.';
-  if (form.password_confirm !== form.password) errors.password_confirm = 'As senhas nao conferem.';
+  if (form.password_confirm !== form.password) errors.password_confirm = 'As senhas não conferem.';
   if (!isValidISODate(form.birth_date)) {
     errors.birth_date = 'Informe uma data de nascimento válida.';
   } else if (form.birth_date > todayISO()) {
@@ -308,7 +308,7 @@ export default function CadastroPaciente({ onBackToLogin }: CadastroPacienteProp
 
         <aside className="patient-signup-hero" aria-label="Resumo da plataforma">
           <div className="patient-signup-copy">
-            <h2>Seu cuidado conectado em um so lugar</h2>
+            <h2>Seu cuidado conectado em um só lugar</h2>
             <p>Acompanhe consultas, atendimentos e informações clínicas com acesso seguro por e-mail.</p>
           </div>
         </aside>

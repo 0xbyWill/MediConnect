@@ -126,7 +126,7 @@ const feedbackStyle: React.CSSProperties = {
 function formatSaveError(err: unknown): string {
   const msg = err instanceof Error ? err.message : 'Erro ao salvar usuário.';
   const lower = msg.toLowerCase();
-  if (lower.includes('cpf:') || lower.includes('cpf ')) return 'Informe um CPF valido para este usuario.';
+  if (lower.includes('cpf:') || lower.includes('cpf ')) return 'Informe um CPF válido para este usuário.';
   if (lower.includes('department:') || lower.includes('department')) return 'Informe o departamento.';
   if (lower.includes('crm_uf:') || lower.includes('crm uf')) return 'Informe a UF do CRM.';
   if (lower.includes('crm:') || lower.includes(' crm')) return 'Informe o CRM.';
@@ -355,7 +355,7 @@ export default function Usuarios() {
     if (modal.mode === 'add' && !d.senha?.trim()) return 'Informe a senha inicial.';
     if (d.senha && d.senha.length < 6) return 'A senha deve ter pelo menos 6 caracteres.';
     if ((d.role === 'gestao' || d.role === 'secretaria' || d.role === 'medico') && !isValidCpf(d.cpf || '')) {
-      return 'Informe um CPF valido.';
+      return 'Informe um CPF válido.';
     }
     if (d.role === 'gestao' && digitsOnly(d.cpf).length !== 11) return 'Informe o CPF do gestor com 11 dígitos.';
     if (d.role === 'gestao' && !d.department?.trim()) return 'Informe o departamento do gestor.';

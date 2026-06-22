@@ -406,13 +406,13 @@ export default function App() {
     const smsPhone = normalizePhoneBRForSms(paciente?.telefone ?? '');
     if (paciente && smsPhone && medico) {
       const smsMessage = [
-        `Ola ${paciente.nome}.`,
+        `Olá ${paciente.nome}.`,
         '',
         `Sua consulta foi agendada com Dr. ${medico.full_name}.`,
         '',
-        `Especialidade: ${medico.specialty || 'Nao informada'}`,
+        `Especialidade: ${medico.specialty || 'Não informada'}`,
         `Data: ${formatDateBR(a.data)}`,
-        `Horario: ${a.hora}`,
+        `Horário: ${a.hora}`,
         '',
         'Equipe MediConnect.',
       ].join('\n');
@@ -427,7 +427,7 @@ export default function App() {
         const smsMessageError = smsErr instanceof Error ? smsErr.message : 'Erro ao enviar SMS.';
         const canSendSmsByRole = user.role === 'secretaria' || user.role === 'gestao';
         if (canSendSmsByRole) {
-          setApiError(`Consulta criada, mas o SMS nao foi enviado: ${smsMessageError}`);
+          setApiError(`Consulta criada, mas o SMS não foi enviado: ${smsMessageError}`);
         }
       }
     }

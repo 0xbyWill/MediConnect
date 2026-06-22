@@ -219,7 +219,7 @@ export default function Relatorios({ pacientes, agendamentos, laudos }: Relatori
     setGeneratingPdf(true);
     setPdfError('');
     try {
-      const titulo = isGestao ? 'Relatorio Gerencial' : 'Relatorio Medico';
+      const titulo = isGestao ? 'Relatório Gerencial' : 'Relatório Médico';
       await downloadHtmlAsPdf(buildReportHtml(), `${titulo} - ${PERIODOS[periodo].label} - ${end}.pdf`);
     } catch (err) {
       setPdfError(toUserFacingErrorMessage(err, 'Não foi possível gerar o PDF do relatório. Tente novamente.'));
