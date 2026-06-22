@@ -495,7 +495,7 @@ export default function Dashboard({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 22 }}>
             <div style={{ minWidth: 136, padding: '10px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.14)' }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.86)' }}>Proxima Consulta</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.86)' }}>Próxima Consulta</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{nextAppointmentTime}</div>
             </div>
             <div style={{ minWidth: 124, padding: '10px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.14)' }}>
@@ -645,7 +645,7 @@ export default function Dashboard({
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--dark)' }}>{r.text}</div>
                   <div style={{ fontSize: 12, color: 'var(--gray-700)', marginTop: 3 }}>{r.sub}</div>
-                  <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 5 }}>{i === 0 ? '5 min atras' : '15 min atras'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 5 }}>{i === 0 ? '5 min atrás' : '15 min atrás'}</div>
                 </div>
               </div>
             ))}

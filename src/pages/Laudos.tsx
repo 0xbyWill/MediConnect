@@ -636,7 +636,7 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
     const templateHtml = textToEditorHtml(text);
     const currentHtml = getEditorHtml();
     const hasContent = currentHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, '').trim().length > 0;
-    const shouldReplace = !hasContent || window.confirm('Substituir conteudo atual ou adicionar ao final?\n\nOK: substituir conteudo atual\nCancelar: adicionar ao final');
+    const shouldReplace = !hasContent || window.confirm('Substituir conteúdo atual ou adicionar ao final?\n\nOK: substituir conteúdo atual\nCancelar: adicionar ao final');
     const nextHtml = shouldReplace
       ? templateHtml
       : `${currentHtml}<p><br></p>${templateHtml}`;

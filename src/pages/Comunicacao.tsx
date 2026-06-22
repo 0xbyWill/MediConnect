@@ -151,12 +151,12 @@ function getProblemMessage(err: unknown) {
     return 'O serviço de SMS está temporariamente desabilitado no servidor.';
   }
   if (msg.includes('401') || msg.includes('403') || lower.includes('unauthorized') || lower.includes('forbidden')) {
-    return 'Sua sessao nao autorizou o envio. Entre novamente e tente outra vez.';
+    return 'Sua sessão não autorizou o envio. Entre novamente e tente outra vez.';
   }
   if (msg.includes('400') || lower.includes('phone') || lower.includes('telefone')) {
-    return 'Nao foi possivel enviar. Confira o telefone e a mensagem.';
+    return 'Não foi possível enviar. Confira o telefone e a mensagem.';
   }
-  return toUserFacingErrorMessage(err, 'Nao foi possivel enviar a mensagem agora. Tente novamente em instantes.');
+  return toUserFacingErrorMessage(err, 'Não foi possível enviar a mensagem agora. Tente novamente em instantes.');
 }
 
 function readSentAutomationKeys(): string[] {
@@ -308,14 +308,14 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
     const message = texto.trim();
     const smsPhone = normalizePhoneBRForSms(telefone);
 
-    if (!user) errors.pacienteId = 'Entre novamente para enviar comunicacoes.';
-    if (!canAccessCommunication) errors.pacienteId = 'Seu perfil nao tem permissao para enviar comunicacoes.';
+    if (!user) errors.pacienteId = 'Entre novamente para enviar comunicações.';
+    if (!canAccessCommunication) errors.pacienteId = 'Seu perfil não tem permissão para enviar comunicações.';
     if (!pacienteId) errors.pacienteId = 'Selecione um paciente.';
     if (canal === 'email' && paciente?.email && !isValidEmail(paciente.email)) errors.pacienteId = 'Paciente sem e-mail válido.';
     if (canal === 'email' && !paciente?.email) errors.pacienteId = 'Paciente sem e-mail cadastrado.';
     if ((canal === 'sms' || canal === 'whatsapp') && !smsPhone) errors.telefone = 'Informe o telefone com DDD.';
     if ((canal === 'sms' || canal === 'whatsapp') && smsPhone && !isValidPhoneBRForSms(smsPhone)) {
-      errors.telefone = 'Informe um telefone valido com DDD. Ex.: +5579999999999.';
+      errors.telefone = 'Informe um telefone válido com DDD. Ex.: +5579999999999.';
     }
     if (!message) errors.texto = 'Informe a mensagem.';
     if (message.length > MESSAGE_MAX_LENGTH) errors.texto = `A mensagem deve ter no máximo ${MESSAGE_MAX_LENGTH} caracteres.`;
@@ -440,7 +440,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
 
     if (automaticMessagesEnabled) {
       setAutomaticMessagesEnabled(false);
-      setSucesso('Mensagens automaticas desativadas.');
+      setSucesso('Mensagens automáticas desativadas.');
       window.setTimeout(() => setSucesso(''), 2500);
       return;
     }
@@ -453,7 +453,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
 
     if (targets.length === 0) {
       setAutomaticMessagesEnabled(true);
-      setSucesso('Mensagens automaticas ativadas. Nenhuma consulta de hoje aguardando confirmacao por WhatsApp.');
+      setSucesso('Mensagens automáticas ativadas. Nenhuma consulta de hoje aguardando confirmação por WhatsApp.');
       window.setTimeout(() => setSucesso(''), 3500);
       return;
     }
@@ -465,7 +465,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
     for (const { appt, patient } of targets) {
       if (!patient) continue;
       const phoneNumber = normalizePhoneBRForSms(patient.telefone);
-      const message = `Ola, ${patient.nome}. Sua consulta no MediConnect esta confirmada para hoje as ${appt.hora}. Responda SIM para confirmar.`;
+      const message = `Olá, ${patient.nome}. Sua consulta no MediConnect está confirmada para hoje às ${appt.hora}. Responda SIM para confirmar.`;
 
       if (!phoneNumber || !isValidPhoneBRForSms(phoneNumber)) {
         failed += 1;
@@ -506,10 +506,10 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
     setSendingAutomaticMessages(false);
 
     if (failed > 0) {
-      setErro(`${sent} confirmacao(oes) enviadas por WhatsApp. ${failed} falharam.`);
+      setErro(`${sent} confirmação(ões) enviadas por WhatsApp. ${failed} falharam.`);
       return;
     }
-    setSucesso(`${sent} confirmacao(oes) enviadas por WhatsApp para consultas de hoje.`);
+    setSucesso(`${sent} confirmação(ões) enviadas por WhatsApp para consultas de hoje.`);
     window.setTimeout(() => setSucesso(''), 3500);
   };
 
@@ -517,7 +517,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
     return (
       <div style={{ flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'auto', padding: 'clamp(14px, 3vw, 24px)' }}>
         <div role="alert" style={{ ...cardStyle, color: 'var(--red-600)', fontSize: 13, fontWeight: 700 }}>
-          Seu perfil nao tem permissao para acessar a area de Comunicacao.
+          Seu perfil não tem permissão para acessar a área de Comunicação.
         </div>
       </div>
     );
@@ -532,7 +532,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
             <button
               type="button"
               aria-pressed={automaticMessagesEnabled}
-              title={automaticMessagesEnabled ? 'Desativar confirmacoes automaticas por WhatsApp' : 'Ativar confirmacoes automaticas por WhatsApp'}
+              title={automaticMessagesEnabled ? 'Desativar confirmações automáticas por WhatsApp' : 'Ativar confirmações automáticas por WhatsApp'}
               onClick={() => void handleToggleAutomaticMessages()}
               disabled={sendingAutomaticMessages}
               style={{
@@ -552,7 +552,7 @@ export default function Comunicacao({ pacientes, agendamentos }: ComunicacaoProp
               }}
             >
               <Bot size={16} />
-              {sendingAutomaticMessages ? 'Enviando...' : automaticMessagesEnabled ? 'WPP automatico ativo' : 'WPP automatico off'}
+              {sendingAutomaticMessages ? 'Enviando...' : automaticMessagesEnabled ? 'WPP automático ativo' : 'WPP automático off'}
             </button>
           </div>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>

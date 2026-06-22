@@ -56,7 +56,7 @@ export function LaudoTemplatePicker({ onUseTemplate, compact = false }: LaudoTem
             id="laudo-template-search"
             value={search}
             onChange={event => setSearch(event.target.value)}
-            placeholder="Buscar titulo, CID, especialidade..."
+            placeholder="Buscar título, CID, especialidade..."
             style={inputStyle}
           />
         </div>

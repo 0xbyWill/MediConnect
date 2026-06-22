@@ -101,22 +101,22 @@ const MAIN_HEALTH_CONDITION_PRESETS = [
   'Sem condição relevante informada',
   'Condição crônica controlada',
   'Dor ou limitação funcional',
-  'Pos-operatorio recente',
-  'Acompanhamento frequente necessario',
+  'Pós-operatório recente',
+  'Acompanhamento frequente necessário',
   'Piora recente informada',
   'Risco de queda informado',
-  'Imunossupressao ou fragilidade informada',
-  'Gestante ou puerpera',
+  'Imunossupressão ou fragilidade informada',
+  'Gestante ou puérpera',
 ];
 
 const COMORBIDITY_PRESETS = [
   'Nenhuma comorbidade relevante informada',
-  'Hipertensao controlada',
+  'Hipertensão controlada',
   'Diabetes controlado',
-  'Doenca respiratoria cronica',
-  'Doenca cardiovascular',
-  'Multiplas comorbidades',
-  'Imunossupressao',
+  'Doença respiratória crônica',
+  'Doença cardiovascular',
+  'Múltiplas comorbidades',
+  'Imunossupressão',
   'Histórico de quedas',
 ];
 
@@ -160,12 +160,12 @@ const SPECIALTY_NEED_OPTIONS = [
 ];
 
 const CRITICAL_ALERT_PRESETS = [
-  'Sem alerta critico informado',
+  'Sem alerta crítico informado',
   'Risco de queda',
   'Piora recente',
   'Dor intensa persistente',
   'Limitação funcional importante',
-  'Necessita revisao humana antes do encaixe',
+  'Necessita revisão humana antes do encaixe',
   'Alerta para profissional responsável',
 ];
 
@@ -717,7 +717,7 @@ export default function Pacientes({
     if (showResponsável && !d.nomeResponsável?.trim()) e.nomeResponsável = 'Nome do responsável obrigatório.';
     if (showResponsável && !d.cpfResponsável?.trim()) e.cpfResponsável = 'CPF do responsável obrigatório.';
     if (d.cpfResponsável && !isValidCpf(d.cpfResponsável)) e.cpfResponsável = 'CPF do responsável inválido.';
-    if (d.email.trim() && !isValidEmail(d.email)) e.email = 'Informe um e-mail valido.';
+    if (d.email.trim() && !isValidEmail(d.email)) e.email = 'Informe um e-mail válido.';
     if (d.telefone.trim() && !isValidPhoneBR(d.telefone)) e.telefone = 'Informe um telefone com DDD.';
     if (d.telefone2 && !isValidPhoneBR(d.telefone2, false)) e.telefone2 = 'Informe um telefone com DDD.';
     if (d.telefone3 && !isValidPhoneBR(d.telefone3, false)) e.telefone3 = 'Informe um telefone com DDD.';
