@@ -472,8 +472,8 @@ const emptyForm: PacienteExtended = {
 };
 
 // --- Sub-componentes de campo -------------------------------------------------
-function FieldInput({ label, value, onChange, placeholder = '', type = 'text', required = false, disabled = false, error = '', min, max, step, inputMode, maxLength }: {
-  label: string; value: string; onChange: (v: string) => void;
+function FieldInput({ label, value, onChange, onBlur, placeholder = '', type = 'text', required = false, disabled = false, error = '', min, max, step, inputMode, maxLength }: {
+  label: string; value: string; onChange: (v: string) => void; onBlur?: () => void;
   placeholder?: string; type?: string; required?: boolean; disabled?: boolean; error?: string;
   min?: string; max?: string; step?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']; maxLength?: number;
 }) {
@@ -493,7 +493,7 @@ function FieldInput({ label, value, onChange, placeholder = '', type = 'text', r
         step={step}
         inputMode={inputMode}
         maxLength={maxLength}
-        onChange={e => onChange(e.target.value)} disabled={disabled}
+        onChange={e => onChange(e.target.value)} onBlur={onBlur} disabled={disabled}
         aria-invalid={Boolean(error)}
         aria-describedby={error ? errorId : undefined}
         style={{
@@ -693,6 +693,12 @@ export default function Pacientes({
   // -- Set field helper --
   const setField = useCallback(<K extends keyof PacienteExtended>(field: K, value: PacienteExtended[K]) => {
     setModal(m => ({ ...m, data: { ...m.data, [field]: value } }));
+    setErrors(prev => {
+      if (!prev[field as string]) return prev;
+      const next = { ...prev };
+      delete next[field as string];
+      return next;
+    });
   }, []);
 
   // -- Foto --
@@ -731,6 +737,18 @@ export default function Pacientes({
     if (!d.email.trim()) e.email = 'E-mail obrigatório.';
     if (!d.telefone.trim()) e.telefone = 'Telefone obrigatório.';
     return e;
+  };
+
+  // Revalida um unico campo (usado no onBlur) para dar feedback imediato.
+  const validateField = (field: keyof PacienteExtended) => {
+    const allErrors = validate(modal.data);
+    const key = field as string;
+    setErrors(prev => {
+      const next = { ...prev };
+      if (allErrors[key]) next[key] = allErrors[key];
+      else delete next[key];
+      return next;
+    });
   };
 
   // -- Salvar --
@@ -1259,11 +1277,11 @@ export default function Pacientes({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Identificação" icon={User} />
                   <div style={responsiveGrid(240)}>
-                    <FieldInput label="Nome Completo" value={d.nome} onChange={v => setField('nome', v)} required disabled={isView} error={errors.nome} placeholder="Ex: Maria Oliveira da Silva" />
+                    <FieldInput label="Nome Completo" value={d.nome} onChange={v => setField('nome', v)} onBlur={() => validateField('nome')} required disabled={isView} error={errors.nome} placeholder="Ex: Maria Oliveira da Silva" />
                     <FieldInput label="Nome Social" value={d.nomeSocial || ''} onChange={v => setField('nomeSocial', v)} disabled={isView} placeholder="Apelido ou nome social" />
                   </div>
                   <div style={responsiveGrid(220)}>
-                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', formatCpf(v))} required disabled={isView} error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                    <FieldInput label="CPF" value={d.cpf} onChange={v => setField('cpf', formatCpf(v))} onBlur={() => validateField('cpf')} required disabled={isView} error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                     <FieldInput label="RG" value={d.rg || ''} onChange={v => setField('rg', v)} disabled={isView} placeholder="00.000.000-0" />
                     <FieldSelect label="Tipo de documento" value={d.outroDocTipo || ''} onChange={v => setField('outroDocTipo', v)} options={TIPOS_DOC} disabled={isView} />
                     <FieldInput label="Número do documento" value={d.outroDocNumero || ''} onChange={v => setField('outroDocNumero', v)} disabled={isView} placeholder="Número" />
@@ -1284,7 +1302,7 @@ export default function Pacientes({
                         ))}
                       </div>
                     </div>
-                    <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} type="date" max={maxBirthDate} required disabled={isView} error={errors.dataNasc} />
+                    <FieldInput label="Data de Nascimento" value={d.dataNasc} onChange={v => setField('dataNasc', v)} onBlur={() => validateField('dataNasc')} type="date" max={maxBirthDate} required disabled={isView} error={errors.dataNasc} />
                   </div>
 
                   <div style={responsiveGrid(220)}>
@@ -1301,10 +1319,10 @@ export default function Pacientes({
 
                   <SectionHeader label="Contato" icon={Phone} />
                   <div style={responsiveGrid(240)}>
-                    <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} type="email" required disabled={isView} error={errors.email} placeholder="paciente@exemplo.com" />
-                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', formatPhoneBR(v))} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" inputMode="tel" maxLength={15} />
-                    <FieldInput label="Telefone fixo 1" value={d.telefone2 || ''} onChange={v => setField('telefone2', formatPhoneBR(v))} disabled={isView} error={errors.telefone2} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
-                    <FieldInput label="Telefone fixo 2" value={d.telefone3 || ''} onChange={v => setField('telefone3', formatPhoneBR(v))} disabled={isView} error={errors.telefone3} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
+                    <FieldInput label="E-mail" value={d.email} onChange={v => setField('email', v)} onBlur={() => validateField('email')} type="email" required disabled={isView} error={errors.email} placeholder="paciente@exemplo.com" />
+                    <FieldInput label="Celular / WhatsApp" value={d.telefone} onChange={v => setField('telefone', formatPhoneBR(v))} onBlur={() => validateField('telefone')} required disabled={isView} error={errors.telefone} placeholder="(79) 99000-0000" inputMode="tel" maxLength={15} />
+                    <FieldInput label="Telefone fixo 1" value={d.telefone2 || ''} onChange={v => setField('telefone2', formatPhoneBR(v))} onBlur={() => validateField('telefone2')} disabled={isView} error={errors.telefone2} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
+                    <FieldInput label="Telefone fixo 2" value={d.telefone3 || ''} onChange={v => setField('telefone3', formatPhoneBR(v))} onBlur={() => validateField('telefone3')} disabled={isView} error={errors.telefone3} placeholder="(79) 3000-0000" inputMode="tel" maxLength={15} />
                   </div>
 
                   {/* Toggles */}
@@ -1316,8 +1334,8 @@ export default function Pacientes({
                     <>
                       <SectionHeader label="Responsável" />
                       <div style={responsiveGrid(240)}>
-                        <FieldInput label="Nome do responsável" value={d.nomeResponsável || ''} onChange={v => setField('nomeResponsável', v)} required disabled={isView} error={errors.nomeResponsável} />
-                        <FieldInput label="CPF do responsável" value={d.cpfResponsável || ''} onChange={v => setField('cpfResponsável', formatCpf(v))} required disabled={isView} error={errors.cpfResponsável} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                        <FieldInput label="Nome do responsável" value={d.nomeResponsável || ''} onChange={v => setField('nomeResponsável', v)} onBlur={() => validateField('nomeResponsável')} required disabled={isView} error={errors.nomeResponsável} />
+                        <FieldInput label="CPF do responsável" value={d.cpfResponsável || ''} onChange={v => setField('cpfResponsável', formatCpf(v))} onBlur={() => validateField('cpfResponsável')} required disabled={isView} error={errors.cpfResponsável} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                       </div>
                     </>
                   )}
@@ -1336,7 +1354,7 @@ export default function Pacientes({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <SectionHeader label="Endereço" icon={MapPin} />
                   <div style={responsiveGrid(180)}>
-                    <FieldInput label="CEP" value={d.cep || ''} onChange={v => setField('cep', formatCep(v))} disabled={isView} error={errors.cep} placeholder="00000-000" inputMode="numeric" maxLength={9} />
+                    <FieldInput label="CEP" value={d.cep || ''} onChange={v => setField('cep', formatCep(v))} onBlur={() => validateField('cep')} disabled={isView} error={errors.cep} placeholder="00000-000" inputMode="numeric" maxLength={9} />
                     <FieldInput label="Logradouro / Endereço" value={d.logradouro || ''} onChange={v => setField('logradouro', v)} disabled={isView} placeholder="Rua, Avenida..." />
                   </div>
                   <div style={responsiveGrid(150)}>
@@ -1458,7 +1476,7 @@ export default function Pacientes({
                     <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'right', marginTop: 4 }}>{(d.observacoes || '').length} caracteres</div>
                   </div>
                   <div style={responsiveGrid(220)}>
-                    <FieldInput label="URL de redirecionamento" value={d.urlRedirecionamento || ''} onChange={v => setField('urlRedirecionamento', v)} type="url" disabled={isView} error={errors.urlRedirecionamento} placeholder="https://exemplo.com/retorno" />
+                    <FieldInput label="URL de redirecionamento" value={d.urlRedirecionamento || ''} onChange={v => setField('urlRedirecionamento', v)} onBlur={() => validateField('urlRedirecionamento')} type="url" disabled={isView} error={errors.urlRedirecionamento} placeholder="https://exemplo.com/retorno" />
                     <div style={{ display: 'flex', alignItems: 'end', paddingBottom: 8 }}>
                       <Toggle label="Paciente VIP" value={d.vip || false} onChange={v => !isView && setField('vip', v)} disabled={isView} />
                     </div>
