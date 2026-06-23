@@ -160,8 +160,14 @@ interface LaudosProps {
   doctors?: ApiDoctor[];
   onAdd: (l: Omit<Laudo & LaudoExtra, 'id'>) => void | Promise<void>;
   onUpdate: (l: Laudo & LaudoExtra) => void | Promise<void>;
-  onDelete: (id: string) => void | Promise<void>;
+  onDelete: (id: string, justification?: string) => void | Promise<void>;
   readOnly?: boolean;
+}
+
+const MIN_DELETE_JUSTIFICATION_LENGTH = 15;
+
+function isLaudoLiberado(l: Pick<Laudo, 'status'>) {
+  return l.status === 'liberado';
 }
 
 type ViewMode = 'lista' | 'editor' | 'preview';
@@ -234,6 +240,9 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
   const [editingLaudo, setEditingLaudo]     = useState<Partial<Laudo & LaudoExtra> & { id?: string }>({});
   const [isNew, setIsNew]                   = useState(false);
   const [confirmDelete, setConfirmDelete]   = useState<string | null>(null);
+  const [confirmDeleteReleased, setConfirmDeleteReleased] = useState<string | null>(null);
+  const [deleteJustification, setDeleteJustification] = useState('');
+  const [deleteJustificationError, setDeleteJustificationError] = useState('');
   const [confirmLiberar, setConfirmLiberar] = useState<string | null>(null);
   const [searchPac, setSearchPac]           = useState('');
   const [showPacList, setShowPacList]       = useState(false);
@@ -475,6 +484,10 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
   };
 
   const openEdit = (l: Laudo & LaudoExtra) => {
+    if (isLaudoLiberado(l)) {
+      openView(l);
+      return;
+    }
     setEditingLaudo({ ...l });
     setEditorContent(l.conteudoHtml || l.diagnostico || '');
     setIsNew(false);
@@ -649,8 +662,50 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
     setField('exame', template.title.toUpperCase());
   };
 
+  const closeReleasedDeleteModal = () => {
+    setConfirmDeleteReleased(null);
+    setDeleteJustification('');
+    setDeleteJustificationError('');
+  };
+
+  const handleDeleteDraft = async () => {
+    if (!confirmDelete || saving) return;
+    setSaving(true);
+    try {
+      await onDelete(confirmDelete);
+      setConfirmDelete(null);
+    } catch (err) {
+      setSaveError(toUserFacingErrorMessage(err, 'Erro ao excluir laudo. Tente novamente em instantes.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteReleased = async () => {
+    if (!confirmDeleteReleased || saving) return;
+    const justification = deleteJustification.trim();
+    if (justification.length < MIN_DELETE_JUSTIFICATION_LENGTH) {
+      setDeleteJustificationError(`Informe uma justificativa com pelo menos ${MIN_DELETE_JUSTIFICATION_LENGTH} caracteres.`);
+      return;
+    }
+    setSaving(true);
+    setDeleteJustificationError('');
+    try {
+      await onDelete(confirmDeleteReleased, justification);
+      closeReleasedDeleteModal();
+    } catch (err) {
+      setDeleteJustificationError(toUserFacingErrorMessage(err, 'Erro ao excluir laudo. Tente novamente em instantes.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async (novoStatus?: StatusLaudo) => {
     if (saving) return;
+    if (!isNew && isLaudoLiberado(editingLaudo as Laudo)) {
+      setSaveError('Laudo liberado não pode ser alterado.');
+      return;
+    }
     if (novoStatus === 'liberado' && !isMedico) {
       setSaveError('Apenas médico ou gestor pode liberar laudo para o paciente.');
       return;
@@ -1028,8 +1083,9 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', gap: 3 }}>
                       <TblBtn icon={Eye} color="var(--primary)" title="Visualizar laudo" onClick={() => openView(l)} />
-                      {isMedico && <TblBtn icon={Pencil} color="var(--amber-600)" title="Editar" onClick={() => openEdit(l)} />}
-                      {/* FIX: Removida a race condition — openEdit já define a view como editor; preview vai separado */}
+                      {isMedico && !isLaudoLiberado(l) && (
+                        <TblBtn icon={Pencil} color="var(--amber-600)" title="Editar" onClick={() => openEdit(l)} />
+                      )}
                       <TblBtn icon={Download} color="var(--primary)" title="Baixar PDF" onClick={() => { void downloadLaudoPdf(l); }} />
                       {l.status === 'rascunho' && isMedico && (
                         <TblBtn icon={Send} color="var(--primary)" title="Liberar laudo" onClick={() => setConfirmLiberar(l.id)} />
@@ -1037,7 +1093,12 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
                       {l.status === 'liberado' && (
                         <TblBtn icon={CheckCircle2} color="#7c3aed" title="Protocolo entregue" onClick={() => { }} />
                       )}
-                      {isMedico && <TblBtn icon={Trash2} color="var(--red-500)" title="Excluir" onClick={() => setConfirmDelete(l.id)} />}
+                      {isMedico && !isLaudoLiberado(l) && (
+                        <TblBtn icon={Trash2} color="var(--red-500)" title="Excluir" onClick={() => setConfirmDelete(l.id)} />
+                      )}
+                      {isMedico && isLaudoLiberado(l) && (
+                        <TblBtn icon={Trash2} color="var(--gray-400)" title="Excluir laudo liberado (exige justificativa)" onClick={() => setConfirmDeleteReleased(l.id)} />
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1076,7 +1137,7 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
         </Modal>
       )}
 
-      {/* Confirm Delete */}
+      {/* Confirm Delete (rascunho) */}
       {confirmDelete && (
         <Modal onClose={() => setConfirmDelete(null)}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
@@ -1085,8 +1146,54 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: 'var(--gray-800)' }}>Excluir laudo?</h3>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 20 }}>Esta ação é irreversível.</p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button onClick={() => setConfirmDelete(null)} style={btnSecStyle}>Cancelar</button>
-            <button onClick={() => { onDelete(confirmDelete); setConfirmDelete(null); }} style={{ ...btnPrimStyle, background: 'var(--red-500)' }}>Excluir</button>
+            <button onClick={() => setConfirmDelete(null)} disabled={saving} style={btnSecStyle}>Cancelar</button>
+            <button onClick={() => { void handleDeleteDraft(); }} disabled={saving} style={{ ...btnPrimStyle, background: saving ? 'var(--gray-300)' : 'var(--red-500)', cursor: saving ? 'not-allowed' : 'pointer' }}>
+              {saving ? 'Excluindo...' : 'Excluir'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirm Delete (liberado — exige justificativa) */}
+      {confirmDeleteReleased && (
+        <Modal onClose={closeReleasedDeleteModal}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+            <AlertCircle size={22} color="var(--red-500)" />
+          </div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: 'var(--gray-800)' }}>Excluir laudo liberado?</h3>
+          <p style={{ fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 16 }}>
+            Laudos liberados são registros clínicos. A exclusão exige justificativa e não pode ser desfeita.
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="laudo-delete-justification" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', marginBottom: 6 }}>
+              Justificativa <span style={{ color: 'var(--red-500)' }}>*</span>
+            </label>
+            <textarea
+              id="laudo-delete-justification"
+              value={deleteJustification}
+              onChange={event => {
+                setDeleteJustification(event.target.value.slice(0, 500));
+                if (deleteJustificationError) setDeleteJustificationError('');
+              }}
+              rows={4}
+              maxLength={500}
+              placeholder="Descreva o motivo clínico ou administrativo da exclusão..."
+              aria-invalid={Boolean(deleteJustificationError)}
+              aria-describedby={deleteJustificationError ? 'laudo-delete-justification-error' : undefined}
+              style={{ width: '100%', padding: '10px 12px', border: `1px solid ${deleteJustificationError ? 'var(--red-500)' : 'var(--gray-200)'}`, borderRadius: 8, fontSize: 13, resize: 'vertical', fontFamily: 'Montserrat, sans-serif', lineHeight: 1.5, boxSizing: 'border-box' }}
+            />
+            {deleteJustificationError && (
+              <p id="laudo-delete-justification-error" role="alert" style={{ fontSize: 11, color: 'var(--red-500)', marginTop: 6, fontWeight: 700 }}>
+                {deleteJustificationError}
+              </p>
+            )}
+            <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>{deleteJustification.trim().length}/500 · mínimo {MIN_DELETE_JUSTIFICATION_LENGTH} caracteres</p>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button onClick={closeReleasedDeleteModal} disabled={saving} style={btnSecStyle}>Cancelar</button>
+            <button onClick={() => { void handleDeleteReleased(); }} disabled={saving} style={{ ...btnPrimStyle, background: saving ? 'var(--gray-300)' : 'var(--red-500)', cursor: saving ? 'not-allowed' : 'pointer' }}>
+              {saving ? 'Excluindo...' : 'Excluir com justificativa'}
+            </button>
           </div>
         </Modal>
       )}
@@ -1196,6 +1303,7 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
   // VISÃO: EDITOR
   // ─────────────────────────────────────────────────────────────────────────────
   const pac = pacientes.find(p => p.id === editingLaudo.pacienteId);
+  const isEditorLocked = !isNew && isLaudoLiberado(editingLaudo as Laudo);
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--background)', overflow: 'hidden', minHeight: 0 }}>
@@ -1208,7 +1316,7 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
               <X size={15} />
             </button>
             <div>
-              <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>{isNew ? 'Novo Laudo' : 'Editar Laudo'}</h2>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--dark)', margin: 0 }}>{isNew ? 'Novo Laudo' : isEditorLocked ? 'Laudo liberado' : 'Editar Laudo'}</h2>
               <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>
                 Status: <span style={{ fontWeight: 700, color: editingLaudo.status === 'liberado' ? 'var(--primary)' : 'var(--amber-600)' }}>
                   {editingLaudo.status === 'liberado' ? 'Liberado' : 'A descrever'}
@@ -1244,12 +1352,20 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'none', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--gray-700)' }}>
               <Eye size={14} /> Pré-visualizar
             </button>
-            <button onClick={() => { void handleSave('liberado'); }} disabled={saving}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: saving ? 'var(--gray-300)' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>
-              <Send size={13} /> {saving ? 'Salvando...' : 'Liberar Laudo'}
-            </button>
+            {!isEditorLocked && (
+              <button onClick={() => { void handleSave('liberado'); }} disabled={saving}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: saving ? 'var(--gray-300)' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>
+                <Send size={13} /> {saving ? 'Salvando...' : 'Liberar Laudo'}
+              </button>
+            )}
           </div>
         </div>
+
+        {isEditorLocked && (
+          <div role="status" style={{ margin: '0 20px 12px', padding: '10px 14px', borderRadius: 10, background: 'var(--mint)', border: '1px solid rgba(0,166,63,0.2)', color: 'var(--dark)', fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
+            Este laudo foi liberado e não pode ser alterado. Use visualizar ou baixar PDF para consulta.
+          </div>
+        )}
 
         {/* Linha: seleção de paciente */}
         {!pac && (
@@ -1287,7 +1403,7 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
         )}
 
         {/* ── Barra de formatação ── */}
-        <div style={{ padding: '6px 16px', borderTop: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', background: '#fafafa' }}>
+        {!isEditorLocked && <div style={{ padding: '6px 16px', borderTop: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', background: '#fafafa' }}>
           <FmtBtn title="Negrito (Ctrl+B)"    onClick={() => execCmd('bold')}><Bold size={13} /></FmtBtn>
           <FmtBtn title="Itálico (Ctrl+I)"    onClick={() => execCmd('italic')}><Italic size={13} /></FmtBtn>
           <FmtBtn title="Sublinhado (Ctrl+U)" onClick={() => execCmd('underline')}><Underline size={13} /></FmtBtn>
@@ -1343,10 +1459,10 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
               {voiceMessage}
             </span>
           )}
-        </div>
+        </div>}
 
         {/* ── Barra de inserção ── */}
-        {showEditorPanel && <div style={{ padding: '6px 16px', borderTop: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 8, background: '#fff', position: 'relative' }}>
+        {showEditorPanel && !isEditorLocked && <div style={{ padding: '6px 16px', borderTop: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', gap: 8, background: '#fff', position: 'relative' }}>
           <DropBtn label="Modelos" icon={<LayoutTemplate size={13} />} active={showModelos}
             onClick={() => { setShowModelos(!showModelos); setShowFrases(false); setShowCampos(false); }}>
             {showModelos && (
@@ -1493,7 +1609,7 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
             */}
             <div
               ref={editorRef}
-              contentEditable={isMedico}
+              contentEditable={isMedico && !isEditorLocked}
               suppressContentEditableWarning
               onInput={() => {
                 setEditorContent(editorRef.current?.innerHTML || '');
@@ -1509,7 +1625,7 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
                 fontSize: `${tamanho}pt`,
                 lineHeight: 1.8,
                 color: '#111',
-                cursor: isMedico ? 'text' : 'default',
+                cursor: isMedico && !isEditorLocked ? 'text' : 'default',
                 wordBreak: 'break-word',
                 whiteSpace: 'pre-wrap',
                 position: 'relative',
@@ -1543,15 +1659,16 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
           <div style={{ padding: 14, borderBottom: '1px solid var(--gray-100)' }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--gray-600)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Campos clinicos</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <SideField label="CID"           value={editingLaudo.cid || ''}         onChange={v => setField('cid', v)}         placeholder="Ex: M54.5" />
-              <SideField label="Data do Exame" value={editingLaudo.data || today}      onChange={v => setField('data', v)}        type="date" />
-              <SideField label="Solicitante"   value={editingLaudo.solicitante || ''} onChange={v => setField('solicitante', v)} placeholder="Nome do solicitante" />
-              <SideField label="Técnica/Exame" value={editingLaudo.tecnica || ''}     onChange={v => setField('tecnica', v)}     placeholder="Ex: Ecocardiograma" />
+              <SideField label="CID"           value={editingLaudo.cid || ''}         onChange={v => setField('cid', v)}         placeholder="Ex: M54.5" disabled={isEditorLocked} />
+              <SideField label="Data do Exame" value={editingLaudo.data || today}      onChange={v => setField('data', v)}        type="date" disabled={isEditorLocked} />
+              <SideField label="Solicitante"   value={editingLaudo.solicitante || ''} onChange={v => setField('solicitante', v)} placeholder="Nome do solicitante" disabled={isEditorLocked} />
+              <SideField label="Técnica/Exame" value={editingLaudo.tecnica || ''}     onChange={v => setField('tecnica', v)}     placeholder="Ex: Ecocardiograma" disabled={isEditorLocked} />
               <div style={{ gridColumn: '1 / -1' }}>
                 <button
                   type="button"
                   onClick={() => setShowTemplatePicker(value => !value)}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '9px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, background: showTemplatePicker ? 'var(--mint)' : '#fff', color: showTemplatePicker ? 'var(--primary)' : 'var(--gray-700)', fontSize: 12, fontWeight: 850, cursor: 'pointer' }}
+                  disabled={isEditorLocked}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '9px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, background: showTemplatePicker ? 'var(--mint)' : '#fff', color: showTemplatePicker ? 'var(--primary)' : 'var(--gray-700)', fontSize: 12, fontWeight: 850, cursor: isEditorLocked ? 'not-allowed' : 'pointer', opacity: isEditorLocked ? 0.6 : 1 }}
                   aria-expanded={showTemplatePicker}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -1612,20 +1729,22 @@ export default function Laudos({ laudos, pacientes, doctors = [], onAdd, onUpdat
 
       {/* ── Rodapé ── */}
       <div style={{ background: '#fff', borderTop: '1px solid var(--gray-100)', padding: showEditorPanel ? '12px 20px' : '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12, flexWrap: 'wrap' }}>
-        {showEditorPanel && <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        {showEditorPanel && !isEditorLocked && <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           <Toggle label="Ocultar data"       value={editingLaudo.ocultarData || false}       onChange={v => setField('ocultarData', v)} />
           <Toggle label="Ocultar assinatura" value={editingLaudo.ocultarAssinatura || false} onChange={v => setField('ocultarAssinatura', v)} />
         </div>}
         {saveError && (
-          <div style={{ color: 'var(--red-600)', fontSize: 12, fontWeight: 700, flex: 1, minWidth: 220 }}>
+          <div role="alert" style={{ color: 'var(--red-600)', fontSize: 12, fontWeight: 700, flex: 1, minWidth: 220 }}>
             {saveError}
           </div>
         )}
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={closeEditor} disabled={saving} style={btnSecStyle}>Cancelar</button>
-          <button onClick={() => { void handleSave('rascunho'); }} disabled={saving} style={{ ...btnPrimStyle, background: saving ? 'var(--gray-300)' : btnPrimStyle.background, cursor: saving ? 'not-allowed' : 'pointer' }}>
-            <Check size={14} /> {saving ? 'Salvando...' : 'Salvar Laudo'}
-          </button>
+          {!isEditorLocked && (
+            <button onClick={() => { void handleSave('rascunho'); }} disabled={saving} style={{ ...btnPrimStyle, background: saving ? 'var(--gray-300)' : btnPrimStyle.background, cursor: saving ? 'not-allowed' : 'pointer' }}>
+              <Check size={14} /> {saving ? 'Salvando...' : 'Salvar Laudo'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1699,12 +1818,13 @@ function DropItem({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
-function SideField({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
+function SideField({ label, value, onChange, placeholder, type = 'text', disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean }) {
+  const fieldId = React.useId();
   return (
     <div>
-      <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4, display: 'block', marginBottom: 3 }}>{label}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        style={{ width: '100%', padding: '7px 10px', border: '1px solid var(--gray-200)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'var(--gray-50)', color: 'var(--gray-800)' }} />
+      <label htmlFor={fieldId} style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4, display: 'block', marginBottom: 3 }}>{label}</label>
+      <input id={fieldId} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+        style={{ width: '100%', padding: '7px 10px', border: '1px solid var(--gray-200)', borderRadius: 7, fontSize: 12, outline: 'none', background: disabled ? 'var(--gray-100)' : 'var(--gray-50)', color: 'var(--gray-800)' }} />
     </div>
   );
 }
