@@ -615,7 +615,7 @@ export default function App() {
     await refresh();
   }, [medicoMeta, refresh, user]);
 
-  const deleteLaudo = useCallback(async (id: string) => {
+  const deleteLaudo = useCallback(async (id: string, _justification?: string) => {
     await reportsApi.delete(id);
     await refresh();
   }, [refresh]);
